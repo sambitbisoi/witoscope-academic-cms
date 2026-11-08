@@ -15,7 +15,8 @@
     "test:db": "node --env-file-if-exists=.env node_modules/vitest/vitest.mjs run --config vitest.db.config.ts",
     "verify:uid": "tsx --env-file-if-exists=.env scripts/verify-uid.ts",
     "db:set-admin": "tsx --env-file-if-exists=.env scripts/set-admin.ts",
-    "import:topics": "tsx --env-file-if-exists=.env scripts/import-topics.ts"
+    "import:topics": "tsx --env-file-if-exists=.env scripts/import-topics.ts",
+    "import:seed": "tsx --env-file-if-exists=.env scripts/import-seed.ts"
   },
   "devDependencies": {
     "@types/node": "22.9.0",
@@ -24,6 +25,8 @@
     "vitest": "2.1.8"
   },
   "dependencies": {
+    "ajv": "8.18.0",
+    "ajv-formats": "3.0.1",
     "exceljs": "4.4.0",
     "postgres": "3.4.5"
   }

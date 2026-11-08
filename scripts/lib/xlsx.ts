@@ -52,3 +52,17 @@ export async function readWorkbook(path: string): Promise<Workbook> {
   }
   return { path, sha256: createHash('sha256').update(buf).digest('hex'), sheets };
 }
+
+/** Every sheet as raw rows of normalised cells (row 1 first), for sheets whose header is not in row 1. */
+export async function readRaw(path: string): Promise<{ sha256: string; sheets: Map<string, Cell[][]> }> {
+  const buf = readFileSync(path);
+  const wb = new ExcelJS.Workbook();
+  await wb.xlsx.load(buf);
+  const sheets = new Map<string, Cell[][]>();
+  for (const ws of wb.worksheets) {
+    const rows: Cell[][] = [];
+    ws.eachRow((r) => rows.push((r.values as unknown[]).slice(1).map(cellValue)));
+    sheets.set(ws.name, rows);
+  }
+  return { sha256: createHash('sha256').update(buf).digest('hex'), sheets };
+}
