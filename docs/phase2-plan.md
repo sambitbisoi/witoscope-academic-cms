@@ -65,10 +65,23 @@ Then: Dashboard → Project Settings → Data API → Exposed schemas → add `c
 
 ## 5. Open questions
 
-| # | Question | Proposal |
+| # | Question | Status |
 |---|---|---|
-| A | Where is the v10 workbook? | Waiting for path |
-| B | Strand ID given the `LR` collision **[guess]** | `<subject>-<code>`: `math-LR`, `science-LR`, `grammar-SEN` |
-| C | Retired topics have no Class View row **[guess]** | Import from Master Topics with status `retired`; class from Reference Grade (Math/Science) or Class (placement) (English) |
-| D | `taught_in_school` **[guess]** | True when "Classes – NCERT" or "Classes – DAV" is not "–" |
-| E | Sambit's auth user ID; Docker | Sambit to send |
+| A | v10 workbook | Path given: `~/WitoScope/ContentResearch/QuestionBank/WitoScope_Question_Attributes_v10.xlsx`. **Not present there yet** (checked 8 Nov). Use only this file; never v2 or the witoscope-app repo. |
+| B | Strand ID | **Approved:** `<subject>-<code>` (`math-LR`, `science-LR`, `grammar-SEN`) |
+| C | Retired topics | **Approved:** imported as `retired`; class from Reference Grade (Math/Science) or Class (placement) (English) |
+| D | `taught_in_school` | **Approved:** NCERT or DAV column not "–" |
+| E | Docker | **Approved:** local Supabase for development |
+| F | Sambit's auth user ID; password set? | Waiting (placeholders came through unfilled) |
+| G | `auth` USAGE cannot be granted by `postgres` | See §6 |
+
+## 6. Bootstrap findings (local Supabase, Postgres 17, 8 Nov)
+
+| Finding | Effect |
+|---|---|
+| `postgres` must be a member of `cms_owner` to make it the schema owner (PG16+) | Added `grant cms_owner to postgres;` to the bootstrap. Gives `cms_owner` nothing. |
+| Schema `auth` is owned by `supabase_admin`; `postgres` has USAGE **without grant option** | `grant usage on schema auth to cms_owner` is silently ignored (warning only). `cms_owner` cannot resolve `auth.uid()`, so `cms_is_admin()` as designed cannot be created. Decision needed. |
+| `auth.uid()` EXECUTE is already granted to PUBLIC | The explicit EXECUTE grant is a no-op but harmless. |
+| Option 1 chosen (policies pass `(select auth.uid())` into `cms_is_admin(uuid)`); both auth grants removed from the bootstrap | `cms_is_admin(uuid)` works. **But creating a policy that names `auth.uid()` also needs USAGE on `auth` for the creating role (`cms_owner`)**, so 0008 fails with "permission denied for schema auth". Tested in a rolled-back transaction: a policy reading the JWT claim (`current_setting('request.jwt.claims', true)` → `sub`) can be created by `cms_owner`. Decision needed. |
+| Port clash with witoscope-app | witoscope-app's local Supabase owns ports 5432x. This repo now uses **5542x** (`supabase/config.toml`), and scripts refuse any local port not served by `supabase_db_witoscope-academic-cms`. |
+| Incident, 8 Nov | Before the port change, the bootstrap and migrations 0001–0007 ran by mistake in **witoscope-app's local dev database** (this repo's `supabase start` had failed on the port clash, and the error was hidden). Footprint: role `cms_owner`, schema `cms` (38 tables + their TOAST tables), `grant cms_owner to postgres`. Nothing outside `cms` was changed. Removed in one transaction (`drop schema cms cascade; drop owned by cms_owner; revoke; drop role`); verified both gone. Production was never touched. |
