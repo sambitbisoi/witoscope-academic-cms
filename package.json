@@ -14,15 +14,17 @@
     "db:local:bootstrap": "tsx --env-file-if-exists=.env scripts/local-bootstrap.ts",
     "test:db": "node --env-file-if-exists=.env node_modules/vitest/vitest.mjs run --config vitest.db.config.ts",
     "verify:uid": "tsx --env-file-if-exists=.env scripts/verify-uid.ts",
-    "db:set-admin": "tsx --env-file-if-exists=.env scripts/set-admin.ts"
+    "db:set-admin": "tsx --env-file-if-exists=.env scripts/set-admin.ts",
+    "import:topics": "tsx --env-file-if-exists=.env scripts/import-topics.ts"
   },
   "devDependencies": {
     "@types/node": "22.9.0",
-    "tsx": "4.19.2",
+    "tsx": "4.23.15",
     "typescript": "5.6.3",
     "vitest": "2.1.8"
   },
   "dependencies": {
+    "exceljs": "4.4.0",
     "postgres": "3.4.5"
   }
 }
