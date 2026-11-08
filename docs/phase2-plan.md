@@ -24,10 +24,10 @@ Items marked **[guess]** are inferred and need Sambit's check.
 
 | # | Decision |
 |---|---|
-| 1 | `cms_owner` is created by a one-time bootstrap script, not a migration. The bootstrap also grants `cms_owner` **USAGE on schema `auth`** and **EXECUTE on `auth.uid()`**, listed explicitly. Must verify `cms_owner` connects through the Supabase pooler. |
+| 1 | `cms_owner` is created by a one-time bootstrap script, not a migration. ~~Grants on `auth`~~ removed (8 Nov, option 1/A): `postgres` cannot grant USAGE on `auth`, and `cms_owner` needs none. `grant cms_owner to postgres;` added (approved). Must verify `cms_owner` connects through the Supabase pooler. |
 | 2 | Own migration runner; history in `cms.cms_schema_migrations`. The Supabase CLI is used only for the local dev database. |
 | 3 | `authenticated` gets USAGE on `cms` and table grants; RLS denies everyone but the admin. **`anon` gets no USAGE on `cms`.** |
-| 4 | `cms.cms_is_admin()`: `security definer`, `stable`, empty `search_path`, owned by `cms_owner`; `revoke execute ... from public`, `grant execute ... to authenticated` only. Tests must show an app user (non-admin `authenticated`) gets **zero rows**. |
+| 4 | **Option A (approved 8 Nov).** `cms.cms_current_uid()`: `security invoker`, `stable`, empty `search_path`; reads the JWT claim exactly like `auth.uid()`; missing or malformed claim → null → deny. `cms.cms_is_admin(uuid)`: `security definer`, `stable`, empty `search_path`, owned by `cms_owner`. Both: `revoke execute ... from public`, `grant execute ... to authenticated` only. Every policy: `using (cms.cms_is_admin((select cms.cms_current_uid())))`. Tests: anon nothing, app user zero rows, admin sees rows, and `cms_current_uid() = auth.uid()` for a real signed-in session (locally now; on the hosted project before exposing `cms`). |
 | 5 | Re-import with an open version: replace the open draft **only if it was created by an import and not edited since**; otherwise block that question with an error. Every replacement is logged in `cms_reviews`. |
 | 6 | Typo detection: typo only if all structured fields are identical and the numbers in text, solutions and hints are unchanged **[guess, approved as the rule]**. `--force-new-version` overrides it and always creates a new version. |
 | 7 | One transaction per file; blocked questions skipped, result `partial`. `validate` is a dry run. |
@@ -43,6 +43,7 @@ Do this on the real project **only after all of the following**:
 1. Bootstrap has run and its verification query returns all `true`.
 2. All migrations are applied to the real project by `npm run db:migrate` (as `cms_owner`).
 3. `npm run db:verify` against the real project passes: RLS is enabled on every `cms` table, `anon` has no USAGE on `cms`, and `cms_config.admin_user_id` is set.
+4. `npm run verify:uid -- hosted`: sign in as Sambit, paste the printed SQL into the SQL editor, and `matches` is `true` (cms_current_uid() = auth.uid() for a real session). Works without `cms` exposed.
 
 Then: Dashboard → Project Settings → Data API → Exposed schemas → add `cms` → Save. Then sign in to the local web app against the real project. The exact moment will also be called out in the PR checklist. (Locally, `cms` is exposed via `supabase/config.toml`.)
 
