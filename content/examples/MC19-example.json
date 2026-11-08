@@ -1,0 +1,80 @@
+{
+  "file_schema": "cms-chapter/1.0",
+  "attribute_version": "v10",
+  "subject": "math",
+  "class": 6,
+  "chapter_id": "MC19",
+  "chapter_name": "Fraction Operations",
+  "generated": {
+    "by": "Claude chat thread",
+    "thread": "Fractions pilot rerun (example only)",
+    "date": "2026-11-08",
+    "notes": "Worked example for the Phase 1 design review. Pattern ID and source ref are illustrative."
+  },
+  "questions": [
+    {
+      "key": "MC19-0001",
+      "topic_id": "MT0393",
+      "typical_set_id": "TS-G6-FRAC-ADD-UNLIKE",
+      "pattern_id": "MP0007",
+      "clone_batch_id": "g6-frac-sub-unlike-01",
+      "locale": "IN",
+      "text": "5/6 − 1/4 = ?",
+      "answer": {
+        "format": "MCQ-4",
+        "options": ["7/12", "4/2", "4/12", "13/12"],
+        "correct": "7/12",
+        "accepted": ["14/24"],
+        "wrong_answers": [
+          { "value": "4/2", "tag": "misconception", "misconception_id": "G6-M-FRC1", "why": "Subtracted tops and bottoms separately" },
+          { "value": "4/12", "tag": "concept_error", "target_concept_id": "G6-FRC-C1", "why": "Common denominator found but numerators not converted (5 − 1 over 12)" },
+          { "value": "13/12", "tag": "misread", "why": "Added instead of subtracting" }
+        ]
+      },
+      "concepts": [
+        { "concept_id": "G6-FRC-C1", "involvement": 1.0 }
+      ],
+      "signature": {
+        "math_difficulty": "Medium",
+        "is_pure_fact": false,
+        "reading": 1,
+        "has_irrelevant_info": false,
+        "steps": 1,
+        "working_memory": 1,
+        "inhibition": 1,
+        "visual": 0,
+        "strategy": 0
+      },
+      "duration_s": 60,
+      "solutions": {
+        "school": "LCM of 6 and 4 is 12. 5/6 = 10/12 and 1/4 = 3/12. 10/12 − 3/12 = 7/12.",
+        "second": {
+          "text": "Use 24 as the common denominator: 20/24 − 6/24 = 14/24 = 7/12.",
+          "type": "Another way",
+          "strategy": "Smart calculation"
+        }
+      },
+      "hints": [
+        "Make the denominators the same.",
+        "The LCM of 6 and 4 is 12.",
+        "10/12 − 3/12 = 7/12."
+      ],
+      "source_refs": [
+        { "ref_id": "N7-031", "relation": "modelled_on" }
+      ],
+      "tagging": {
+        "tagged_by": "ai",
+        "why": {
+          "math_difficulty": { "why": "Denominators are not multiples of each other: the usual Class 6 exercise.", "confidence": "high" },
+          "reading": { "why": "Bare calculation, no story.", "confidence": "high" },
+          "steps": { "why": "Finding the common denominator is part of the tested method, so 1.", "confidence": "high" },
+          "working_memory": { "why": "Fraction working is written down.", "confidence": "high" },
+          "inhibition": { "why": "Subtracting tops and bottoms is a tagged misconception; the layout adds only a mild pull.", "confidence": "medium" },
+          "visual": { "why": "No figure.", "confidence": "high" },
+          "strategy": { "why": "Topic has NCERT and DAV sources; plain case.", "confidence": "high" }
+        },
+        "summary": "Medium: unlike denominators, not multiples. Same profile as gold G6-003."
+      }
+    }
+  ]
+}

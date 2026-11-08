@@ -1,0 +1,231 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://witoscope.com/schemas/cms/chapter-file/1.0.json",
+  "title": "WitoScope Academic CMS — chapter question file",
+  "description": "One file per chapter, written by a question-generation chat thread and committed under content/. Attribute rules: WitoScope Question Attributes v10. The importer adds checks this schema can't express (see docs/phase1-design.md §8).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["file_schema", "attribute_version", "subject", "class", "chapter_id", "generated", "questions"],
+  "properties": {
+    "file_schema": { "const": "cms-chapter/1.0" },
+    "attribute_version": { "type": "string", "pattern": "^v[0-9]+$", "description": "Workbook version the tags follow, e.g. v10" },
+    "subject": { "enum": ["math", "science", "grammar"] },
+    "class": { "type": "integer", "minimum": 1, "maximum": 6 },
+    "chapter_id": { "type": "string", "pattern": "^(MC|SC|GC)[0-9]{2}$" },
+    "chapter_name": { "type": "string" },
+    "generated": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["by", "date"],
+      "properties": {
+        "by": { "type": "string", "description": "e.g. 'Claude chat thread' or 'Sambit'" },
+        "thread": { "type": "string", "description": "Chat link or name, for traceability" },
+        "model": { "type": "string" },
+        "date": { "type": "string", "format": "date" },
+        "notes": { "type": "string" }
+      }
+    },
+    "patterns": {
+      "type": "array",
+      "description": "Optional. New or changed patterns used by questions in this file. Existing patterns can just be referenced by ID.",
+      "items": { "$ref": "#/$defs/pattern" }
+    },
+    "questions": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/question" }
+    }
+  },
+  "$defs": {
+    "conceptId": { "type": "string", "pattern": "^G[1-6]-[A-Z]{2,4}-[CA][0-9]+$" },
+    "misconceptionId": { "type": "string", "pattern": "^G[1-6]-M-[A-Z]{2,4}[0-9]+$" },
+    "topicId": { "type": "string", "pattern": "^(MT|ST|GT)[0-9]{4}$|^ACHIEVERS$" },
+    "typicalSetId": { "type": "string", "pattern": "^TS-G[1-6]-[A-Z0-9-]+$" },
+    "patternId": { "type": "string", "pattern": "^(MP|SP|GP)[0-9]{4}$" },
+    "strategyType": {
+      "enum": ["Pattern", "Work backwards", "Table / list", "Cases", "Guess and check", "Draw / bar model", "Eliminate", "Logic / clues", "Simplify", "Smart calculation", "Unitary method", "Odd / even (parity)", "Act it out / model", "Other"]
+    },
+    "format": {
+      "enum": ["MCQ-4", "MCQ-3", "True/False", "Typed-number", "Typed-decimal", "Typed-fraction", "Typed-text", "Multi-part"]
+    },
+    "why": {
+      "type": "object",
+      "description": "Tagger's reasoning per judged field. Keys are attribute names; each has a one-line why and a confidence.",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["why", "confidence"],
+        "properties": {
+          "why": { "type": "string" },
+          "confidence": { "enum": ["high", "medium", "low"] }
+        }
+      }
+    },
+    "pattern": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["pattern_id", "topic_id", "typical_set_id", "name"],
+      "properties": {
+        "pattern_id": { "$ref": "#/$defs/patternId" },
+        "topic_id": { "$ref": "#/$defs/topicId" },
+        "typical_set_id": { "$ref": "#/$defs/typicalSetId" },
+        "name": { "type": "string" },
+        "template": { "type": "string" },
+        "variables": { "type": "object", "description": "Variable ranges and constraints, free-form" },
+        "target_misconceptions": { "type": "array", "items": { "$ref": "#/$defs/misconceptionId" } },
+        "source_refs": { "type": "array", "items": { "type": "string" } },
+        "notes": { "type": "string" }
+      }
+    },
+    "concept": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["concept_id", "involvement"],
+      "properties": {
+        "concept_id": { "$ref": "#/$defs/conceptId" },
+        "involvement": { "enum": [1.0, 0.5, 0.2] }
+      }
+    },
+    "wrongAnswer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value", "tag"],
+      "properties": {
+        "value": { "type": "string", "description": "The wrong option text, or the anticipated typed value" },
+        "tag": { "enum": ["misconception", "concept_error", "shortcut", "partial", "lost_step", "used_irrelevant", "misread", "unit_slip", "implausible"] },
+        "misconception_id": { "$ref": "#/$defs/misconceptionId" },
+        "target_concept_id": { "$ref": "#/$defs/conceptId" },
+        "why": { "type": "string" }
+      },
+      "allOf": [
+        { "if": { "properties": { "tag": { "const": "misconception" } } }, "then": { "required": ["misconception_id"] } },
+        { "if": { "properties": { "tag": { "const": "concept_error" } } }, "then": { "required": ["target_concept_id"] } }
+      ]
+    },
+    "answer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["format", "correct"],
+      "properties": {
+        "format": { "$ref": "#/$defs/format" },
+        "options": { "type": "array", "items": { "type": "string" }, "minItems": 2, "maxItems": 4 },
+        "correct": { "type": "string" },
+        "accepted": { "type": "array", "items": { "type": "string" }, "description": "Other accepted forms" },
+        "wrong_answers": { "type": "array", "items": { "$ref": "#/$defs/wrongAnswer" } }
+      },
+      "allOf": [
+        { "if": { "properties": { "format": { "enum": ["MCQ-4", "MCQ-3", "True/False"] } } }, "then": { "required": ["options"] } }
+      ]
+    },
+    "part": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["part_label", "text", "answer", "concepts"],
+      "properties": {
+        "part_label": { "type": "string", "pattern": "^[a-z]$" },
+        "text": { "type": "string" },
+        "answer": { "$ref": "#/$defs/answer" },
+        "concepts": { "type": "array", "minItems": 1, "maxItems": 3, "items": { "$ref": "#/$defs/concept" } }
+      }
+    },
+    "question": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["key", "topic_id", "typical_set_id", "clone_batch_id", "locale", "text", "answer", "concepts", "signature", "duration_s", "solutions", "hints"],
+      "properties": {
+        "key": { "type": "string", "pattern": "^(MC|SC|GC)[0-9]{2}-[0-9]{3,4}$", "description": "Permanent key within this chapter, e.g. MC19-0012. Never reused. The CMS maps it to an MQ ID." },
+        "question_id": { "type": "string", "pattern": "^(MQ|SQ|GQ)[0-9]{6}$", "description": "Leave out on first import; the CMS assigns it." },
+        "topic_id": { "$ref": "#/$defs/topicId" },
+        "class_override": { "type": "integer", "minimum": 1, "maximum": 6, "description": "Achievers only: placed above the concepts' class, with a reason in placement_note" },
+        "placement_note": { "type": "string" },
+        "typical_set_id": { "$ref": "#/$defs/typicalSetId" },
+        "pattern_id": { "$ref": "#/$defs/patternId" },
+        "clone_batch_id": { "type": "string" },
+        "locale": { "const": "IN" },
+        "text": { "type": "string", "minLength": 1 },
+        "figure": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["description", "image_status"],
+          "properties": {
+            "description": { "type": "string", "description": "What to draw, to scale" },
+            "image_status": { "enum": ["needs_image", "has_image"] },
+            "image_file": { "type": "string" }
+          }
+        },
+        "answer": { "$ref": "#/$defs/answer" },
+        "parts": { "type": "array", "minItems": 2, "items": { "$ref": "#/$defs/part" }, "description": "Only when answer.format = Multi-part" },
+        "concepts": { "type": "array", "minItems": 1, "maxItems": 3, "items": { "$ref": "#/$defs/concept" } },
+        "signature": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["math_difficulty", "is_pure_fact", "reading", "has_irrelevant_info", "steps", "working_memory", "inhibition", "visual", "strategy"],
+          "properties": {
+            "math_difficulty": { "enum": ["Simple", "Medium", "Complex"] },
+            "is_pure_fact": { "type": "boolean" },
+            "reading": { "type": "integer", "minimum": 1, "maximum": 5 },
+            "has_irrelevant_info": { "type": "boolean" },
+            "steps": { "type": "integer", "minimum": 1, "maximum": 20 },
+            "working_memory": { "type": "integer", "minimum": 1, "maximum": 5 },
+            "inhibition": { "type": "integer", "minimum": 0, "maximum": 3 },
+            "visual": { "type": "integer", "minimum": 0, "maximum": 3 },
+            "strategy": { "type": "integer", "minimum": 0, "maximum": 3 },
+            "strategy_type": { "$ref": "#/$defs/strategyType" },
+            "strategy_type_2": { "$ref": "#/$defs/strategyType" },
+            "strategy_other_note": { "type": "string" },
+            "insight_id": { "type": "string", "pattern": "^INS-[A-Z0-9-]+$" },
+            "proposed_insight": {
+              "type": "object",
+              "description": "When no catalogue insight matches: propose one for admin approval",
+              "properties": { "name": { "type": "string" }, "structure": { "type": "string" }, "recognition_test": { "type": "string" } }
+            },
+            "trick_ref": { "type": "string" }
+          }
+        },
+        "duration_s": { "enum": [30, 60, 90, 120] },
+        "solutions": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["school"],
+          "properties": {
+            "school": { "type": "string", "minLength": 1 },
+            "second": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["text", "type"],
+              "properties": {
+                "text": { "type": "string" },
+                "type": { "enum": ["Smarter way", "Another way"] },
+                "strategy": { "$ref": "#/$defs/strategyType" }
+              }
+            }
+          }
+        },
+        "hints": { "type": "array", "minItems": 1, "maxItems": 3, "items": { "type": "string" } },
+        "source_refs": {
+          "type": "array",
+          "description": "Internal only: book items this question was modelled on. Never shown in the app.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["ref_id", "relation"],
+            "properties": {
+              "ref_id": { "type": "string" },
+              "relation": { "enum": ["modelled_on", "same_idea", "checked_against"] }
+            }
+          }
+        },
+        "tagging": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "tagged_by": { "enum": ["human", "ai"] },
+            "why": { "$ref": "#/$defs/why" },
+            "summary": { "type": "string", "description": "Final reasoning in rule terms" }
+          }
+        },
+        "author_notes": { "type": "string" }
+      }
+    }
+  }
+}
