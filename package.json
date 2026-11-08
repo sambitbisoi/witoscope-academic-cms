@@ -3,16 +3,18 @@
   "private": true,
   "type": "module",
   "engines": {
-    "node": ">=22"
+    "node": ">=22.9"
   },
   "scripts": {
-    "check-migrations": "tsx scripts/check-migrations.ts",
-    "db:migrate": "tsx scripts/migrate.ts",
-    "db:ping": "tsx scripts/db-ping.ts",
+    "check-migrations": "tsx --env-file-if-exists=.env scripts/check-migrations.ts",
+    "db:migrate": "tsx --env-file-if-exists=.env scripts/migrate.ts",
+    "db:ping": "tsx --env-file-if-exists=.env scripts/db-ping.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "db:local:bootstrap": "tsx scripts/local-bootstrap.ts",
-    "test:db": "vitest run --config vitest.db.config.ts"
+    "db:local:bootstrap": "tsx --env-file-if-exists=.env scripts/local-bootstrap.ts",
+    "test:db": "node --env-file-if-exists=.env node_modules/vitest/vitest.mjs run --config vitest.db.config.ts",
+    "verify:uid": "tsx --env-file-if-exists=.env scripts/verify-uid.ts",
+    "db:set-admin": "tsx --env-file-if-exists=.env scripts/set-admin.ts"
   },
   "devDependencies": {
     "@types/node": "22.9.0",
