@@ -75,7 +75,7 @@ Then: Dashboard → Project Settings → Data API → Exposed schemas → add `c
 | E | Docker | **Approved:** local Supabase for development |
 | F | Sambit's auth user ID; password set? | Waiting (placeholders came through unfilled) |
 | G | `auth` USAGE cannot be granted by `postgres` | Resolved: option A (§2, decision 4) |
-| H | Which Achievers rows to create **[guess]** | One `ACH-<chapter>-<class>` per chapter-class pair with at least one active topic, named "Achievers: <chapter name>". Gives 444 rows (Math 183, Science 151, English 110). |
+| H | Which Achievers rows to create | **Approved 8 Nov:** one `ACH-<chapter>-<class>` per chapter-class pair with at least one active topic, named "Achievers: <chapter name>", **Math only for now** (183 rows). Science and English get them once they have an Achiever rule. |
 
 ## 6. Bootstrap findings (local Supabase, Postgres 17, 8 Nov)
 
@@ -94,7 +94,9 @@ Then: Dashboard → Project Settings → Data API → Exposed schemas → add `c
 |---|---|
 | `cms_strands` | 25 (Math 10, Science 10, English 5); `LR` → `math-LR`, `science-LR` |
 | `cms_chapters` | 157 (58 / 58 / 41) |
-| `cms_topics` | 1,051 workbook topics (1,049 active, 2 retired: ST0158, GT0011, class 4) + 444 Achievers rows |
+| `cms_topics` | 1,051 workbook topics (1,049 active, 2 retired: ST0158, GT0011, class 4) + 183 Math Achievers rows |
 | `taught_in_school` | Math 456, Science 316, English 124 |
 
 Behaviour: whole run in one transaction; `--dry-run` rolls back. Re-import inserts new rows, updates changed rows with a `cms_reviews` row (`edit_catalogue`, or `retire` / `restore` for status changes, with before/after), and never deletes; rows missing from the workbook are reported. Every run is recorded in `cms_imports` with file hashes and the git commit. Workbooks: zero warnings.
+
+Achievers change, 8 Nov: the first local import created 444 Achievers rows. On Sambit's instruction the 261 Science and English rows were deleted (one transaction, as `cms_owner`, local only; checked first that no question, concept, prerequisite, typical set, pattern, source item or review referenced them). This is an approved one-off exception to "never delete"; the real project never had them. Rule added to CLAUDE.md: the topic workbooks are the source of truth for strands, chapters and topics; the CMS only re-imports.

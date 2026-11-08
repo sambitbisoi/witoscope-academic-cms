@@ -19,6 +19,7 @@ Design source of truth: `docs/phase1-design.md` (approved 8 Nov 2026). Question 
 - IDs are permanent and never reused. Class is a field, never derived from an ID.
 - Versioning: typo fix = same version (logged); any change to numbers, options, answers, format, parts, concepts, tags, signature, topic/set/pattern or image = new version.
 - Catalogue rows are never deleted: retire, deactivate or merge.
+- Topic master lists (the workbooks) are the source of truth for strands, chapters and topics; the CMS never edits them, only re-imports.
 
 ## How Sambit works
 - Size and plan each phase in tables and get his confirmation before writing code. Propose UI changes with screenshots before committing.
