@@ -1,5 +1,6 @@
 // The one way scripts connect to the database: as cms_owner, never service_role.
 import postgres from 'postgres';
+import { assertLocal } from '../local-bootstrap.ts';
 
 export function connect(url = process.env.CMS_DATABASE_URL) {
   if (!url) throw new Error('CMS_DATABASE_URL is not set (see .env.example).');
@@ -7,6 +8,8 @@ export function connect(url = process.env.CMS_DATABASE_URL) {
   if (user !== 'cms_owner') {
     throw new Error(`Refusing to connect as "${user}". Scripts must connect as cms_owner.`);
   }
+  const host = new URL(url).hostname;
+  if (host === '127.0.0.1' || host === 'localhost') assertLocal(url);
   // prepare: false keeps this working through the Supabase pooler.
   return postgres(url, { prepare: false, onnotice: () => {}, connection: { application_name: 'witoscope-cms' } });
 }
