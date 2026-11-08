@@ -78,11 +78,24 @@ describe('parseSubject', () => {
 });
 
 describe('achieversTopics', () => {
-  it('one ACH-<chapter>-<class> row per chapter-class with an active topic; retired topics do not count', () => {
+  const asMath = () => {
     const p = parseSubject('science', science());
-    const ach = achieversTopics(p.chapters, p.topics);
-    expect(ach.map((a) => a.topic_id)).toEqual(['ACH-SC01-2']);
-    expect(ach[0]).toMatchObject({ topic_kind: 'achievers', class: 2, chapter_id: 'SC01', name: 'Achievers: Living Things', status: 'active' });
+    // same data, relabelled as Math
+    const chapters = p.chapters.map((c) => ({ ...c, subject: 'math' as const, chapter_id: c.chapter_id.replace('SC', 'MC') }));
+    const topics = p.topics.map((t) => ({ ...t, chapter_id: t.chapter_id.replace('SC', 'MC') }));
+    return { chapters, topics };
+  };
+
+  it('Math: one ACH-<chapter>-<class> per chapter-class with an active topic; retired topics do not count', () => {
+    const { chapters, topics } = asMath();
+    const ach = achieversTopics(chapters, topics);
+    expect(ach.map((a) => a.topic_id)).toEqual(['ACH-MC01-2']);
+    expect(ach[0]).toMatchObject({ topic_kind: 'achievers', class: 2, chapter_id: 'MC01', name: 'Achievers: Living Things', status: 'active' });
+  });
+
+  it('Science and English: none for now', () => {
+    const p = parseSubject('science', science());
+    expect(achieversTopics(p.chapters, p.topics)).toEqual([]);
   });
 });
 

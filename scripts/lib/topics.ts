@@ -138,14 +138,19 @@ export function parseSubject(subject: Subject, sheets: Map<string, Row[]>): Pars
 
 /**
  * Decision 4: one Achievers topic per chapter and class, ID ACH-<chapter>-<class>.
- * [guess, flagged] Created for each chapter-class pair that has at least one active topic.
+ * Created for each chapter-class pair that has at least one active topic.
+ * Math only for now (Sambit, 8 Nov 2026): Science and English get Achievers rows
+ * once those subjects have an Achiever rule.
  */
+export const ACHIEVERS_SUBJECTS: readonly Subject[] = ['math'];
+
 export function achieversTopics(chapters: Chapter[], topics: Topic[]): Topic[] {
   const pairs = new Map<string, { chapter: Chapter; cls: number }>();
   const byId = new Map(chapters.map((c) => [c.chapter_id, c]));
   for (const t of topics) {
     if (t.status !== 'active' || t.topic_kind !== 'normal') continue;
     const chapter = byId.get(t.chapter_id)!;
+    if (!ACHIEVERS_SUBJECTS.includes(chapter.subject)) continue;
     pairs.set(`${t.chapter_id}-${t.class}`, { chapter, cls: t.class });
   }
   return [...pairs.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([, { chapter, cls }]) => ({
