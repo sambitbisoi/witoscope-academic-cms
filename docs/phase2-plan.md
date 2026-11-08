@@ -74,7 +74,8 @@ Then: Dashboard → Project Settings → Data API → Exposed schemas → add `c
 | D | `taught_in_school` | **Approved:** NCERT or DAV column not "–" |
 | E | Docker | **Approved:** local Supabase for development |
 | F | Sambit's auth user ID; password set? | Waiting (placeholders came through unfilled) |
-| G | `auth` USAGE cannot be granted by `postgres` | See §6 |
+| G | `auth` USAGE cannot be granted by `postgres` | Resolved: option A (§2, decision 4) |
+| H | Which Achievers rows to create **[guess]** | One `ACH-<chapter>-<class>` per chapter-class pair with at least one active topic, named "Achievers: <chapter name>". Gives 444 rows (Math 183, Science 151, English 110). |
 
 ## 6. Bootstrap findings (local Supabase, Postgres 17, 8 Nov)
 
@@ -86,3 +87,14 @@ Then: Dashboard → Project Settings → Data API → Exposed schemas → add `c
 | Option 1 chosen (policies pass `(select auth.uid())` into `cms_is_admin(uuid)`); both auth grants removed from the bootstrap | `cms_is_admin(uuid)` works. **But creating a policy that names `auth.uid()` also needs USAGE on `auth` for the creating role (`cms_owner`)**, so 0008 fails with "permission denied for schema auth". Tested in a rolled-back transaction: a policy reading the JWT claim (`current_setting('request.jwt.claims', true)` → `sub`) can be created by `cms_owner`. Decision needed. |
 | Port clash with witoscope-app | witoscope-app's local Supabase owns ports 5432x. This repo now uses **5542x** (`supabase/config.toml`), and scripts refuse any local port not served by `supabase_db_witoscope-academic-cms`. |
 | Incident, 8 Nov | Before the port change, the bootstrap and migrations 0001–0007 ran by mistake in **witoscope-app's local dev database** (this repo's `supabase start` had failed on the port clash, and the error was hidden). Footprint: role `cms_owner`, schema `cms` (38 tables + their TOAST tables), `grant cms_owner to postgres`. Nothing outside `cms` was changed. Removed in one transaction (`drop schema cms cascade; drop owned by cms_owner; revoke; drop role`); verified both gone. Production was never touched. |
+
+## 7. Topic import (`npm run import:topics`, local, 8 Nov)
+
+| Table | Rows |
+|---|---|
+| `cms_strands` | 25 (Math 10, Science 10, English 5); `LR` → `math-LR`, `science-LR` |
+| `cms_chapters` | 157 (58 / 58 / 41) |
+| `cms_topics` | 1,051 workbook topics (1,049 active, 2 retired: ST0158, GT0011, class 4) + 444 Achievers rows |
+| `taught_in_school` | Math 456, Science 316, English 124 |
+
+Behaviour: whole run in one transaction; `--dry-run` rolls back. Re-import inserts new rows, updates changed rows with a `cms_reviews` row (`edit_catalogue`, or `retire` / `restore` for status changes, with before/after), and never deletes; rows missing from the workbook are reported. Every run is recorded in `cms_imports` with file hashes and the git commit. Workbooks: zero warnings.
