@@ -30,5 +30,8 @@
     "ajv-formats": "3.0.1",
     "exceljs": "4.4.0",
     "postgres": "3.4.5"
-  }
+  },
+  "workspaces": [
+    "web"
+  ]
 }
