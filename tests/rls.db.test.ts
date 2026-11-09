@@ -6,6 +6,7 @@ import postgres from 'postgres';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { assertLocal, LOCAL_CMS_OWNER_URL, LOCAL_SUPERUSER_URL } from '../scripts/local-bootstrap.ts';
 import { connect } from '../scripts/lib/db.ts';
+import { unexpectedGrants, WRITE_GRANTS } from '../scripts/lib/grants.ts';
 import { localApi, rest, signInOrUp, type Api, type Session } from '../scripts/lib/supabase-session.ts';
 import { compareLocally, LOCAL_ADMIN } from '../scripts/verify-uid.ts';
 
@@ -83,14 +84,17 @@ describe('catalog: every table is locked the same way', () => {
     }
   });
 
-  it('authenticated has SELECT only; anon and public have nothing', async () => {
+  it('authenticated: SELECT plus only the listed writes; anon and public have nothing', async () => {
     const grants = await su<{ grantee: string; privilege_type: string; table_name: string }[]>`
       select grantee, privilege_type, table_name from information_schema.role_table_grants
       where table_schema = 'cms' and grantee <> 'cms_owner' and grantee <> 'postgres'`;
     expect(grants.filter((g) => g.grantee !== 'authenticated')).toEqual([]);
-    expect([...new Set(grants.map((g) => g.privilege_type))]).toEqual(['SELECT']);
+    expect(unexpectedGrants(grants)).toEqual([]);
+    expect(grants.some((g) => g.privilege_type === 'DELETE' || g.privilege_type === 'TRUNCATE')).toBe(false);
+    expect(grants.filter((g) => g.privilege_type !== 'SELECT').map((g) => `${g.privilege_type} ${g.table_name}`).sort()).toEqual(
+      Object.entries(WRITE_GRANTS).flatMap(([t, ps]) => ps.map((p) => `${p} ${t}`)).sort());
     const views = (await su<{ v: string }[]>`select viewname as v from pg_views where schemaname = 'cms'`).map((r) => r.v);
-    expect(grants.map((g) => g.table_name).sort()).toEqual([...tables.filter((t) => t !== 'cms_schema_migrations'), ...views].sort());
+    expect([...new Set(grants.map((g) => g.table_name))].sort()).toEqual([...tables.filter((t) => t !== 'cms_schema_migrations'), ...views].sort());
     const [s] = await su`select has_schema_privilege('anon', 'cms', 'usage') as anon_usage,
                                 has_schema_privilege('authenticated', 'cms', 'usage') as auth_usage`;
     expect(s).toEqual({ anon_usage: false, auth_usage: true });
@@ -204,6 +208,25 @@ describe('an app user gets zero rows', () => {
       expect(r.status, path).toBe(200);
       expect(r.json, path).toEqual([]);
     }
+  });
+});
+
+describe('Phase 4 writes (D2): the grant alone is not enough, RLS decides', () => {
+  const row = { source_id: 'TEST-RLS-1', kind: 'web', title: 'RLS probe', publisher: 'other', url: 'https://example.invalid' };
+  it('an app user cannot insert a source (RLS with check)', async () => {
+    await expect(as({ claims: claimsFor(app.userId) }, (tx) => tx`insert into cms.cms_sources ${tx(row)}`)).rejects.toThrow(/row-level security/);
+  });
+  it('an app user cannot write the audit log', async () => {
+    await expect(as({ claims: claimsFor(app.userId) }, (tx) =>
+      tx`insert into cms.cms_reviews (target, target_table, target_id, action, by_label) values ('catalogue', 'cms_sources', 'x', 'edit_catalogue', 'x')`)).rejects.toThrow(/row-level security/);
+  });
+  it('the admin can insert (rolled back) but never delete', async () => {
+    const [r] = await as({ claims: claimsFor(admin.userId) }, async (tx) => {
+      await tx`insert into cms.cms_sources ${tx(row)}`;
+      return tx`select count(*)::int as n from cms.cms_sources where source_id = 'TEST-RLS-1'`;
+    });
+    expect(r!.n).toBe(1);
+    await expect(as({ claims: claimsFor(admin.userId) }, (tx) => tx`delete from cms.cms_sources where source_id = 'TEST-RLS-1'`)).rejects.toThrow(/permission denied/);
   });
 });
 
