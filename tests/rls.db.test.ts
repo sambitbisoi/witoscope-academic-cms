@@ -89,7 +89,8 @@ describe('catalog: every table is locked the same way', () => {
       where table_schema = 'cms' and grantee <> 'cms_owner' and grantee <> 'postgres'`;
     expect(grants.filter((g) => g.grantee !== 'authenticated')).toEqual([]);
     expect([...new Set(grants.map((g) => g.privilege_type))]).toEqual(['SELECT']);
-    expect(grants.map((g) => g.table_name).sort()).toEqual(tables.filter((t) => t !== 'cms_schema_migrations'));
+    const views = (await su<{ v: string }[]>`select viewname as v from pg_views where schemaname = 'cms'`).map((r) => r.v);
+    expect(grants.map((g) => g.table_name).sort()).toEqual([...tables.filter((t) => t !== 'cms_schema_migrations'), ...views].sort());
     const [s] = await su`select has_schema_privilege('anon', 'cms', 'usage') as anon_usage,
                                 has_schema_privilege('authenticated', 'cms', 'usage') as auth_usage`;
     expect(s).toEqual({ anon_usage: false, auth_usage: true });
@@ -177,6 +178,19 @@ describe('an app user gets zero rows', () => {
     expect(Object.keys(counts)).toHaveLength(37);
   });
 
+  it('SQL: zero rows from every cms view (views are security_invoker)', async () => {
+    const views = (await su<{ v: string }[]>`select viewname as v from pg_views where schemaname = 'cms' order by 1`).map((r) => r.v);
+    expect(views.length).toBeGreaterThan(0);
+    const counts = await as({ claims: claimsFor(app.userId) }, async (tx) => {
+      const out: Record<string, number> = {};
+      for (const v of views) out[v] = (await tx.unsafe(`select count(*)::int as n from cms.${v}`))[0]!.n;
+      return out;
+    });
+    expect(Object.values(counts).every((n) => n === 0)).toBe(true);
+    const adminTopicStats = await as({ claims: claimsFor(admin.userId) }, (tx) => tx`select count(*)::int as n from cms.cms_topic_stats where topic_id = 'MT9999'`);
+    expect(adminTopicStats[0]!.n).toBe(1);
+  });
+
   it('SQL: not admin, and cannot write', async () => {
     const [r] = await as({ claims: claimsFor(app.userId) }, (tx) => tx`select cms.cms_is_admin(cms.cms_current_uid()) as a`);
     expect(r!.a).toBe(false);
@@ -185,7 +199,7 @@ describe('an app user gets zero rows', () => {
   });
 
   it('REST with a real app-user session: empty results, including cms_config', async () => {
-    for (const path of ['cms_strands?select=strand_id', 'cms_topics?select=topic_id', 'cms_config?select=key']) {
+    for (const path of ['cms_strands?select=strand_id', 'cms_topics?select=topic_id', 'cms_config?select=key', 'cms_home_stats?select=subject', 'cms_question_list?select=question_id']) {
       const r = await rest(api, app, path);
       expect(r.status, path).toBe(200);
       expect(r.json, path).toEqual([]);

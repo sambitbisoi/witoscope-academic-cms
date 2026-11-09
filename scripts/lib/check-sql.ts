@@ -96,7 +96,17 @@ export function checkSql(sql: string, file: string): Problem[] {
   while ((m = onTarget.exec(text))) {
     const name = unquote(m[1]!);
     if (/^(true|false|null)$/.test(name)) continue;
+    // "join … on q.col = v.col": a qualifier that isn't a known schema is a table
+    // alias (known schemas are caught by R1), so only unqualified names are errors here.
+    if (name.includes('.') && !name.startsWith('cms.')) continue;
     if (!name.startsWith('cms.')) add(m.index, 'unqualified-target', `target ${name} must be schema-qualified as cms.<name>`);
+  }
+
+  // R10: views must run with the caller's rights, or they would bypass RLS.
+  const view = /\bcreate\s+(?:or\s+replace\s+)?(materialized\s+)?view\b[\s\S]*?\bas\b/gi;
+  while ((m = view.exec(text))) {
+    if (m[1]) add(m.index, 'view-security', 'materialized views are not allowed (they ignore RLS)');
+    else if (!/security_invoker\s*=\s*(true|on)\b/i.test(m[0])) add(m.index, 'view-security', 'views must be created with (security_invoker = true) so RLS still applies');
   }
 
   // R6: no extensions except into cms.
