@@ -5,6 +5,7 @@ import { ImportDetail, ImportsList } from './Imports';
 import { parseRoute } from './logic';
 import { OpenQuestion, Shell, useHash } from './Shell';
 import { Workspace } from './Workspace';
+import { ReviewQueue } from './ReviewQueue';
 import { configError, isAdmin, supabase } from './supabase';
 
 type Access = 'checking' | 'admin' | 'denied' | 'error';
@@ -79,8 +80,9 @@ function Home({ email }: { email?: string }) {
   return (
     <Shell email={email} route={route}>
       {route.name === 'home' ? <HomeScreen grade={route.grade} />
-        : route.name === 'browse' ? <Workspace subject={route.subject} cls={route.cls} topic={route.topic} q={route.q} v={route.v} tab={route.tab} />
+        : route.name === 'browse' ? <Workspace subject={route.subject} cls={route.cls} topic={route.topic} q={route.q} v={route.v} tab={route.tab} edit={route.edit} />
         : route.name === 'question' ? <OpenQuestion id={route.id} />
+        : route.name === 'review' ? <main className="wide"><ReviewQueue /></main>
         : route.name === 'imports' ? <main><ImportsList /></main>
         : route.name === 'import' ? <main><ImportDetail id={route.id} /></main>
         : <main><p>Page not found. <a href="#/">Home</a></p></main>}

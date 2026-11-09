@@ -42,7 +42,7 @@ export function Home({ grade: routeGrade }: { grade: string | null }) {
           <div className="eyebrow">Review queue</div>
           <div className="big">{stats ? queueTotal : '…'} <span className="muted">draft{queueTotal === 1 ? '' : 's'} waiting</span></div>
           <div className="muted small">{queue.map((x) => `${x.s.label} ${x.n}`).join(' · ')}</div>
-          <div className="muted small">Reviewing arrives in Phase 5.</div>
+          {queueTotal > 0 && <a className="button-link" href="#/review">Open the review queue</a>}
         </div>
         <div className="card">
           <div className="eyebrow">Jobs</div>
