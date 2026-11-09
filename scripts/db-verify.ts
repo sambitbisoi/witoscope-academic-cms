@@ -16,6 +16,11 @@ try {
   check('every cms table has RLS enabled', tables.every((t) => t.relrowsecurity), tables.filter((t) => !t.relrowsecurity).map((t) => t.relname).join(', '));
   check('no table outside the cms_ naming rule', tables.every((t) => t.relname.startsWith('cms_')), tables.filter((t) => !t.relname.startsWith('cms_')).map((t) => t.relname).join(', '));
 
+  const views = await sql`select c.relname, coalesce(c.reloptions, '{}') as opts from pg_class c join pg_namespace n on n.oid = c.relnamespace
+                          where n.nspname = 'cms' and c.relkind in ('v', 'm')`;
+  const unsafeViews = views.filter((v) => !(v.opts as string[]).includes('security_invoker=true'));
+  check('every cms view is security_invoker (RLS applies through it)', unsafeViews.length === 0, unsafeViews.map((v) => v.relname).join(', '));
+
   const policies = await sql`select tablename, roles::text[] as roles, qual, with_check from pg_policies where schemaname = 'cms'`;
   const want = tables.map((t) => t.relname).filter((t) => t !== 'cms_schema_migrations');
   const bad = want.filter((t) => {

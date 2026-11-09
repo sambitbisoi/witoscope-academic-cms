@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>CMS Home</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#F4F4F2}
+a{color:#2F5BD3}a:hover{color:#1F3F99}
+</style>
+</helmet>
+<div style="font-family: Inter, system-ui, sans-serif; color: #1F1F1F; background: #F4F4F2; min-height: 900px; box-sizing: border-box">
+  <header style="display: flex; flex-wrap: wrap; gap: 16px; align-items: center; justify-content: space-between; padding: 14px 32px; background: #FFFFFF; border-bottom: 1px solid #D6D6D3">
+    <div style="display: flex; gap: 12px; align-items: center">
+      <div aria-hidden="true" style="width: 32px; height: 32px; border-radius: 8px; background: #DADAD6"></div>
+      <div style="font-weight: 700; font-size: 17px">WitoScope Academic CMS</div>
+    </div>
+    <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap">
+      <label for="q" style="position: absolute; left: -9999px">Search</label>
+      <input id="q" placeholder="Search topic, pattern or question ID" style="width: 320px; max-width: 70vw; height: 40px; padding: 0 14px; border: 1px solid #C9C9C5; border-radius: 8px; font: inherit; font-size: 14px; box-sizing: border-box">
+      <div style="font-size: 14px; color: #555555">Sambit</div>
+    </div>
+  </header>
+
+  <main style="max-width: 1200px; margin: 0 auto; padding: 32px 32px 48px; display: flex; flex-direction: column; gap: 32px">
+    <section aria-label="Today's work" style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px">
+      <div style="background: #FFFFFF; border: 1px solid #D6D6D3; border-radius: 12px; padding: 20px; display: flex; flex-direction: column; gap: 12px">
+        <div style="font-size: 13px; color: #555555; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em">Review queue</div>
+        <div style="font-size: 30px; font-weight: 700">110 <span style="font-size: 15px; font-weight: 500; color: #555555">drafts waiting</span></div>
+        <div style="font-size: 14px; color: #555555">Math 110 · Science 0 · English 0</div>
+        <a href="Review.dc.html" style="align-self: flex-start; display: inline-flex; align-items: center; height: 44px; padding: 0 18px; border-radius: 8px; background: #2F5BD3; color: #FFFFFF; font-weight: 600; font-size: 14px; text-decoration: none">Start reviewing</a>
+      </div>
+      <div style="background: #FFFFFF; border: 1px dashed #A9A9A4; border-radius: 12px; padding: 20px; display: flex; flex-direction: column; gap: 12px">
+        <div style="font-size: 13px; color: #555555; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em">New source</div>
+        <div style="font-size: 15px; line-height: 1.45">Upload a book, worksheet or question paper. AI extracts the questions, tags topics and patterns, and finds matches.</div>
+        <button style="align-self: flex-start; height: 44px; padding: 0 18px; border-radius: 8px; border: 1px solid #1F1F1F; background: #FFFFFF; font: inherit; font-weight: 600; font-size: 14px; cursor: pointer">Upload PDF / scans</button>
+      </div>
+      <div style="background: #FFFFFF; border: 1px solid #D6D6D3; border-radius: 12px; padding: 20px; display: flex; flex-direction: column; gap: 12px">
+        <div style="font-size: 13px; color: #555555; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em">Jobs</div>
+        <div style="display: flex; flex-direction: column; gap: 10px">
+          <div style="display: flex; flex-direction: column; gap: 6px">
+            <div style="font-size: 14px; font-weight: 600">Extracting: [Source name]</div>
+            <div aria-hidden="true" style="height: 8px; border-radius: 4px; background: #E6E6E3"><div style="width: 33%; height: 8px; border-radius: 4px; background: #8A8A85"></div></div>
+            <div style="font-size: 13px; color: #555555">Page 40 of 120</div>
+          </div>
+          <div style="font-size: 14px; color: #555555">Last finished: Class 6 Fractions pilot, 110 questions</div>
+        </div>
+      </div>
+    </section>
+
+    <section aria-label="Browse content" style="display: flex; flex-direction: column; gap: 20px">
+      <div style="display: flex; flex-wrap: wrap; gap: 16px; align-items: center; justify-content: space-between">
+        <h2 style="margin: 0; font-size: 20px">Browse content</h2>
+        <div role="group" aria-label="Grade" style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center">
+          <span style="font-size: 14px; color: #555555; margin-right: 4px">Grade</span>
+          <sc-for list="{{grades}}" as="g" hint-placeholder-count="7">
+            <sc-if value="{{g.on}}" hint-placeholder-val="{{false}}">
+              <button aria-pressed="true" style="min-width: 44px; height: 44px; padding: 0 14px; border-radius: 22px; border: 1px solid #1F1F1F; background: #1F1F1F; color: #FFFFFF; font: inherit; font-weight: 600; font-size: 14px">{{g.label}}</button>
+            </sc-if>
+            <sc-if value="{{g.off}}" hint-placeholder-val="{{true}}">
+              <button aria-pressed="false" style="min-width: 44px; height: 44px; padding: 0 14px; border-radius: 22px; border: 1px solid #C9C9C5; background: #FFFFFF; color: #1F1F1F; font: inherit; font-weight: 500; font-size: 14px; cursor: pointer">{{g.label}}</button>
+            </sc-if>
+          </sc-for>
+        </div>
+      </div>
+
+      <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px">
+        <a href="Workspace.dc.html" style="text-decoration: none; color: #1F1F1F; background: #FFFFFF; border: 2px solid #1F1F1F; border-radius: 14px; padding: 24px; display: flex; flex-direction: column; gap: 14px; min-height: 220px; box-sizing: border-box">
+          <div aria-hidden="true" style="width: 56px; height: 56px; border-radius: 12px; background: #DADAD6"></div>
+          <div style="font-size: 24px; font-weight: 700">Math</div>
+          <div style="font-size: 14px; color: #555555; line-height: 1.5">Class 6 · [n] chapters · [n] topics<br>Questions: 0 approved · 110 draft</div>
+          <div style="display: flex; gap: 8px; flex-wrap: wrap">
+            <span style="font-size: 12px; font-weight: 600; padding: 4px 10px; border-radius: 12px; background: #EDEDEA">Fractions: 14 of 25 topics have all 3 levels</span>
+          </div>
+        </a>
+        <a href="Workspace.dc.html" style="text-decoration: none; color: #1F1F1F; background: #FFFFFF; border: 1px solid #D6D6D3; border-radius: 14px; padding: 24px; display: flex; flex-direction: column; gap: 14px; min-height: 220px; box-sizing: border-box">
+          <div aria-hidden="true" style="width: 56px; height: 56px; border-radius: 12px; background: #DADAD6"></div>
+          <div style="font-size: 24px; font-weight: 700">Science</div>
+          <div style="font-size: 14px; color: #555555; line-height: 1.5">Class 6 · [n] chapters · [n] topics<br>Questions: none yet</div>
+        </a>
+        <a href="Workspace.dc.html" style="text-decoration: none; color: #1F1F1F; background: #FFFFFF; border: 1px solid #D6D6D3; border-radius: 14px; padding: 24px; display: flex; flex-direction: column; gap: 14px; min-height: 220px; box-sizing: border-box">
+          <div aria-hidden="true" style="width: 56px; height: 56px; border-radius: 12px; background: #DADAD6"></div>
+          <div style="font-size: 24px; font-weight: 700">English Grammar</div>
+          <div style="font-size: 14px; color: #555555; line-height: 1.5">Class 6 · [n] chapters · [n] topics<br>Questions: none yet</div>
+        </a>
+      </div>
+    </section>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const labels = ['All', '1', '2', '3', '4', '5', '6'];
+    return { grades: labels.map((l) => ({ label: l, on: l === '6', off: l !== '6' })) };
+  }
+}
+</script>
+</body>
+</html>

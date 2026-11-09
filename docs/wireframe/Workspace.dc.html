@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Topic workspace</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#F4F4F2}
+a{color:#2F5BD3}a:hover{color:#1F3F99}
+</style>
+</helmet>
+<div style="font-family: Inter, system-ui, sans-serif; color: #1F1F1F; background: #F4F4F2; min-height: 1040px; box-sizing: border-box; display: flex; flex-direction: column">
+  <header style="display: flex; flex-wrap: wrap; gap: 16px; align-items: center; justify-content: space-between; padding: 12px 24px; background: #FFFFFF; border-bottom: 1px solid #D6D6D3">
+    <div style="display: flex; gap: 14px; align-items: center; flex-wrap: wrap">
+      <a href="Main.dc.html" style="font-weight: 700; font-size: 16px; color: #1F1F1F; text-decoration: none">WitoScope CMS</a>
+      <span aria-hidden="true" style="color: #8A8A85">/</span>
+      <button style="height: 36px; padding: 0 12px; border: 1px solid #C9C9C5; border-radius: 8px; background: #FFFFFF; font: inherit; font-size: 14px">Class 6 ▾</button>
+      <button style="height: 36px; padding: 0 12px; border: 1px solid #C9C9C5; border-radius: 8px; background: #FFFFFF; font: inherit; font-size: 14px">Math ▾</button>
+    </div>
+    <div style="display: flex; gap: 10px; align-items: center">
+      <label for="qs" style="position: absolute; left: -9999px">Search</label>
+      <input id="qs" placeholder="Search in Math" style="width: 260px; max-width: 60vw; height: 36px; padding: 0 12px; border: 1px solid #C9C9C5; border-radius: 8px; font: inherit; font-size: 14px; box-sizing: border-box">
+      <a href="Review.dc.html" style="display: inline-flex; align-items: center; height: 36px; padding: 0 12px; border-radius: 8px; background: #EDEDEA; color: #1F1F1F; font-size: 14px; font-weight: 600; text-decoration: none">Review queue · 110</a>
+    </div>
+  </header>
+
+  <div style="display: flex; flex-wrap: wrap; flex: 1; align-items: stretch">
+    <!-- LEFT: tree -->
+    <nav aria-label="Chapters and topics" style="flex: 1 1 280px; max-width: 320px; min-width: 260px; background: #FFFFFF; border-right: 1px solid #D6D6D3; padding: 16px; box-sizing: border-box; display: flex; flex-direction: column; gap: 12px">
+      <div style="display: flex; justify-content: space-between; align-items: center">
+        <div style="font-size: 13px; font-weight: 600; color: #555555; text-transform: uppercase; letter-spacing: 0.04em">Chapters · topics</div>
+        <button style="height: 32px; padding: 0 10px; border: 1px solid #C9C9C5; border-radius: 6px; background: #FFFFFF; font: inherit; font-size: 12px">Gaps only</button>
+      </div>
+      <sc-for list="{{chapters}}" as="ch" hint-placeholder-count="3">
+        <div style="display: flex; flex-direction: column; gap: 4px">
+          <div style="font-size: 14px; font-weight: 700; padding: 6px 4px">{{ch.label}}</div>
+          <sc-for list="{{ch.topics}}" as="t" hint-placeholder-count="4">
+            <sc-if value="{{t.sel}}" hint-placeholder-val="{{false}}">
+              <button style="text-align: left; display: flex; flex-direction: column; gap: 2px; padding: 8px 10px; border-radius: 8px; border: 2px solid #2F5BD3; background: #EEF2FC; font: inherit; color: #1F1F1F; cursor: pointer">
+                <span style="font-size: 13px; font-weight: 600">{{t.id}} {{t.name}}</span>
+                <span style="font-size: 12px; color: #444444">{{t.meta}}</span>
+              </button>
+            </sc-if>
+            <sc-if value="{{t.unsel}}" hint-placeholder-val="{{true}}">
+              <button style="text-align: left; display: flex; flex-direction: column; gap: 2px; padding: 8px 10px; border-radius: 8px; border: 1px solid transparent; background: #FFFFFF; font: inherit; color: #1F1F1F; cursor: pointer">
+                <span style="font-size: 13px; font-weight: 500">{{t.id}} {{t.name}}</span>
+                <span style="font-size: 12px; color: #555555">{{t.meta}}</span>
+              </button>
+            </sc-if>
+          </sc-for>
+        </div>
+      </sc-for>
+      <div style="font-size: 13px; color: #555555; padding: 4px">More Class 6 chapters…</div>
+    </nav>
+
+    <!-- MIDDLE: questions -->
+    <section aria-label="Questions" style="flex: 999 1 460px; min-width: 0; padding: 20px; box-sizing: border-box; display: flex; flex-direction: column; gap: 16px">
+      <div style="display: flex; flex-wrap: wrap; gap: 12px; justify-content: space-between; align-items: flex-start">
+        <div style="display: flex; flex-direction: column; gap: 4px">
+          <h1 style="margin: 0; font-size: 22px">MT0332 · Equivalent fractions</h1>
+          <div style="font-size: 13px; color: #555555">Chapter MC18 Fraction Concepts · taught in Class 4–6 · 4 question types · 12 questions</div>
+        </div>
+        <button style="height: 40px; padding: 0 14px; border-radius: 8px; border: 1px solid #1F1F1F; background: #FFFFFF; font: inherit; font-size: 14px; font-weight: 600">+ New question type</button>
+      </div>
+
+      <div role="tablist" style="display: flex; gap: 4px; border-bottom: 1px solid #D6D6D3">
+        <button role="tab" aria-selected="true" style="height: 44px; padding: 0 16px; border: none; border-bottom: 3px solid #1F1F1F; background: transparent; font: inherit; font-size: 14px; font-weight: 700">By question type</button>
+        <button role="tab" aria-selected="false" style="height: 44px; padding: 0 16px; border: none; border-bottom: 3px solid transparent; background: transparent; font: inherit; font-size: 14px; color: #555555">By concept <span style="font-size: 12px">(concepts not defined yet)</span></button>
+        <a href="Sources.dc.html" role="tab" aria-selected="false" style="display: inline-flex; align-items: center; height: 44px; padding: 0 16px; border-bottom: 3px solid transparent; font-size: 14px; color: #555555; text-decoration: none">Sources · 3</a>
+      </div>
+
+      <div style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center">
+        <span style="font-size: 13px; color: #555555">Filter</span>
+        <button style="height: 32px; padding: 0 10px; border: 1px solid #C9C9C5; border-radius: 16px; background: #FFFFFF; font: inherit; font-size: 13px">Difficulty: all ▾</button>
+        <button style="height: 32px; padding: 0 10px; border: 1px solid #C9C9C5; border-radius: 16px; background: #FFFFFF; font: inherit; font-size: 13px">Status: all ▾</button>
+        <button style="height: 32px; padding: 0 10px; border: 1px solid #C9C9C5; border-radius: 16px; background: #FFFFFF; font: inherit; font-size: 13px">Source: all ▾</button>
+      </div>
+
+      <sc-for list="{{types}}" as="ty" hint-placeholder-count="4">
+        <div style="background: #FFFFFF; border: 1px solid #D6D6D3; border-radius: 12px; overflow: hidden">
+          <div style="display: flex; flex-wrap: wrap; gap: 10px; justify-content: space-between; align-items: center; padding: 12px 14px; background: #FAFAF8; border-bottom: 1px solid #E3E3E0">
+            <div style="display: flex; flex-direction: column; gap: 2px">
+              <div style="font-size: 14px; font-weight: 700">{{ty.id}} · {{ty.name}}</div>
+              <div style="font-size: 12px; color: #555555">{{ty.meta}}</div>
+            </div>
+            <div style="display: flex; gap: 8px">
+              <button style="height: 36px; padding: 0 12px; border-radius: 8px; border: 1px solid #C9C9C5; background: #FFFFFF; font: inherit; font-size: 13px">Edit type</button>
+              <a href="Review.dc.html" style="display: inline-flex; align-items: center; height: 36px; padding: 0 12px; border-radius: 8px; border: 1px solid #1F1F1F; background: #FFFFFF; color: #1F1F1F; font-size: 13px; font-weight: 600; text-decoration: none">Generate more</a>
+            </div>
+          </div>
+          <sc-for list="{{ty.qs}}" as="q" hint-placeholder-count="3">
+            <sc-if value="{{q.sel}}" hint-placeholder-val="{{false}}">
+              <button style="width: 100%; text-align: left; display: flex; gap: 12px; align-items: center; padding: 10px 14px; border: none; border-top: 1px solid #EFEFEC; background: #EEF2FC; box-shadow: inset 3px 0 0 #2F5BD3; font: inherit; color: #1F1F1F; cursor: pointer">
+                <span style="font-size: 12px; color: #444444; width: 82px; flex: none">{{q.id}}</span>
+                <span style="font-size: 14px; flex: 1; min-width: 0">{{q.stem}}</span>
+                <span style="font-size: 12px; font-weight: 600; padding: 3px 8px; border-radius: 10px; background: #FFFFFF; border: 1px solid #C9C9C5">{{q.lvl}}</span>
+                <span style="font-size: 12px; color: #444444; width: 48px; text-align: right">{{q.status}}</span>
+              </button>
+            </sc-if>
+            <sc-if value="{{q.unsel}}" hint-placeholder-val="{{true}}">
+              <button style="width: 100%; text-align: left; display: flex; gap: 12px; align-items: center; padding: 10px 14px; border: none; border-top: 1px solid #EFEFEC; background: #FFFFFF; font: inherit; color: #1F1F1F; cursor: pointer">
+                <span style="font-size: 12px; color: #555555; width: 82px; flex: none">{{q.id}}</span>
+                <span style="font-size: 14px; flex: 1; min-width: 0">{{q.stem}}</span>
+                <span style="font-size: 12px; font-weight: 600; padding: 3px 8px; border-radius: 10px; background: #EDEDEA">{{q.lvl}}</span>
+                <span style="font-size: 12px; color: #555555; width: 48px; text-align: right">{{q.status}}</span>
+              </button>
+            </sc-if>
+          </sc-for>
+        </div>
+      </sc-for>
+    </section>
+
+    <!-- RIGHT: detail -->
+    <aside aria-label="Question detail" style="flex: 1 1 380px; max-width: 440px; min-width: 320px; background: #FFFFFF; border-left: 1px solid #D6D6D3; padding: 20px; box-sizing: border-box; display: flex; flex-direction: column; gap: 18px">
+      <div style="display: flex; justify-content: space-between; align-items: center">
+        <div style="font-size: 15px; font-weight: 700">MQ000035</div>
+        <div style="font-size: 12px; color: #555555">Draft · v1 · <a href="#history">history</a></div>
+      </div>
+
+      <div style="border: 1px solid #D6D6D3; border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 12px; background: #FAFAF8">
+        <div style="font-size: 12px; font-weight: 600; color: #555555; text-transform: uppercase; letter-spacing: 0.04em">Preview (as the child sees it)</div>
+        <div style="font-size: 17px; font-weight: 600">Fill in the missing number: 3/4 = ? / 20</div>
+        <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px">
+          <sc-for list="{{opts}}" as="o" hint-placeholder-count="4">
+            <div style="border: 1px solid #C9C9C5; border-radius: 8px; padding: 8px 10px; background: #FFFFFF; display: flex; flex-direction: column; gap: 2px">
+              <span style="font-size: 15px; font-weight: 600">{{o.label}}</span>
+              <span style="font-size: 12px; color: #444444">{{o.tag}}</span>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 6px">
+        <div style="font-size: 12px; font-weight: 600; color: #555555; text-transform: uppercase; letter-spacing: 0.04em">Solution</div>
+        <div style="font-size: 14px; line-height: 1.45">4 × 5 = 20, so 3 × 5 = 15.</div>
+        <div style="font-size: 12px; font-weight: 600; color: #555555; text-transform: uppercase; letter-spacing: 0.04em; margin-top: 6px">Hint (after a wrong answer)</div>
+        <div style="font-size: 14px; line-height: 1.45">What did 4 get multiplied by to become 20?</div>
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 8px">
+        <div style="font-size: 12px; font-weight: 600; color: #555555; text-transform: uppercase; letter-spacing: 0.04em">Signature</div>
+        <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 12px; font-size: 13px">
+          <sc-for list="{{sig}}" as="s" hint-placeholder-count="10">
+            <div style="display: flex; justify-content: space-between; gap: 8px; border-bottom: 1px solid #EFEFEC; padding: 4px 0">
+              <span style="color: #555555">{{s.k}}</span><span style="font-weight: 600">{{s.v}}</span>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+
+      <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-top: auto">
+        <button style="height: 44px; padding: 0 16px; border-radius: 8px; border: 1px solid #1F1F1F; background: #FFFFFF; font: inherit; font-size: 14px; font-weight: 600">Edit</button>
+        <a href="Review.dc.html" style="display: inline-flex; align-items: center; height: 44px; padding: 0 16px; border-radius: 8px; background: #2F5BD3; color: #FFFFFF; font-size: 14px; font-weight: 600; text-decoration: none">Generate similar</a>
+        <button style="height: 44px; padding: 0 16px; border-radius: 8px; border: 1px solid #C9C9C5; background: #FFFFFF; font: inherit; font-size: 14px">Approve</button>
+        <button style="height: 44px; padding: 0 16px; border-radius: 8px; border: 1px solid #C9C9C5; background: #FFFFFF; font: inherit; font-size: 14px">Reject</button>
+      </div>
+    </aside>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1040}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const t = (id, name, meta, sel) => ({ id, name, meta, sel: !!sel, unsel: !sel });
+    const chapters = [
+      { label: 'MC18 Fraction Concepts', topics: [
+        t('MT0332', 'Equivalent fractions', '12 Qs · S4 M6 C2', true),
+        t('MT0334', 'Mixed numbers', '9 Qs · S3 M5 C1'),
+        t('MT0392', 'Simplest form', '4 Qs · S1 M3 C0 · ⚠ no Complex'),
+        t('MT0390', 'Fractions on a number line', '6 Qs · S1 M3 C2'),
+        t('MT0391', 'Compare and order unlike fractions', '12 Qs · S2 M7 C3'),
+      ] },
+      { label: 'MC19 Fraction Operations', topics: [
+        t('MT0261', 'Add and subtract like fractions', '3 Qs · S1 M2 C0 · ⚠ no Complex'),
+        t('MT0393', 'Add and subtract unlike fractions', '16 Qs · S2 M6 C8'),
+        t('MT0394', 'Multiply fractions', '9 Qs · S5 M2 C2'),
+        t('MT0395', 'Reciprocal of a fraction', '3 Qs · S1 M2 C0 · ⚠ no Complex'),
+      ] },
+    ];
+    const q = (id, stem, lvl, sel) => ({ id, stem, lvl, status: 'Draft', sel: !!sel, unsel: !sel });
+    const types = [
+      { id: 'MP0011', name: 'Identify equivalent fractions', meta: 'Typical set: Equivalent fractions · targets MM006, MM007 · NCERT 3 · DAV 4', qs: [
+        q('MQ000032', 'Which fraction is equivalent to 3/5?', 'Simple'),
+        q('MQ000033', 'Which fraction is NOT equivalent to 4/6?', 'Medium'),
+        q('MQ000034', 'Which list has ONLY fractions equivalent to 5/8?', 'Complex'),
+      ] },
+      { id: 'MP0012', name: 'Missing term in equivalent fractions', meta: 'Typical set: Equivalent fractions · targets MM006, MM007 · DAV 1', qs: [
+        q('MQ000035', 'Fill in the missing number: 3/4 = ?/20', 'Simple', true),
+        q('MQ000036', 'Fill in the missing number: 21/28 = 3/?', 'Medium'),
+        q('MQ000037', 'Find both missing numbers: 14/? = 21/36 = ?/60', 'Complex'),
+      ] },
+      { id: 'MP0013', name: 'Equivalent shares in a sharing story', meta: 'Typical set: Sharing things equally · NCERT 2', qs: [
+        q('MQ000038', '1 roti shared between 2 children gives the same share as 4 rotis among…', 'Simple'),
+        q('MQ000039', '4 laddoos shared equally among 5 children gives the same share as…', 'Medium'),
+      ] },
+    ];
+    const opts = [
+      { label: 'A · 19', tag: 'MM006 additive equivalence' },
+      { label: 'B · 15 ✓', tag: 'Correct' },
+      { label: 'C · 5', tag: 'MM007 scales one term only' },
+      { label: 'D · 12', tag: 'Near-miss' },
+    ];
+    const sig = [
+      { k: 'Difficulty', v: 'Simple (1)' }, { k: 'Format', v: 'MCQ' },
+      { k: 'Steps', v: '1' }, { k: 'Numbers', v: '0' },
+      { k: 'Conversion', v: '0' }, { k: 'Trap', v: '0' },
+      { k: 'Reading', v: '0' }, { k: 'Visual', v: 'No' },
+      { k: 'Strategy', v: 'Low' }, { k: 'Pure fact', v: 'No' },
+      { k: 'Pattern', v: 'MP0012' }, { k: 'Concepts', v: '—' },
+      { k: 'Originality', v: 'OK' }, { k: 'Source', v: 'Generated' },
+    ];
+    return { chapters, types, opts, sig };
+  }
+}
+</script>
+</body>
+</html>

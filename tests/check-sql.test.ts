@@ -32,6 +32,15 @@ describe('check-migrations: allowed', () => {
     expect(rules(sql)).toEqual([]);
   });
 
+  it('accepts a security_invoker view with joins on aliases', () => {
+    const sql = `create view cms.cms_x with (security_invoker = true) as
+      select q.question_id from cms.cms_questions q
+      join cms.cms_question_versions v on v.question_id = q.question_id and v.version_no = q.current_version
+      left join cms.cms_gold_meta g on g.question_id = q.question_id;
+      grant select on cms.cms_x to authenticated;`;
+    expect(rules(sql)).toEqual([]);
+  });
+
   it('ignores schema names inside comments', () => {
     expect(rules(`-- never touch public.users\n/* or auth.users */\nselect 1;`)).toEqual([]);
   });
@@ -55,6 +64,9 @@ describe('check-migrations: rejected', () => {
     ['search_path public', "create function cms.f() returns int language sql set search_path = public as $$ select 1 $$;", 'search-path'],
     ['dynamic SQL', "do $$ begin execute format('drop table %I', 'x'); end $$;", 'dynamic-sql'],
     ['policy on unqualified table', 'create policy p on profiles using (true);', 'unqualified-target'],
+    ['view without security_invoker', 'create view cms.cms_v as select 1;', 'view-security'],
+    ['materialized view', 'create materialized view cms.cms_v as select 1;', 'view-security'],
+    ['join onto a public table', 'create view cms.cms_v with (security_invoker = true) as select 1 from cms.cms_a a join public.profiles p on p.id = a.id;', 'other-schema'],
     ['trigger on public table', 'create trigger t after insert on public.profiles for each row execute function cms.f();', 'other-schema'],
   ])('%s', (_name, sql, rule) => {
     expect(rules(sql)).toContain(rule);

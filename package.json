@@ -6,19 +6,19 @@
     "node": ">=22.9"
   },
   "scripts": {
-    "check-migrations": "tsx --env-file-if-exists=.env scripts/check-migrations.ts",
-    "db:migrate": "tsx --env-file-if-exists=.env scripts/migrate.ts",
-    "db:ping": "tsx --env-file-if-exists=.env scripts/db-ping.ts",
+    "check-migrations": "tsx scripts/check-migrations.ts",
+    "db:migrate": "tsx scripts/migrate.ts",
+    "db:ping": "tsx scripts/db-ping.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "db:local:bootstrap": "tsx --env-file-if-exists=.env scripts/local-bootstrap.ts",
+    "db:local:bootstrap": "tsx scripts/local-bootstrap.ts",
     "test:db": "node node_modules/vitest/vitest.mjs run --config vitest.db.config.ts",
-    "verify:uid": "tsx --env-file-if-exists=.env scripts/verify-uid.ts",
-    "db:set-admin": "tsx --env-file-if-exists=.env scripts/set-admin.ts",
-    "import:topics": "tsx --env-file-if-exists=.env scripts/import-topics.ts",
-    "import:seed": "tsx --env-file-if-exists=.env scripts/import-seed.ts",
-    "chapter": "tsx --env-file-if-exists=.env scripts/import-chapter.ts",
-    "db:verify": "tsx --env-file-if-exists=.env scripts/db-verify.ts"
+    "verify:uid": "tsx scripts/verify-uid.ts",
+    "db:set-admin": "tsx scripts/set-admin.ts",
+    "import:topics": "tsx scripts/import-topics.ts",
+    "import:seed": "tsx scripts/import-seed.ts",
+    "chapter": "tsx scripts/import-chapter.ts",
+    "db:verify": "tsx scripts/db-verify.ts"
   },
   "devDependencies": {
     "@types/node": "22.9.0",
