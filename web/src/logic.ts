@@ -17,6 +17,7 @@ export type Route =
   | { name: 'review' }
   | { name: 'generate'; q: string | null; set: string | null; topic: string | null }
   | { name: 'run'; id: number }
+  | { name: 'model-check'; id: number | null }
   | { name: 'question'; id: string }
   | { name: 'imports' }
   | { name: 'import'; id: number }
@@ -32,6 +33,7 @@ export function parseRoute(hash: string): Route {
   if (p[0] === 'review') return { name: 'review' };
   if (p[0] === 'generate') return { name: 'generate', q: qs.get('q'), set: qs.get('set'), topic: qs.get('topic') };
   if (p[0] === 'run' && p[1] && /^\d+$/.test(p[1])) return { name: 'run', id: Number(p[1]) };
+  if (p[0] === 'model-check') return { name: 'model-check', id: p[1] && /^\d+$/.test(p[1]) ? Number(p[1]) : null };
   if (p[0] === 'browse' && SUBJECTS.some((s) => s.id === p[1])) {
     const cls = p[2] && /^([1-6]|all)$/.test(p[2]) ? p[2] : 'all';
     const v = qs.get('v');

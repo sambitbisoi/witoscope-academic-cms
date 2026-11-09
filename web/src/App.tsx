@@ -7,6 +7,7 @@ import { OpenQuestion, Shell, useHash } from './Shell';
 import { Workspace } from './Workspace';
 import { ReviewQueue } from './ReviewQueue';
 import { GenerateScreen, RunScreen } from './Generate';
+import { ModelCheckScreen } from './ModelCheck';
 import { configError, isAdmin, supabase } from './supabase';
 
 type Access = 'checking' | 'admin' | 'denied' | 'error';
@@ -86,6 +87,7 @@ function Home({ email }: { email?: string }) {
         : route.name === 'review' ? <main className="wide"><ReviewQueue /></main>
         : route.name === 'generate' ? <GenerateScreen questionId={route.q} setId={route.set} topicId={route.topic} />
         : route.name === 'run' ? <RunScreen runId={route.id} />
+        : route.name === 'model-check' ? <ModelCheckScreen runId={route.id} />
         : route.name === 'imports' ? <main><ImportsList /></main>
         : route.name === 'import' ? <main><ImportDetail id={route.id} /></main>
         : <main><p>Page not found. <a href="#/">Home</a></p></main>}

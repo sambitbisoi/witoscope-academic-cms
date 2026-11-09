@@ -250,3 +250,10 @@ label.check.inline { display: inline-flex; margin-right: 12px; }
 .fill-link { margin-left: 10px; font-weight: 500; }
 .secondary-link { align-self: center; }
 @media (max-width: 760px) { .gen-cols { grid-template-columns: 1fr; } }
+
+/* Model check report + refusal-fallback notice (Phase 6 update) */
+table.report { border-collapse: collapse; background: var(--card); border: 1px solid var(--line); border-radius: 8px; font-size: 0.92rem; margin: 10px 0 16px; }
+table.report th, table.report td { text-align: left; padding: 6px 14px; border-bottom: 1px solid var(--line); }
+table.report th { font-weight: 600; color: var(--muted, #666); font-size: 0.85rem; }
+.fallback-notice { background: #fff8e6; border: 1px solid #f0d58c; border-radius: 6px; padding: 8px 12px; margin: 8px 0; }
+.fallback-notice ul { margin: 4px 0 0; padding-left: 18px; }

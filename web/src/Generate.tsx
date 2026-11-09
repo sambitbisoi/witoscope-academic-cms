@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { buildPrompt, difficultiesFor, type GenerateSettings } from '../../shared/generation.ts';
 import { setStatus } from './editApi';
-import { estimateUsd, loadContext, loadPack, runBatch, runNow, runRecord, type DraftOutcome, type GenContext } from './genApi';
+import { estimateUsd, loadContext, loadPromptParts, runBatch, runNow, runRecord, type DraftOutcome, type GenContext, type PromptParts, type RunParams } from './genApi';
 import { browseHash, STATUS_LABEL, subjectOfChapter } from './logic';
 import { supabase } from './supabase';
 
@@ -11,7 +11,7 @@ const usd = (n: number) => `$${n.toFixed(n < 0.1 ? 4 : 2)}`;
 
 export function GenerateScreen({ questionId, setId, topicId }: { questionId: string | null; setId: string | null; topicId: string | null }) {
   const [ctx, setCtx] = useState<GenContext | null>(null);
-  const [pack, setPack] = useState<Awaited<ReturnType<typeof loadPack>> | null>(null);
+  const [pack, setPack] = useState<PromptParts | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [count, setCount] = useState(5);
   const [level, setLevel] = useState<'same' | 'missing' | Lvl>('same');
@@ -22,7 +22,7 @@ export function GenerateScreen({ questionId, setId, topicId }: { questionId: str
 
   useEffect(() => {
     loadContext(questionId ? { questionId } : { setId: setId ?? '', topicId: topicId ?? '' })
-      .then(async (c) => { setCtx(c); setLevel(questionId ? 'same' : 'missing'); setPack(await loadPack(c.classLevel)); })
+      .then(async (c) => { setCtx(c); setLevel(questionId ? 'same' : 'missing'); setPack(await loadPromptParts(c)); })
       .catch((e) => setError(e.message));
   }, [questionId, setId, topicId]);
 
@@ -36,8 +36,9 @@ export function GenerateScreen({ questionId, setId, topicId }: { questionId: str
 
   if (error) return <main><p className="error">Couldn't prepare generation: {error}</p></main>;
   if (!ctx || !settings) return <main><p className="muted">Preparing…</p></main>;
-  const prompt = buildPrompt(ctx.source, settings);
-  const estimate = pack ? estimateUsd(ctx.config, pack.text.length, prompt.length, count, batch) : null;
+  const model = ctx.config.models.generate;
+  const prompt = pack ? buildPrompt(ctx.source, settings, pack.context.text) : '';
+  const estimate = pack ? estimateUsd(ctx.config, model, pack.rules.text.length + prompt.length, count * 900, batch) : null;
   const left = ctx.config.dailyCapUsd - ctx.spentToday;
   const overCap = estimate !== null && estimate > left;
 
@@ -76,7 +77,7 @@ export function GenerateScreen({ questionId, setId, topicId }: { questionId: str
         </div>
       </div>
       <div className="save-preview">
-        <div className="small">Model <strong>{ctx.config.model}</strong> · today {usd(ctx.spentToday)} of {usd(ctx.config.dailyCapUsd)} · estimate up to {estimate === null ? '…' : usd(estimate)}
+        <div className="small">Model <strong>{model}</strong> (ai_model_generate) · today {usd(ctx.spentToday)} of {usd(ctx.config.dailyCapUsd)} · estimate up to {estimate === null ? '…' : usd(estimate)}
           {' '}· {settings.difficulties.join(', ')}</div>
         {overCap && <div className="error small">This run could pass today's cap ({usd(left)} left). Ask for fewer drafts, use a batch, or raise ai_daily_cap_usd.</div>}
         {done && <div className="notice small">{done} <a href="#/">Home</a></div>}
@@ -115,8 +116,9 @@ export function RunScreen({ runId }: { runId: number }) {
   return (
     <main className="wide gen">
       <h2>Run {run.run_id} · {run.kind === 'fill_set' ? 'fill a question type' : 'generate similar'}</h2>
-      <div className="muted small">{run.model} · {run.status}{run.params.batch ? ' · batch' : ''} · {run.tokens_in ?? 0} in / {run.tokens_out ?? 0} out tokens · cost {usd(Number(run.cost ?? 0))}
-        {run.params.usage?.cache_read_input_tokens ? ` · ${run.params.usage.cache_read_input_tokens} cached` : ''}</div>
+      <div className="muted small">{run.params.model_used && run.params.model_used !== run.model ? `${run.model} → answered by ${run.params.model_used}` : run.model} · {run.status}{run.params.batch ? ' · batch' : ''} · {run.tokens_in ?? 0} in / {run.tokens_out ?? 0} out tokens · cost {usd(Number(run.cost ?? 0))}
+        {run.params.usage?.cache_read_input_tokens ? ` · ${run.params.usage.cache_read_input_tokens} cached` : ''}{run.params.prompt_tokens ? ` · prompt ${run.params.prompt_tokens} tokens` : ''}</div>
+      <FallbackNotice params={run.params} />
       {run.params.error && <p className="error">{run.params.error}</p>}
       {outcomes.length === 0 && !run.params.error && <p className="muted">No drafts yet{run.params.batch ? ': collect the batch from Jobs on Home.' : '.'}</p>}
       {drafts.length > 0 && (
@@ -153,5 +155,19 @@ export function RunScreen({ runId }: { runId: number }) {
         );
       })}
     </main>
+  );
+}
+
+/** Shown whenever a refusal fallback fired: which model declined, which answered, and what each attempt cost. */
+export function FallbackNotice({ params }: { params: RunParams }) {
+  const fb = params.fallback;
+  if (!fb) return null;
+  return (
+    <div className="warn fallback-notice" role="status">
+      <strong>Refusal fallback fired.</strong> {fb.from} declined; {fb.answered ? <>{fb.to} answered</> : <>{fb.to} declined too</>} ({fb.kind === 'server' ? 'server-side fallback' : 'retried by the AI function'}).
+      {params.attempts && params.attempts.length > 0 && (
+        <ul className="small">{params.attempts.map((a, i) => <li key={i}>{a.model} · {a.via === 'requested' ? 'requested' : a.via === 'server_fallback' ? 'server fallback' : 'retry'} · {a.stop_reason ?? 'ok'} · {a.usage.input_tokens + (a.usage.cache_read_input_tokens ?? 0) + (a.usage.cache_creation_input_tokens ?? 0)} in / {a.usage.output_tokens} out · {usd(a.cost)}</li>)}</ul>
+      )}
+    </div>
   );
 }
