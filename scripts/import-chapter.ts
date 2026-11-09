@@ -109,7 +109,7 @@ export function versionColumns(q: Question, topicId: string, d: ReturnType<typeo
     image_status: q.figure?.image_status ?? null,
     image_path: q.figure?.image_file ?? null,
     format: q.answer.format,
-    correct: q.answer.correct,
+    correct: q.answer.format === 'Multi-part' ? null : q.answer.correct,
     accepted: q.answer.accepted ?? [],
     duration_s: q.duration_s,
     math_difficulty: s.math_difficulty, is_pure_fact: s.is_pure_fact, reading: s.reading,

@@ -163,7 +163,9 @@ export function parseSeed(sheets: Map<string, Cell[][]>, ruleVersion: string): S
     if (!w.value) { err(`Gold Wrong Answers row ${row}`, `${qid}: wrong value is empty`); continue; }
     const m = s(v['Misconception_Ref']); if (m) w.misconception_id = m;
     const tc = s(v['Target_Concept']); if (tc) w.target_concept_id = tc;
-    const why = s(v['Why']); if (why) w.why = why;
+    // Reviewer verdict and notes are kept in why (Sambit, 9 Nov 2026).
+    const why = [s(v['Why']), s(v['Your verdict']) && `Verdict: ${s(v['Your verdict'])}`, s(v['Your notes']) && `Notes: ${s(v['Your notes'])}`].filter(Boolean).join(' · ');
+    if (why) w.why = why;
     wrongByQid.set(qid, [...(wrongByQid.get(qid) ?? []), w]);
   }
 
@@ -180,7 +182,6 @@ export function parseSeed(sheets: Map<string, Cell[][]>, ruleVersion: string): S
     let format: Format;
     if (rawFormat === 'Typed' || rawFormat === 'Multi-part (typed)') {
       format = typedFormat(correct);
-      if (rawFormat !== 'Typed') warn(where, `${qid}: "${rawFormat}" row kept as its own gold question with format ${format} [guess]`);
     } else if (['MCQ-4', 'MCQ-3', 'True/False'].includes(rawFormat)) format = rawFormat as Format;
     else { err(where, `${qid}: unknown format "${rawFormat}"`); continue; }
 
@@ -231,6 +232,112 @@ export function parseSeed(sheets: Map<string, Cell[][]>, ruleVersion: string): S
     });
   }
   for (const qid of wrongByQid.keys()) if (!gold.some((g) => g.qid === qid)) warn('Gold Wrong Answers', `${qid} is not on Gold Questions`);
+  const merged = mergeParts(gold, warn);
 
-  return { strategyTypes, insights, concepts, conceptLinks, prereqTopics, misconceptions, typicalSets, setConcepts, attributeDefs, rubric, calibration, gold, problems };
+  return { strategyTypes, insights, concepts, conceptLinks, prereqTopics, misconceptions, typicalSets, setConcepts, attributeDefs, rubric, calibration, gold: merged, problems };
+}
+
+const DURATIONS = [30, 60, 90, 120] as const;
+const DIFF = ['Simple', 'Medium', 'Complex'] as const;
+
+/**
+ * Multi-part gold rows ("one row per part", QIDs G5-007-a, G5-007-b) become ONE gold
+ * question (G5-007, format Multi-part) with parts a, b, each keeping its own text,
+ * answer, format, concepts and wrong-answer tags (Sambit, 9 Nov 2026). Question-level
+ * fields the design keeps once per version are combined [guesses, listed in the PR]:
+ * stem = part (a)'s text before "(a)"; topic = part (a)'s; concepts = union at the
+ * highest involvement; signature = highest value per attribute, steps added up;
+ * duration = sum, capped at 120; solutions and hints joined with (a)/(b) labels.
+ */
+export function mergeParts(gold: Seed['gold'], warn: (where: string, message: string) => void): Seed['gold'] {
+  // Keep the sheet order: a single question stays where it is; a multi-part
+  // question takes the place of its first part row.
+  const order: (Seed['gold'][number] | string)[] = [];
+  const groups = new Map<string, Seed['gold']>();
+  for (const g of gold) {
+    const m = /^(G[1-6]-\d{3})-([a-z])$/.exec(g.qid);
+    if (!m) { order.push(g); continue; }
+    if (!groups.has(m[1]!)) { groups.set(m[1]!, []); order.push(m[1]!); }
+    groups.get(m[1]!)!.push(g);
+  }
+  return order.map((x) => {
+    if (typeof x !== 'string') return x;
+    const base = x;
+    const rows = groups.get(base)!.sort((a, b) => a.qid.localeCompare(b.qid));
+    const label = (g: Seed['gold'][number]) => g.qid.slice(-1);
+    const first = rows[0]!;
+    const fq = first.question;
+    const where = `Gold ${base}`;
+    if (rows.length < 2) warn(where, `only one part row (${first.qid}); kept as a one-part question`);
+    for (const r of rows.slice(1)) {
+      for (const [k, a, b] of [['chapter', r.chapter_id, first.chapter_id], ['class', r.class, first.class], ['typical set', r.question.typical_set_id, fq.typical_set_id],
+        ['clone batch', r.question.clone_batch_id, fq.clone_batch_id], ['use', r.meta.use, first.meta.use]] as const) {
+        if (a !== b) warn(where, `part ${label(r)} has ${k} ${a}, part ${label(first)} has ${b}; using part ${label(first)}'s`);
+      }
+      if (r.question.topic_id !== fq.topic_id) warn(where, `part ${label(r)} is in topic ${r.question.topic_id}, part ${label(first)} in ${fq.topic_id}; the question uses ${fq.topic_id} [guess]`);
+    }
+
+    // stem and part texts
+    const aText = fq.text;
+    const cut = aText.search(/\(a\)/);
+    const stem = cut > 0 ? aText.slice(0, cut).trim() : aText;
+    const parts = rows.map((r, i) => ({
+      part_label: label(r),
+      text: i === 0 && cut > 0 ? aText.slice(cut).trim() : r.question.text,
+      answer: r.question.answer,
+      concepts: r.question.concepts,
+    }));
+
+    // question-level concepts: union, highest involvement, ordered by involvement
+    const inv = new Map<string, number>();
+    for (const p of parts) for (const c of p.concepts) inv.set(c.concept_id, Math.max(inv.get(c.concept_id) ?? 0, c.involvement));
+    const concepts = [...inv].sort((a, b) => b[1] - a[1]).map(([concept_id, involvement]) => ({ concept_id, involvement: involvement as ConceptRef['involvement'] }));
+    if (concepts.length > 3) warn(where, `${concepts.length} concepts across the parts; the question keeps the top 3`);
+
+    // signature
+    const sigs = rows.map((r) => r.question.signature);
+    const max = (k: 'reading' | 'working_memory' | 'inhibition' | 'visual' | 'strategy') => Math.max(...sigs.map((x) => x[k]));
+    const firstOf = <K extends keyof Question['signature']>(k: K) => sigs.find((x) => x[k] !== undefined)?.[k];
+    const signature: Question['signature'] = {
+      math_difficulty: DIFF[Math.max(...sigs.map((x) => DIFF.indexOf(x.math_difficulty)))]!,
+      is_pure_fact: sigs.every((x) => x.is_pure_fact), reading: max('reading'), has_irrelevant_info: sigs.some((x) => x.has_irrelevant_info),
+      steps: Math.min(20, sigs.reduce((n, x) => n + x.steps, 0)), working_memory: max('working_memory'), inhibition: max('inhibition'),
+      visual: max('visual'), strategy: max('strategy'),
+    };
+    for (const k of ['strategy_type', 'strategy_type_2', 'strategy_other_note', 'insight_id'] as const) {
+      const v = firstOf(k); if (v !== undefined) (signature as unknown as Record<string, unknown>)[k] = v;
+    }
+
+    const total = rows.reduce((n, r) => n + r.question.duration_s, 0);
+    const duration = (DURATIONS.find((d) => d >= total) ?? 120) as Question['duration_s'];
+    if (total > 120) warn(where, `parts add up to ${total} s; duration capped at 120 s (the largest allowed value) [guess]`);
+
+    const tag = (g: Seed['gold'][number], t: string) => `(${label(g)}) ${t}`;
+    const second = rows.filter((r) => r.question.solutions.second);
+    const solutions: Question['solutions'] = { school: rows.map((r) => tag(r, r.question.solutions.school)).join('\n') };
+    if (second.length) {
+      const s2 = second.map((r) => r.question.solutions.second!);
+      solutions.second = { text: second.map((r) => tag(r, r.question.solutions.second!.text)).join('\n'), type: s2[0]!.type, ...(s2[0]!.strategy ? { strategy: s2[0]!.strategy } : {}) };
+      if (new Set(s2.map((x) => x.type)).size > 1) warn(where, `parts have different Solution 2 types; using ${s2[0]!.type}`);
+    }
+    const levels = Math.max(...rows.map((r) => r.question.hints.length));
+    const hints = Array.from({ length: Math.min(3, levels) }, (_, i) => rows.filter((r) => r.question.hints[i]).map((r) => tag(r, r.question.hints[i]!)).join(' '));
+    const figures = rows.filter((r) => r.question.figure);
+
+    const question: Question = {
+      key: base, topic_id: fq.topic_id, typical_set_id: fq.typical_set_id, clone_batch_id: fq.clone_batch_id, locale: 'IN', text: stem,
+      ...(figures.length ? { figure: { description: figures.map((r) => tag(r, r.question.figure!.description)).join('\n'), image_status: 'needs_image' as const } } : {}),
+      answer: { format: 'Multi-part', correct: '' }, parts, concepts: concepts.slice(0, 3), signature, duration_s: duration, solutions, hints,
+      tagging: { tagged_by: 'human' },
+    };
+    const join = (f: (g: Seed['gold'][number]) => string | null) => rows.map((r) => (f(r) ? tag(r, f(r)!) : null)).filter(Boolean).join('\n') || null;
+    return {
+      qid: base, class: first.class, chapter_id: first.chapter_id, subject: first.subject, question,
+      meta: {
+        use: first.meta.use,
+        old_qid: [`parts ${rows.map((r) => r.qid).join(' / ')}`, rows.some((r) => r.meta.old_qid) && `earlier ${rows.map((r) => r.meta.old_qid ?? '—').join(' / ')}`].filter(Boolean).join('; '),
+        final_reasoning: join((r) => r.meta.final_reasoning), review_verdict: join((r) => r.meta.review_verdict), review_notes: join((r) => r.meta.review_notes),
+      },
+    };
+  });
 }

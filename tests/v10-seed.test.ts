@@ -93,6 +93,43 @@ describe('parseSeed', () => {
     expect(s2.gold[0]!.question.answer.options).toEqual(['True', 'False']);
   });
 
+  it('multi-part rows become ONE gold question with parts a and b', () => {
+    const a = gq({ ...base, QID: 'G5-007-a', 'Old QID': 'G6-017-a', Class: 5, 'Chapter (Class View)': 'MC21 Decimal Operations', 'Topic (Class View)': 'MT0404 Add',
+      TypicalSetID: 'TS-G5-MONEY', 'Question text': 'Arjun buys a pen for ₹23.50 and a notebook for ₹36.75. (a) What is the total cost?', Format: 'Multi-part (typed)',
+      'Correct answer': '60.25', 'Accepted equivalents': '₹60.25', 'Concept 1': 'G5-DEC-C2', 'Inv 1': 1, 'Steps (1–20)': 1, 'WorkingMemory (1–5)': 1, 'Reading (1–5)': 2,
+      'Expected duration (s)': 90, 'Solution 1 (school method)': '23.50 + 36.75 = 60.25.', 'Hint 1': 'Line up.', 'Hint 2': 'Paise first.', 'Why (final reasoning)': 'Plain add.' });
+    const b = gq({ ...base, QID: 'G5-007-b', 'Old QID': 'G6-017-b', Class: 5, 'Chapter (Class View)': 'MC21 Decimal Operations', 'Topic (Class View)': 'MT0405 Subtract',
+      TypicalSetID: 'TS-G5-MONEY', 'Question text': '(b) He pays with a ₹100 note. How much change?', Format: 'Multi-part (typed)', 'Correct answer': '39.75',
+      'Accepted equivalents': null, 'Concept 1': 'G5-DEC-A1', 'Inv 1': 1, 'Concept 2': 'G5-DEC-C3', 'Inv 2': 0.5, 'Steps (1–20)': 1, 'WorkingMemory (1–5)': 2,
+      'Reading (1–5)': 2, 'Expected duration (s)': 90, 'Solution 1 (school method)': '100 − 60.25 = 39.75.', 'Solution 2': 'Count up.', 'Solution 2 type': 'Smarter way',
+      'Solution 2 strategy': 'Smart calculation', 'Hint 1': 'Use (a).', 'Why (final reasoning)': 'WM 2.' });
+    const s4 = parseSeed(workbook([a, b]), 'v10');
+    expect(s4.gold.map((g) => g.qid)).toEqual(['G5-007']);
+    const g = s4.gold[0]!;
+    expect(g.question).toMatchObject({ key: 'G5-007', topic_id: 'MT0404', text: 'Arjun buys a pen for ₹23.50 and a notebook for ₹36.75.', duration_s: 120,
+      answer: { format: 'Multi-part' } });
+    expect(g.question.parts!.map((p) => [p.part_label, p.text, p.answer.format, p.answer.correct, p.concepts.map((c) => c.concept_id)])).toEqual([
+      ['a', '(a) What is the total cost?', 'Typed-decimal', '60.25', ['G5-DEC-C2']],
+      ['b', '(b) He pays with a ₹100 note. How much change?', 'Typed-decimal', '39.75', ['G5-DEC-A1', 'G5-DEC-C3']],
+    ]);
+    expect(g.question.concepts).toEqual([{ concept_id: 'G5-DEC-C2', involvement: 1 }, { concept_id: 'G5-DEC-A1', involvement: 1 }, { concept_id: 'G5-DEC-C3', involvement: 0.5 }]);
+    expect(g.question.signature).toMatchObject({ steps: 2, working_memory: 2, reading: 2 });
+    expect(g.question.solutions).toEqual({ school: '(a) 23.50 + 36.75 = 60.25.\n(b) 100 − 60.25 = 39.75.', second: { text: '(b) Count up.', type: 'Smarter way', strategy: 'Smart calculation' } });
+    expect(g.question.hints).toEqual(['(a) Line up. (b) Use (a).', '(a) Paise first.']);
+    expect(g.meta.old_qid).toBe('parts G5-007-a / G5-007-b; earlier G6-017-a / G6-017-b');
+    expect(s4.problems.map((p) => p.message)).toEqual(expect.arrayContaining([
+      'part b is in topic MT0405, part a in MT0404; the question uses MT0404 [guess]',
+      'parts add up to 180 s; duration capped at 120 s (the largest allowed value) [guess]',
+    ]));
+  });
+
+  it('wrong-answer verdict and notes are kept in why', () => {
+    const wb = workbook();
+    wb.set('Gold Wrong Answers', sheet(['QID', 'Wrong value', 'Tag type', 'Misconception_Ref', 'Target_Concept', 'Why', 'Your verdict', 'Your notes'],
+      ['G6-001', '-10', 'misconception', 'G6-M-INT2', null, 'adds', 'Changed', 'was unit_slip'], ['G6-001', 4, 'unit_slip', null, null, null, null, 'sign only']));
+    expect(parseSeed(wb, 'v10').gold[0]!.question.answer.wrong_answers!.map((w) => w.why)).toEqual(['adds · Verdict: Changed · Notes: was unit_slip', 'Notes: sign only']);
+  });
+
   it('errors in plain words', () => {
     const s3 = parseSeed(workbook([gq({ ...base, QID: 'X-1' }), gq({ ...base, QID: 'G6-002', Use: 'Maybe' }),
       gq({ ...base, QID: 'G6-003', 'Solution 2': 'Faster.', 'Solution 2 type': null })]), 'v10');
