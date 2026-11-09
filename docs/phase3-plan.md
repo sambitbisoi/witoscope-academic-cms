@@ -67,3 +67,15 @@ Layout follows the wireframe: three columns on wide screens, stacked on narrow o
 | 7 | Unit tests for the pure helpers (gaps, grouping, signature labels) | S | 1 |
 | 8 | Deploy files (`_headers`, `robots.txt`) + checklist section B | S | 1 |
 | 9 | Screenshots, real-project migration + `db-verify`, PR | S | — |
+
+## 7. As built (9 Nov)
+
+| Item | Result |
+|---|---|
+| Migration 0010 | Applied locally and on the real project; `db-verify` passes there (all checks, including "every view is security_invoker") |
+| Tests | 136 unit tests, 42 database tests (app user: zero rows from every view; admin: rows) |
+| CSP | Production build served locally with the `_headers` CSP: no violations |
+| Screenshots | Kept out of git: they show question-bank content. Shared locally with Sambit |
+| Safety fix | `.env` had been pointed at the real project. npm scripts now ignore `.env` and default to the local database; the real project is only reached with `--env-file=.env.real` |
+
+Guesses, all listed in the PR: G1 later-phase buttons are left out rather than disabled; G2 coverage rule; G3 gaps only for topics that have questions; G4 Home leaves out "Upload new source" and shows the review queue as a count; G5 both statuses shown when the approved version is older; G6 the concept tab lists question-level concepts (part-level concepts appear in the detail panel); G7 search matches ID or name, with ordinary topics first; G8 grade and last Browse location are remembered per browser; G9 no Sources tab until Phase 4; G10 Achievers rows come last in each chapter, in italics; G11 Pages Git integration with `NODE_VERSION=22`; G12 *More* is collapsed by default; G13 retired topics are hidden from the tree unless open.
