@@ -21,7 +21,8 @@
     "db:verify": "tsx scripts/db-verify.ts",
     "db:local:storage": "tsx scripts/local-bootstrap.ts --storage",
     "import:sources": "tsx scripts/import-sources.ts",
-    "import:book": "tsx scripts/import-book.ts"
+    "import:book": "tsx scripts/import-book.ts",
+    "upload:sources": "tsx scripts/upload-sources.ts"
   },
   "devDependencies": {
     "@types/node": "22.9.0",
