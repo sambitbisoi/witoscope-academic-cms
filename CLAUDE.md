@@ -10,7 +10,7 @@ Design source of truth: `docs/phase1-design.md` (approved 8 Nov 2026). Question 
 - The `scripts/check-migrations` check must pass; it rejects any migration that names another schema.
 - Migrations and server functions connect as role `cms_owner` (rights on `cms` only), never with `service_role`.
 - RLS is enabled on every table and allows only the admin user ID stored in `cms_config`.
-- Storage: only the private bucket `cms-sources`.
+- Files (PDFs, scans, screenshots, figure images): only the private **Cloudflare R2** bucket `cms-sources`. Supabase keeps only text and metadata, with each file's R2 key. Files are reached only through the `/api/files` Pages Function, which validates the Cloudflare Access JWT and issues short-lived signed URLs. No Supabase Storage.
 - Publishing to the app (Phase 8) is designed separately and needs Sambit's explicit approval.
 
 ## Content rules
@@ -30,7 +30,7 @@ Design source of truth: `docs/phase1-design.md` (approved 8 Nov 2026). Question 
 - Secrets (Supabase keys, DB passwords, Claude API key) never go in the repo; AI calls run server-side only.
 
 ## Stack
-React + TypeScript + Vite · Supabase (Postgres, Auth, Storage; pgvector later) · Supabase Edge Functions for AI and import jobs · Cloudflare Pages behind Cloudflare Access.
+React + TypeScript + Vite · Supabase (Postgres, Auth; pgvector later) · Supabase Edge Functions for AI and import jobs · Cloudflare Pages (+ Pages Functions) behind Cloudflare Access · Cloudflare R2 for files.
 
 ## Phases
 1. Data model + JSON schema — **done**

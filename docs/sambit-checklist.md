@@ -43,18 +43,20 @@ Do A1–A5 first: the deployed site only works once `cms` is exposed. Do **C rig
 
 Optional, later: a custom domain (Pages → Custom domains), then add it to the Access application as well.
 
-## D. Storage for source PDFs (Phase 4, decision D1 = a)
+## D. Cloudflare R2 for files (Phase 4)
 
-Already done by Claude on the real project (inside `cms` only): migration 0011, the NCERT source registry (180 chapter PDFs, 647 chapter links) and the NCERT-C6-01 book file (42 items, 7 jumps).
+Files (PDFs, scans, screenshots, figure images) live in a private R2 bucket; Supabase keeps only metadata and each file's R2 key. The CMS reaches files only through its Pages Function `/api/files`, which checks your Cloudflare Access login and hands out 5-minute signed links. Supabase Storage is **not** used, so there's no storage script to run in Supabase.
 
-PDF sizes checked 9 Nov: 83 NCERT Math PDFs on this Mac, already one per chapter, the largest 23.4 MB (limit 50 MB), so no splitting is needed; 77 of them are registered sources (355 MB). **No DAV scans are on this Mac yet.**
+Already done by Claude on the real project (inside `cms` only): migration 0011, the NCERT source registry (180 chapter PDFs, 647 links) and the NCERT-C6-01 book file. Do B and C first: the function lives in the Pages project, behind the Access application.
 
 | # | Where | Exact steps | Expected result |
 |---|---|---|---|
-| D1 | Supabase → **Project Settings → Usage** (and Storage → Buckets) | Check the project's current storage use against your plan. Uploading the 77 PDFs adds **≈ 355 MB**; the Free plan allows 1 GB in total, shared with the app's own files | Enough headroom (or upgrade first) |
-| D2 | Supabase → **SQL editor** | Paste all of `db/bootstrap/02-storage.sql` and run it. It creates the **private** bucket `cms-sources` (≤ 50 MB per file; PDF/PNG/JPEG/WebP) and 3 admin-only policies on that bucket. It touches nothing of the app's | The last row: all six columns `true` |
-| D3 | Supabase → **Storage → Buckets** | Look at `cms-sources` | Shows **Private**, 50 MB limit |
-| D4 | Chat | Tell Claude D2 is done | Claude runs `db-verify` (storage checks) |
-| D5 | Terminal, in the repo (needs A2: the URL and anon key in `.env.real`) | `export CMS_VERIFY_EMAIL='<your login email>'`, then `read -s CMS_VERIFY_PASSWORD && export CMS_VERIFY_PASSWORD`, then `npx tsx --env-file=.env.real scripts/upload-sources.ts --dry-run` (shows 77 files, 355 MB), then the same command without `--dry-run` | "uploaded 77/77". Uploads run as you, through the bucket's policies |
-| D6 | CMS → Browse → any Class 6 Math topic in MC27 → **Sources** | Click *Open full screen* and a section jump, e.g. "1.4 … p6" | The PDF opens in a new tab at that page |
-| D7 | Finder | When you have the DAV scans, put them under `~/WitoScope/ContentResearch/Math/DAV/` and tell Claude | Claude checks sizes, splits any book over 50 MB into chapter PDFs, and sets page offsets |
+| D1 | Cloudflare dashboard → **R2 Object Storage** | If asked, enable R2 for the account (the free tier covers 10 GB; a payment method may be required). **Create bucket** → name `cms-sources`, location *Automatic*, storage class *Standard*. Leave **public access off**: no r2.dev subdomain and no custom domain | Bucket `cms-sources`, *Public access: Disabled* |
+| D2 | Pages project → **Settings → Bindings** → Add → **R2 bucket** | Variable name `CMS_SOURCES`, bucket `cms-sources`. Add it for **Production** and **Preview** | Binding listed |
+| D3 | Zero Trust → Access → **Applications** → `WitoScope CMS` (from C1) | Copy the **Application Audience (AUD) Tag**. Then Zero Trust → **Settings → Custom pages / General**: note your **team domain** (`<team>.cloudflareaccess.com`) | Both copied |
+| D4 | Pages project → **Settings → Variables and secrets** (Production **and** Preview) | Add the plain-text variables `ACCESS_TEAM_DOMAIN` = `<team>.cloudflareaccess.com`, `ACCESS_AUD` = the AUD tag and `ACCESS_ALLOWED_EMAILS` = your email. Add the **Secret** `FILES_SIGNING_KEY` = the output of `openssl rand -base64 48` (don't save it anywhere else). Then **Deployments → latest → Retry deployment** | The new deployment succeeds |
+| D5 | Terminal | `curl -s -o /dev/null -w '%{http_code} %{redirect_url}\n' 'https://<project>.pages.dev/api/files/sign?key=x'` | `302` to `…cloudflareaccess.com…`: without Access the request never reaches the function. (The function also refuses on its own; the tests cover this) |
+| D6 | Terminal, in the repo | `npx wrangler@4.151.2 login` (a browser window asks you to allow Wrangler) | "Successfully logged in" |
+| D7 | Terminal, in the repo | First real upload, **Class 6 Math only**: `npx tsx --env-file=.env.real scripts/upload-sources.ts --class 6 --subject math --dry-run` (lists 10 Ganita Prakash PDFs, 21.7 MB), then the same command without `--dry-run` | "uploaded 10/10"; each source's R2 key is recorded in the CMS |
+| D8 | CMS (deployed) → Browse → Class 6 Math → a topic in MC27 → **Sources** | Click *Open full screen* on "Ganita Prakash … Ch 1", then the jump "1.4 … p6" | The PDF opens in a new tab at that page |
+| D9 | Finder | When you have the DAV scans, put them under `~/WitoScope/ContentResearch/Math/DAV/` and tell Claude | Claude checks sizes, splits any book over 50 MB per chapter, and sets page offsets |

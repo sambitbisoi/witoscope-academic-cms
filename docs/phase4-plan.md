@@ -1,6 +1,6 @@
 # Phase 4 plan: Chapter Sources tab
 
-Decisions (Sambit, 9 Nov): **D1 = a**, **D2 go ahead**, **D3 import the source and item rows now, without the v11 fields**. PDF sizes checked: no splitting needed (see §4).
+Decisions (Sambit, 9 Nov): ~~D1 = a (Supabase Storage)~~ → **files in a private Cloudflare R2 bucket `cms-sources`**, served by a Pages Function that validates the Cloudflare Access JWT and issues short-lived signed URLs; Supabase keeps only text, metadata and each file's R2 key; a local stand-in in dev; first real upload Class 6 Math only. **D2 go ahead**. **D3 import the source and item rows now, without the v11 fields**. PDF sizes checked: no splitting needed (see §4).
 
 9 Nov 2026. Sources: design §2E (source tables, which already exist since migration 0006), `docs/wireframe/Sources.dc.html`, CLAUDE.md ("Storage: only the private bucket `cms-sources`"; "book questions are internal references only").
 
@@ -27,7 +27,7 @@ Decisions (Sambit, 9 Nov): **D1 = a**, **D2 go ahead**, **D3 import the source a
 
 | # | Item | Size |
 |---|---|---|
-| 1 | `db/bootstrap/02-storage.sql` (for you to run) + `db-verify` storage checks | S |
+| 1 | ~~`db/bootstrap/02-storage.sql`~~ → R2 file service (Pages Function) + local stand-in | S |
 | 2 | Migration 0011: write grants (D2) + a view of source counts per chapter (security_invoker) | S |
 | 3 | Sources tab (list, open at page, gallery) | M |
 | 4 | Add / edit source form with Save, upload to `cms-sources/<source_id>/…` | M |
@@ -39,13 +39,13 @@ Decisions (Sambit, 9 Nov): **D1 = a**, **D2 go ahead**, **D3 import the source a
 | Item | Result |
 |---|---|
 | PDF sizes | 83 NCERT Math PDFs on this Mac, already one per chapter, largest 23.4 MB (limit 50 MB): no splitting. No DAV scans on this Mac yet (checklist D7) |
-| Bootstrap 02 | Private bucket + 3 admin-only policies (no delete). Tested locally through the Storage API: admin uploads, replaces and reads; can't delete; app user and anon get nothing; only PDF and images |
+| Files (R2) | `functions/api/files/[[path]].ts` (Pages Function, R2 binding `CMS_SOURCES`): `sign` and `put` require a valid Access JWT (RS256 from the team's keys, AUD, issuer, expiry, allowed email); `get` serves a file only with a 5-minute HMAC-signed link; no list, no delete; PDF/PNG/JPEG/WebP ≤ 50 MB. 18 tests incl. refusal without Access; builds with wrangler 4.151.2. Local stand-in: `npm run dev:files` (same code, folder bucket `.r2-local/`, local Access key; Vite adds the token). Supabase Storage dropped (bootstrap 02 removed; never run on the real project) |
 | Migration 0011 | Write grants (D2) in one checked list (`scripts/lib/grants.ts`); audit-log inserts; `cms_chapter_sources` view. Local and real; `db-verify` passes on both |
 | `import:sources` | 180 NCERT chapter PDFs (Math 77, Science 44, English 59), 647 chapter links. Local and real |
 | `import:book` | NCERT-C6-01: 42 items, 7 jumps (6 sections + Answers), PDF page range on MC27. Accepts book schema 0.1 and 0.2. Local and real |
-| `upload:sources` | Local: 77 PDFs (355 MB) uploaded as the admin. Real: checklist D5 (needs your login) |
-| UI | Sources tab (open at page via 1-hour signed URLs, jumps, gallery, add/edit with Save + audit); question detail resolves source refs to book items |
-| Tests | 142 unit, 51 database (incl. 6 Storage API tests, app-user writes refused by RLS); end-to-end Sources flow in Chrome |
+| `upload:sources` | Local: 77 PDFs into the R2 stand-in. Real: `wrangler r2 object put --remote` under Sambit's Cloudflare login, first batch `--class 6 --subject math` (10 PDFs, 21.7 MB): checklist D6–D7 |
+| UI | Sources tab (open at page via 5-minute signed URLs from `/api/files`, jumps, gallery, add/edit with Save + audit; uploads through `/api/files/put`); question detail resolves source refs to book items. End to end in Chrome against the stand-in |
+| Tests | 160 unit (incl. 18 file-service/Access), 45 database (app-user writes refused by RLS); end-to-end Sources flow in Chrome |
 
 Guesses, all listed in the PR:
 - **P1:** a source's ID is `NCERT-<pdf file stem>`, e.g. `NCERT-fegp101`.
@@ -57,8 +57,11 @@ Guesses, all listed in the PR:
 - **P7:** sources sort NCERT, DAV, IXL, SOF, other, with the topic's class first.
 - **P8:** the form suggests an ID from publisher + title, editable under *More* and permanent after Save.
 - **P9:** edits can add jumps and change pages, but not remove jumps.
-- **P10:** replacing a file overwrites the same path; there's no delete.
+- **P10:** replacing a file overwrites the same R2 key; there's no delete or list.
 - **P11:** the tab shows the sources of the topic's chapter.
-- **P12:** signed URLs last 1 hour.
+- **P12:** signed links last 5 minutes and are HMAC-signed by the function itself (via the R2 binding), not R2's own presigned URLs, so no R2 API keys exist anywhere.
+- **P15:** the function checks the email in the Access JWT against `ACCESS_ALLOWED_EMAILS`, on top of the Access policy; service tokens (no email) are refused.
+- **P16:** `storage_path` (sources, assets) and `image_path` (versions) hold the R2 key; the columns weren't renamed.
+- **P17:** real uploads go through `wrangler r2 object put` under Sambit's own Cloudflare login, rather than through the function with a service token.
 - **P13:** a browser save is upload → rows → audit, not one transaction; errors are shown, and a failed save can leave an unused file.
 - **P14:** DAV isn't registered until the scans exist.
