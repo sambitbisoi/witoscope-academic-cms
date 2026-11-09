@@ -9,14 +9,13 @@
     "by": "Claude chat thread",
     "thread": "Fractions pilot rerun (example only)",
     "date": "2026-11-08",
-    "notes": "Worked example for the Phase 1 design review. Pattern ID and source ref are illustrative."
+    "notes": "Worked example for the Phase 1 design review. 9 Nov 2026: pattern_id and Solution 2 strategy removed so it imports cleanly against the v10 seed. The source ref (N7-031) is illustrative; it gives a warning until sources arrive in Phase 4."
   },
   "questions": [
     {
       "key": "MC19-0001",
       "topic_id": "MT0393",
       "typical_set_id": "TS-G6-FRAC-ADD-UNLIKE",
-      "pattern_id": "MP0007",
       "clone_batch_id": "g6-frac-sub-unlike-01",
       "locale": "IN",
       "text": "5/6 − 1/4 = ?",
@@ -50,8 +49,7 @@
         "school": "LCM of 6 and 4 is 12. 5/6 = 10/12 and 1/4 = 3/12. 10/12 − 3/12 = 7/12.",
         "second": {
           "text": "Use 24 as the common denominator: 20/24 − 6/24 = 14/24 = 7/12.",
-          "type": "Another way",
-          "strategy": "Smart calculation"
+          "type": "Another way"
         }
       },
       "hints": [

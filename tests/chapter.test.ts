@@ -51,8 +51,13 @@ describe('schema', () => {
 });
 
 describe('checks (design §8)', () => {
-  it('the worked example passes, with the v10 Smart-calculation warning', () => {
-    expect(msgs(example)).toEqual(['warning: solution 2 uses Smart calculation, so its type should be "Smarter way", not "Another way" (v10 rule)']);
+  it('the worked example passes with no problems', () => {
+    expect(msgs(example)).toEqual([]);
+  });
+
+  it('v10 rule: Solution 2 with Smart calculation should be typed "Smarter way"', () => {
+    const q = q0(); q.solutions.second!.strategy = 'Smart calculation';
+    expect(msgs(withQ(q))).toEqual(['warning: solution 2 uses Smart calculation, so its type should be "Smarter way", not "Another way" (v10 rule)']);
   });
 
   it('every referenced ID must exist', () => {

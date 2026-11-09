@@ -21,6 +21,7 @@ function baseFile(): ChapterFile {
     .replaceAll('MP0007', 'MP9998').replaceAll('G6-M-FRC1', 'G6-M-ZZZ1').replaceAll('G6-FRC-C1', 'G6-ZZZ-C1');
   const f = JSON.parse(s) as ChapterFile;
   f.patterns = [{ pattern_id: 'MP9998', topic_id: 'MT9998', typical_set_id: 'TS-G6-ZZ-TEST', name: 'Test pattern' }];
+  f.questions[0]!.pattern_id = 'MP9998';
   return f;
 }
 let n = 0;
