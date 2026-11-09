@@ -2,16 +2,24 @@ import { useEffect, useState } from 'react';
 import { questionDetail, type QuestionDetailData } from './api';
 import { derivedRows, signatureRows, STATUS_LABEL, TAG_LABEL } from './logic';
 import { openSource, sourceItems } from './sourcesApi';
+import { questionFromDb } from '../../shared/fromDb.ts';
+import { structureDiff } from '../../shared/save.ts';
+import { textsOf } from '../../shared/version.ts';
+import { bundleOf, retire, setStatus } from './editApi';
 import { supabase } from './supabase';
 
-export function QuestionDetail({ id, versionNo, onVersion }: { id: string; versionNo: number | null; onVersion: (v: number | null) => void }) {
+export function QuestionDetail({ id, versionNo, onVersion, onEdit, reloadKey = 0, onChanged }: {
+  id: string; versionNo: number | null; onVersion: (v: number | null) => void; onEdit?: () => void; reloadKey?: number; onChanged?: () => void;
+}) {
   const [d, setD] = useState<QuestionDetailData | null | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
   const [more, setMore] = useState(false);
+  const [tick, setTick] = useState(0);
+  const [compare, setCompare] = useState<number | null>(null);
   useEffect(() => {
     setD(undefined); setError(null);
     questionDetail(id, versionNo).then(setD).catch((e) => setError(e.message));
-  }, [id, versionNo]);
+  }, [id, versionNo, reloadKey, tick]);
 
   if (error) return <p className="error">Couldn't load {id}: {error}</p>;
   if (d === undefined) return <p className="muted">Loading {id}…</p>;
@@ -37,6 +45,7 @@ export function QuestionDetail({ id, versionNo, onVersion }: { id: string; versi
           {q.retired_at && <strong> · retired</strong>}
         </div>
       </div>
+      {isCurrent && <Actions d={d} onEdit={onEdit} onChanged={() => { setTick((t) => t + 1); onChanged?.(); }} />}
       {!isCurrent && <div className="notice small">You're looking at an older version. <button className="link" onClick={() => onVersion(null)}>Show current (v{q.current_version})</button></div>}
 
       <div className="preview">
@@ -155,9 +164,11 @@ export function QuestionDetail({ id, versionNo, onVersion }: { id: string; versi
                   {x.version_no === v.version_no ? <strong>v{x.version_no}</strong> : <button className="link" onClick={() => onVersion(x.version_no === q.current_version ? null : x.version_no)}>v{x.version_no}</button>}
                   {' '}· {STATUS_LABEL[x.status] ?? x.status} · {x.created_from} · {new Date(x.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
                   {x.edited_at && <span className="muted"> · edited</span>}
+                  {x.version_no !== v.version_no && <> · <button className="link" onClick={() => setCompare(compare === x.version_no ? null : x.version_no)}>{compare === x.version_no ? 'hide comparison' : `compare with v${v.version_no}`}</button></>}
                 </li>
               ))}
             </ul>
+            {compare !== null && <Compare id={q.question_id} a={compare} b={v.version_no} />}
           </Section>
           {d.reviews.length > 0 && (
             <Section title="Audit log">
@@ -216,6 +227,78 @@ function Tag({ w, d }: { w: QuestionDetailData['wrong'][number]; d: QuestionDeta
       {w.target_concept_id && <> · <span className="mono">{w.target_concept_id}</span>{c ? ` ${c.name}` : ''}</>}
       {w.why && !m && <span className="muted"> · {w.why}</span>}
     </span>
+  );
+}
+
+/** Review and retire actions for the current version (Phase 5). Reasons are typed inline. */
+function Actions({ d, onEdit, onChanged }: { d: QuestionDetailData; onEdit?: () => void; onChanged: () => void }) {
+  const [ask, setAsk] = useState<null | 'reject' | 'retire' | 'restore'>(null);
+  const [reason, setReason] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const q = d.question, v = d.version;
+  const run = async (f: () => Promise<unknown>) => {
+    setBusy(true); setErr(null);
+    try { await f(); setAsk(null); setReason(''); onChanged(); } catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
+  };
+  if (q.retired_at) {
+    return (
+      <div className="actions">
+        <span className="muted small">Retired.</span>
+        {ask === 'restore' ? null : <button className="secondary" onClick={() => setAsk('restore')}>Restore…</button>}
+        {ask === 'restore' && <Reason label="Why restore it?" value={reason} set={setReason} busy={busy} go={() => run(() => retire(q.question_id, false, reason))} cancel={() => setAsk(null)} />}
+        {err && <div className="error small">{err}</div>}
+      </div>
+    );
+  }
+  return (
+    <div className="actions">
+      {v.status !== 'in_review' && onEdit && <button onClick={onEdit}>Edit</button>}
+      {v.status === 'draft' && <button className="secondary" disabled={busy} onClick={() => run(() => setStatus(q.question_id, v.version_no, 'submit', null))}>Submit for review</button>}
+      {v.status === 'in_review' && <button className="secondary" disabled={busy} onClick={() => run(() => setStatus(q.question_id, v.version_no, 'withdraw', null))}>Back to draft</button>}
+      {(v.status === 'draft' || v.status === 'in_review') && <>
+        <button className="approve" disabled={busy} onClick={() => run(() => setStatus(q.question_id, v.version_no, 'approve', null))}>Approve</button>
+        <button className="secondary" disabled={busy} onClick={() => setAsk('reject')}>Reject…</button>
+      </>}
+      <button className="link" onClick={() => setAsk('retire')}>Retire…</button>
+      {ask === 'reject' && <Reason label="Why reject it? (kept with the version)" value={reason} set={setReason} busy={busy} go={() => run(() => setStatus(q.question_id, v.version_no, 'reject', reason))} cancel={() => setAsk(null)} />}
+      {ask === 'retire' && <Reason label="Why retire it? (hidden from coverage and Publish; never deleted)" value={reason} set={setReason} busy={busy} go={() => run(() => retire(q.question_id, true, reason))} cancel={() => setAsk(null)} />}
+      {err && <div className="error small">{err}</div>}
+    </div>
+  );
+}
+
+function Reason({ label, value, set, busy, go, cancel }: { label: string; value: string; set: (s: string) => void; busy: boolean; go: () => void; cancel: () => void }) {
+  return (
+    <div className="reason">
+      <label className="small">{label}<input autoFocus value={value} onChange={(e) => set(e.target.value)} /></label>
+      <button disabled={busy || !value.trim()} onClick={go}>Confirm</button> <button className="link" onClick={cancel}>Cancel</button>
+    </div>
+  );
+}
+
+/** Field-by-field comparison of two versions, using the shared structure and texts. */
+function Compare({ id, a, b }: { id: string; a: number; b: number }) {
+  const [rows, setRows] = useState<{ k: string; before: string; after: string }[] | null>(null);
+  useEffect(() => {
+    Promise.all([questionDetail(id, a), questionDetail(id, b)]).then(([x, y]) => {
+      if (!x || !y) { setRows([]); return; }
+      const qa = questionFromDb(bundleOf(x)), qb = questionFromDb(bundleOf(y));
+      const ta = textsOf(qa), tb = textsOf(qb);
+      const out = structureDiff(qa, qb).map((k) => {
+        const pick = (q: typeof qa) => JSON.stringify(k.split('.').reduce<unknown>((o, p) => (o as Record<string, unknown> | undefined)?.[p], q as unknown) ?? null);
+        return { k, before: pick(qa), after: pick(qb) };
+      });
+      for (const k of new Set([...Object.keys(ta), ...Object.keys(tb)])) if (ta[k] !== tb[k]) out.push({ k, before: ta[k] ?? '—', after: tb[k] ?? '—' });
+      setRows(out);
+    }).catch(() => setRows([]));
+  }, [id, a, b]);
+  if (!rows) return <div className="muted small">Comparing…</div>;
+  return (
+    <div className="compare small">
+      <div className="muted">v{a} → v{b}{rows.length === 0 ? ': no differences' : ''}</div>
+      {rows.map((r) => <div key={r.k}><span className="muted">{r.k}:</span> <del>{r.before}</del> → <ins>{r.after}</ins></div>)}
+    </div>
   );
 }
 

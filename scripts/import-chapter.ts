@@ -19,12 +19,14 @@ import { homedir } from 'node:os';
 import { relative, resolve } from 'node:path';
 import type postgres from 'postgres';
 import { assertCmsOwner, connect } from './lib/db.ts';
-import { checkFile, normaliseStem, resolveTopicId, type Catalog } from './lib/chapter/checks.ts';
-import { derive } from './lib/chapter/derive.ts';
+import { checkFile, normaliseStem, resolveTopicId, type Catalog } from '../shared/checks.ts';
+import { derive } from '../shared/derive.ts';
 import { schemaProblems } from './lib/chapter/schema.ts';
-import type { Answer, ChapterFile, Problem, Question } from './lib/chapter/types.ts';
-import { classify, structureHash, textsOf, type Texts } from './lib/chapter/version.ts';
+import type { Answer, ChapterFile, Problem, Question } from '../shared/types.ts';
+import { classify, structureHash, textsOf, type Texts } from '../shared/version.ts';
 import type { DerivedConfig } from './lib/v10-config.ts';
+import { questionFromDb } from '../shared/fromDb.ts';
+import { loadBundle } from './lib/bundle.ts';
 
 type Sql = ReturnType<typeof connect>;
 type Tx = postgres.TransactionSql;
@@ -78,25 +80,9 @@ export async function loadConfig(tx: Tx): Promise<DerivedConfig> {
 }
 
 // ---------------------------------------------------------------- previous version as texts
-export async function textsFromDb(tx: Tx, versionId: number, placementNote: string | null): Promise<Texts> {
-  const [v] = await tx`select text, figure_description, tagging_why, tagging_summary, author_notes from cms.cms_question_versions where version_id = ${versionId}`;
-  const [sols, hints, wrong, parts] = await Promise.all([
-    tx`select slot, text from cms.cms_version_solutions where version_id = ${versionId}`,
-    tx`select level, text from cms.cms_version_hints where version_id = ${versionId} order by level`,
-    tx`select part_label, value, why from cms.cms_version_wrong_answers where version_id = ${versionId}`,
-    tx`select part_label, text from cms.cms_version_parts where version_id = ${versionId}`,
-  ]);
-  const t: Texts = { text: v!.text };
-  if (v!.figure_description !== null) t['figure.description'] = v!.figure_description;
-  for (const s of sols) t[`solution.${s.slot}`] = s.text;
-  for (const h of hints) t[`hint.${h.level}`] = h.text;
-  for (const w of wrong) if (w.why !== null) t[`wrong.${w.part_label}.${w.value}`] = w.why;
-  for (const p of parts) t[`part.${p.part_label}.text`] = p.text;
-  for (const [a, w] of Object.entries((v!.tagging_why ?? {}) as Record<string, { why: string }>)) t[`why.${a}`] = w.why;
-  if (v!.tagging_summary !== null) t['tagging.summary'] = v!.tagging_summary;
-  if (v!.author_notes !== null) t.author_notes = v!.author_notes;
-  if (placementNote !== null) t.placement_note = placementNote;
-  return t;
+/** The stored version's free texts, rebuilt through the shared path (shared/fromDb.ts). */
+export async function textsFromDb(tx: Tx, versionId: number): Promise<Texts> {
+  return textsOf(questionFromDb(await loadBundle(tx, versionId)));
 }
 
 // ---------------------------------------------------------------- writing a version
@@ -275,7 +261,7 @@ export async function runChapter(sql: Sql, filePath: string, mode: 'validate' | 
           if (existing.retired_at) { blockWith(q.key, qid, `question ${qid} is retired; restore it before importing changes`); continue; }
           const [cur] = await tx`select version_id, version_no, status, content_hash, created_from, edited_at from cms.cms_question_versions
                                  where question_id = ${qid} and version_no = ${existing.current_version}`;
-          const prevTexts = await textsFromDb(tx, Number(cur!.version_id), existing.placement_note);
+          const prevTexts = await textsFromDb(tx, Number(cur!.version_id));
           const change = classify({ structureHash: cur!.content_hash, texts: prevTexts }, { structureHash: hash, texts: textsOf(q) }, forceNew);
 
           if (change.kind === 'unchanged') { report.outcomes.push({ key: q.key, question_id: qid, result: 'unchanged', version: cur!.version_no }); continue; }

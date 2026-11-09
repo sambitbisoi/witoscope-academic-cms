@@ -10,7 +10,7 @@ import { LOCAL_CMS_OWNER_URL } from '../scripts/local-bootstrap.ts';
 
 // Database tests write and delete test rows: they ONLY ever use this repo's local
 // container, whatever CMS_DATABASE_URL says (connect() also checks the container).
-import type { ChapterFile, Question } from '../scripts/lib/chapter/types.ts';
+import type { ChapterFile, Question } from '../shared/types.ts';
 
 const sql = connect(LOCAL_CMS_OWNER_URL);
 const dir = mkdtempSync(join(tmpdir(), 'cms-chapter-test-'));

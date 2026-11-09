@@ -22,7 +22,8 @@
     "import:sources": "tsx scripts/import-sources.ts",
     "import:book": "tsx scripts/import-book.ts",
     "upload:sources": "tsx scripts/upload-sources.ts",
-    "dev:files": "tsx scripts/dev-files.ts"
+    "dev:files": "tsx scripts/dev-files.ts",
+    "rehash": "tsx scripts/rehash.ts"
   },
   "devDependencies": {
     "@types/node": "22.9.0",

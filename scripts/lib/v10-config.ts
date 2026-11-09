@@ -5,12 +5,8 @@
 // must agree.
 import type { Row } from './xlsx.ts';
 
-export interface Band { min: number; max: number | null; band: number }
-export interface DerivedConfig {
-  multistep_bands: Band[];
-  difficulty_points: { Simple: number; Medium: number; Complex: number };
-  load_thresholds: { high: number; very_high: number };
-}
+import type { Band, DerivedConfig } from '../../shared/types.ts';
+export type { Band, DerivedConfig };
 
 /** Rows of a sheet whose header row (title rows above it) contains `firstHeader`. */
 export function tableRows(raw: unknown[][], firstHeader: string): Record<string, string>[] {

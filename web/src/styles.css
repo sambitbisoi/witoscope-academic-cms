@@ -208,3 +208,32 @@ dl.kv.one { grid-template-columns: 1fr; }
 @media (max-width: 760px) { .form-grid { grid-template-columns: 1fr; } }
 .editor.card { max-width: none; }
 button.link.more { font-size: 0.86rem; text-align: left; }
+
+/* ---------------- Phase 5: edit, review ---------------- */
+.actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 8px 0; border-bottom: 1px solid #eef0f3; }
+button.approve { background: #146c3a; border-color: #146c3a; }
+.reason { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end; width: 100%; }
+.reason label { flex: 1; min-width: 200px; }
+.compare { margin-top: 8px; background: #fafbfc; border: 1px solid var(--line); border-radius: 6px; padding: 8px; }
+del { color: var(--error); text-decoration: line-through; }
+ins { color: #146c3a; text-decoration: none; font-weight: 600; }
+a.qrow { text-decoration: none; }
+.button-link { align-self: flex-start; font-weight: 600; }
+.editor-page { max-width: 900px; }
+.edit-sec { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; margin-bottom: 12px; display: flex; flex-direction: column; gap: 8px; }
+.edit-sec textarea { font: inherit; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; width: 100%; }
+.edit-sec label { font-size: 0.86rem; display: grid; gap: 4px; }
+label.check { display: flex; gap: 6px; align-items: center; }
+.row2, .row3 { display: grid; gap: 8px; align-items: end; }
+.row2 { grid-template-columns: 1fr auto; }
+.row3 { grid-template-columns: 1fr 120px auto; }
+table.opts { width: 100%; border-collapse: collapse; }
+table.opts th { text-align: left; color: var(--muted); font-weight: 500; padding: 4px; }
+table.opts td { padding: 4px; vertical-align: middle; }
+table.opts input, table.opts select { width: 100%; }
+.part-edit { border-top: 1px solid #eef0f3; padding-top: 8px; }
+.save-preview { position: sticky; bottom: 0; background: #fff; border: 2px solid var(--accent); border-radius: 10px; padding: 12px 14px; display: flex; flex-direction: column; gap: 6px; box-shadow: 0 -4px 16px rgba(16,24,40,0.08); }
+.save-preview.blocked { border-color: var(--error); }
+.save-preview.idle { border-color: var(--line); }
+.save-preview .warn { color: #8a5a00; }
+ul.diff { margin: 0; padding-left: 18px; }

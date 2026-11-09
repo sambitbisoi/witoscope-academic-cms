@@ -13,7 +13,8 @@ export const subjectOfChapter = (chapterId: string): Subject =>
 // ---------------------------------------------------------------- routes (hash)
 export type Route =
   | { name: 'home'; grade: string | null }
-  | { name: 'browse'; subject: Subject; cls: string; topic: string | null; q: string | null; v: number | null; tab: 'types' | 'concepts' | 'sources' }
+  | { name: 'browse'; subject: Subject; cls: string; topic: string | null; q: string | null; v: number | null; tab: 'types' | 'concepts' | 'sources'; edit: boolean }
+  | { name: 'review' }
   | { name: 'question'; id: string }
   | { name: 'imports' }
   | { name: 'import'; id: number }
@@ -26,21 +27,23 @@ export function parseRoute(hash: string): Route {
   if (p.length === 0) return { name: 'home', grade: qs.get('grade') };
   if (p[0] === 'imports') return p[1] && /^\d+$/.test(p[1]) ? { name: 'import', id: Number(p[1]) } : { name: 'imports' };
   if (p[0] === 'q' && p[1]) return { name: 'question', id: p[1] };
+  if (p[0] === 'review') return { name: 'review' };
   if (p[0] === 'browse' && SUBJECTS.some((s) => s.id === p[1])) {
     const cls = p[2] && /^([1-6]|all)$/.test(p[2]) ? p[2] : 'all';
     const v = qs.get('v');
     return { name: 'browse', subject: p[1] as Subject, cls, topic: p[3] ?? null, q: qs.get('q'), v: v && /^\d+$/.test(v) ? Number(v) : null,
-      tab: qs.get('tab') === 'concepts' ? 'concepts' : qs.get('tab') === 'sources' ? 'sources' : 'types' };
+      tab: qs.get('tab') === 'concepts' ? 'concepts' : qs.get('tab') === 'sources' ? 'sources' : 'types', edit: qs.get('edit') === '1' };
   }
   return { name: 'notfound' };
 }
 
-export function browseHash(r: { subject: string; cls: string; topic?: string | null; q?: string | null; v?: number | null; tab?: string }): string {
+export function browseHash(r: { subject: string; cls: string; topic?: string | null; q?: string | null; v?: number | null; tab?: string; edit?: boolean }): string {
   const parts = ['#/browse', r.subject, r.cls, ...(r.topic ? [encodeURIComponent(r.topic)] : [])].join('/');
   const qs = new URLSearchParams();
   if (r.q) qs.set('q', r.q);
   if (r.v) qs.set('v', String(r.v));
   if (r.tab && r.tab !== 'types') qs.set('tab', r.tab);
+  if (r.edit && r.q) qs.set('edit', '1');
   const s = qs.toString();
   return s ? `${parts}?${s}` : parts;
 }

@@ -1,5 +1,5 @@
 // Derived fields (design §4, v10 "Derived Attributes"), computed on import/save.
-import type { DerivedConfig } from '../v10-config.ts';
+import type { DerivedConfig } from './types.ts';
 import type { Question } from './types.ts';
 
 export interface Derived {

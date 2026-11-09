@@ -100,7 +100,7 @@ describe('catalog: every table is locked the same way', () => {
     expect(s).toEqual({ anon_usage: false, auth_usage: true });
   });
 
-  it('functions: cms_current_uid invoker, cms_is_admin definer; both stable, empty search_path, authenticated only', async () => {
+  it('functions: empty search_path, authenticated only; the write path is the three admin-checked definer functions', async () => {
     const fns = await su`
       select p.proname, p.prosecdef, p.provolatile, p.proconfig,
              has_function_privilege('authenticated', p.oid, 'execute') as auth_exec,
@@ -109,8 +109,11 @@ describe('catalog: every table is locked the same way', () => {
       from pg_proc p join pg_namespace n on n.oid = p.pronamespace
       where n.nspname = 'cms' order by p.proname`;
     expect(fns).toEqual([
+      { proname: 'cms_apply_save', prosecdef: true, provolatile: 'v', proconfig: ['search_path=""'], auth_exec: true, anon_exec: false, public_exec: false },
       { proname: 'cms_current_uid', prosecdef: false, provolatile: 's', proconfig: ['search_path=""'], auth_exec: true, anon_exec: false, public_exec: false },
       { proname: 'cms_is_admin', prosecdef: true, provolatile: 's', proconfig: ['search_path=""'], auth_exec: true, anon_exec: false, public_exec: false },
+      { proname: 'cms_retire', prosecdef: true, provolatile: 'v', proconfig: ['search_path=""'], auth_exec: true, anon_exec: false, public_exec: false },
+      { proname: 'cms_set_status', prosecdef: true, provolatile: 'v', proconfig: ['search_path=""'], auth_exec: true, anon_exec: false, public_exec: false },
     ]);
   });
 });

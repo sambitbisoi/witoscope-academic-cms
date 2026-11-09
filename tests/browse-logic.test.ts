@@ -13,19 +13,21 @@ describe('routes', () => {
     ['', { name: 'home', grade: null }],
     ['#/?grade=6', { name: 'home', grade: '6' }],
     ['#/imports', { name: 'imports' }],
+    ['#/review', { name: 'review' }],
+    ['#/browse/math/6/MT0393?q=MQ000010&edit=1', { name: 'browse', subject: 'math', cls: '6', topic: 'MT0393', q: 'MQ000010', v: null, tab: 'types', edit: true }],
     ['#/imports/12', { name: 'import', id: 12 }],
     ['#/q/G5-007', { name: 'question', id: 'G5-007' }],
-    ['#/browse/math/6', { name: 'browse', subject: 'math', cls: '6', topic: null, q: null, v: null, tab: 'types' }],
-    ['#/browse/science/all/ST0001?q=SQ000001&v=2&tab=concepts', { name: 'browse', subject: 'science', cls: 'all', topic: 'ST0001', q: 'SQ000001', v: 2, tab: 'concepts' }],
-    ['#/browse/math/6/MT0393?tab=sources', { name: 'browse', subject: 'math', cls: '6', topic: 'MT0393', q: null, v: null, tab: 'sources' }],
-    ['#/browse/math/9', { name: 'browse', subject: 'math', cls: 'all', topic: null, q: null, v: null, tab: 'types' }],
+    ['#/browse/math/6', { name: 'browse', subject: 'math', cls: '6', topic: null, q: null, v: null, tab: 'types', edit: false }],
+    ['#/browse/science/all/ST0001?q=SQ000001&v=2&tab=concepts', { name: 'browse', subject: 'science', cls: 'all', topic: 'ST0001', q: 'SQ000001', v: 2, tab: 'concepts', edit: false }],
+    ['#/browse/math/6/MT0393?tab=sources', { name: 'browse', subject: 'math', cls: '6', topic: 'MT0393', q: null, v: null, tab: 'sources', edit: false }],
+    ['#/browse/math/9', { name: 'browse', subject: 'math', cls: 'all', topic: null, q: null, v: null, tab: 'types', edit: false }],
     ['#/browse/art/6', { name: 'notfound' }],
   ])('%s', (hash, route) => expect(parseRoute(hash)).toEqual(route));
 
   it('browseHash round-trips', () => {
-    const h = browseHash({ subject: 'math', cls: '6', topic: 'ACH-MC19-6', q: 'MQ000010', v: 2, tab: 'concepts' });
+    const h = browseHash({ subject: 'math', cls: '6', topic: 'ACH-MC19-6', q: 'MQ000010', v: 2, tab: 'concepts', edit: false });
     expect(h).toBe('#/browse/math/6/ACH-MC19-6?q=MQ000010&v=2&tab=concepts');
-    expect(parseRoute(h)).toMatchObject({ topic: 'ACH-MC19-6', q: 'MQ000010', v: 2, tab: 'concepts' });
+    expect(parseRoute(h)).toMatchObject({ topic: 'ACH-MC19-6', q: 'MQ000010', v: 2, tab: 'concepts', edit: false });
   });
 
   it('subject from chapter ID', () => {

@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import Ajv2020, { type ErrorObject } from 'ajv/dist/2020.js';
 import addFormats from 'ajv-formats';
-import type { Problem } from './types.ts';
+import type { Problem } from '../../../shared/types.ts';
 
 const schema = JSON.parse(readFileSync(join(import.meta.dirname, '..', '..', '..', 'schema', 'chapter.schema.json'), 'utf8'));
 const ajv = new Ajv2020({ allErrors: true, strict: false });

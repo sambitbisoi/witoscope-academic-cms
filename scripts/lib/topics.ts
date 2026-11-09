@@ -1,6 +1,8 @@
 // Pure parsing and checks for the master topic lists (design §2A, plan §4–5).
 // No database access here, so it is fully unit-testable.
 import type { Cell, Row } from './xlsx.ts';
+import { stableJson } from '../../shared/json.ts';
+export { stableJson };
 
 export type Subject = 'math' | 'science' | 'grammar';
 export const CHAPTER_PREFIX: Record<Subject, string> = { math: 'MC', science: 'SC', grammar: 'GC' };
@@ -158,15 +160,6 @@ export function achieversTopics(chapters: Chapter[], topics: Topic[]): Topic[] {
     name: `Achievers: ${chapter.name}`, level: null, sub_skills: null, topic_kind: 'achievers',
     taught_in_school: false, source_flags: {}, notes: null, status: 'active',
   }));
-}
-
-/** JSON with object keys sorted, so jsonb (which reorders keys) compares equal. */
-export function stableJson(v: unknown): string {
-  if (Array.isArray(v)) return `[${v.map(stableJson).join(',')}]`;
-  if (v && typeof v === 'object') {
-    return `{${Object.keys(v).sort().map((k) => `${JSON.stringify(k)}:${stableJson((v as Record<string, unknown>)[k])}`).join(',')}}`;
-  }
-  return JSON.stringify(v ?? null);
 }
 
 /** Field-level diff for re-imports: returns only fields whose values differ. */

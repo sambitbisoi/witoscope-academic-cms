@@ -1,7 +1,7 @@
 // Pure parsing of the v10 workbook's catalogue, rules and gold sheets (design §7).
 // Every interpretation that is not a straight copy is marked [guess] and listed
 // in docs/phase2-plan.md for Sambit's check.
-import type { Answer, ConceptRef, Format, Question, WrongAnswer } from './chapter/types.ts';
+import type { Answer, ConceptRef, Format, Question, WrongAnswer } from '../../shared/types.ts';
 import type { Cell } from './xlsx.ts';
 
 export interface SeedProblem { level: 'error' | 'warning'; where: string; message: string }

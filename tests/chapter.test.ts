@@ -1,10 +1,10 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { checkFile, type Catalog } from '../scripts/lib/chapter/checks.ts';
-import { derive, multistepBand } from '../scripts/lib/chapter/derive.ts';
+import { checkFile, type Catalog } from '../shared/checks.ts';
+import { derive, multistepBand } from '../shared/derive.ts';
 import { schemaProblems } from '../scripts/lib/chapter/schema.ts';
-import type { ChapterFile, Question } from '../scripts/lib/chapter/types.ts';
-import { classify, numbersIn, structureHash, textsOf } from '../scripts/lib/chapter/version.ts';
+import type { ChapterFile, Question } from '../shared/types.ts';
+import { classify, numbersIn, structureHash, textsOf } from '../shared/version.ts';
 import type { DerivedConfig } from '../scripts/lib/v10-config.ts';
 
 const example: ChapterFile = JSON.parse(readFileSync('content/examples/MC19-example.json', 'utf8'));

@@ -13,10 +13,10 @@
 import { homedir } from 'node:os';
 import { basename, join } from 'node:path';
 import { enc, loadCatalog, textsFromDb, versionColumns, writeChildren } from './import-chapter.ts';
-import { checkFile } from './lib/chapter/checks.ts';
-import { derive } from './lib/chapter/derive.ts';
-import type { ChapterFile } from './lib/chapter/types.ts';
-import { classify, structureHash, textsOf } from './lib/chapter/version.ts';
+import { checkFile } from '../shared/checks.ts';
+import { derive } from '../shared/derive.ts';
+import type { ChapterFile } from '../shared/types.ts';
+import { classify, structureHash, textsOf } from '../shared/version.ts';
 import { assertCmsOwner, connect } from './lib/db.ts';
 import { upsertCatalogue, type UpsertCounts } from './lib/upsert.ts';
 import { parseDerivedConfig } from './lib/v10-config.ts';
@@ -130,7 +130,7 @@ try {
         const [existing] = await tx`select question_id, current_version, placement_note from cms.cms_questions where question_id = ${g.qid}`;
         if (existing) {
           const [cur] = await tx`select version_id, content_hash from cms.cms_question_versions where question_id = ${g.qid} and version_no = ${existing.current_version}`;
-          const change = classify({ structureHash: cur!.content_hash, texts: await textsFromDb(tx, Number(cur!.version_id), existing.placement_note) }, { structureHash: hash, texts: textsOf(q) });
+          const change = classify({ structureHash: cur!.content_hash, texts: await textsFromDb(tx, Number(cur!.version_id)) }, { structureHash: hash, texts: textsOf(q) });
           if (change.kind === 'unchanged') gc.unchanged!++;
           else { gc.changed_not_updated!++; problems.push({ level: 'warning', where: `Gold ${g.qid}`, message: `changed in the workbook (${change.kind}); gold questions are not overwritten by a re-seed` }); }
           continue;

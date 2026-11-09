@@ -3,23 +3,25 @@ import { topicData, tree, type Chapter, type QuestionRow, type TopicWithStats } 
 import {
   applyFilters, browseHash, countsLabel, gapLabel, groupBySet, NO_FILTERS, statusLabel, subjectLabel, SUBJECTS, type Filters, type Subject,
 } from './logic';
+import { EditForm } from './EditForm';
 import { QuestionDetail } from './QuestionDetail';
 import { SourcesTab } from './Sources';
 import { chapterSourceCount } from './sourcesApi';
 import { rememberBrowse } from './Shell';
 
-type R = { subject: Subject; cls: string; topic: string | null; q: string | null; v: number | null; tab: 'types' | 'concepts' | 'sources' };
+type R = { subject: Subject; cls: string; topic: string | null; q: string | null; v: number | null; tab: 'types' | 'concepts' | 'sources'; edit: boolean };
 const SOURCE_LABEL: Record<string, string> = { ncert: 'NCERT', dav: 'DAV', ixl: 'IXL', imo: 'IMO', iso: 'ISO', ieo: 'IEO' };
 
 export function Workspace(r: R) {
   const [data, setData] = useState<Awaited<ReturnType<typeof tree>> | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [gapsOnly, setGapsOnly] = useState(false);
+  const [reload, setReload] = useState(0);
   useEffect(() => { rememberBrowse(browseHash(r)); });
   useEffect(() => {
     setData(null); setError(null);
     tree(r.subject, r.cls).then(setData).catch((e) => setError(e.message));
-  }, [r.subject, r.cls]);
+  }, [r.subject, r.cls, reload]);
 
   const go = (patch: Partial<R>) => { location.hash = browseHash({ ...r, ...patch }); };
   const topic = data?.topics.find((t) => t.topic_id === r.topic) ?? null;
@@ -48,13 +50,15 @@ export function Workspace(r: R) {
           {data && <Tree chapters={data.chapters} topics={data.topics} cls={r.cls} selected={r.topic} gapsOnly={gapsOnly} onPick={(t) => go({ topic: t, q: null, v: null })} />}
         </nav>
         <section className="ws-main" aria-label="Questions">
-          {!r.topic ? <Pick subject={r.subject} cls={r.cls} n={data?.topics.length} />
+          {r.edit && r.q ? <EditForm key={r.q} questionId={r.q} onDone={(saved) => { go({ edit: false, v: null }); if (saved) setReload((x) => x + 1); }} />
+            : !r.topic ? <Pick subject={r.subject} cls={r.cls} n={data?.topics.length} />
             : !data ? <p className="muted">Loading…</p>
             : !topic ? <p>Topic {r.topic} isn't in {subjectLabel(r.subject)}{r.cls !== 'all' ? ` class ${r.cls}` : ''}. <a href={browseHash({ ...r, cls: 'all' })}>Look in all classes</a></p>
-            : <TopicView topic={topic} chapter={data.chapters.find((c) => c.chapter_id === topic.chapter_id)} r={r} go={go} />}
+            : <TopicView key={`${topic.topic_id}-${reload}`} topic={topic} chapter={data.chapters.find((c) => c.chapter_id === topic.chapter_id)} r={r} go={go} />}
         </section>
         <aside className="ws-detail" aria-label="Question detail">
-          {r.q ? <QuestionDetail id={r.q} versionNo={r.v} onVersion={(v) => go({ v })} /> : <p className="muted">Select a question to see it here.</p>}
+          {r.q ? <QuestionDetail id={r.q} versionNo={r.v} reloadKey={reload} onVersion={(v) => go({ v })} onEdit={() => go({ edit: true, v: null })} onChanged={() => setReload((x) => x + 1)} />
+            : <p className="muted">Select a question to see it here.</p>}
         </aside>
       </div>
     </div>
@@ -177,7 +181,7 @@ function TopicView({ topic, chapter, r, go }: { topic: TopicWithStats; chapter?:
                     {(p.patternId || g.patterns.length > 1) && (
                       <div className="pattern-head small">{p.patternId ? <>{p.patternId} · {pat?.name ?? ''}{pat?.target_misconceptions?.length ? <span className="muted"> · targets {pat.target_misconceptions.join(', ')}</span> : null}</> : <span className="muted">No pattern</span>}</div>
                     )}
-                    {p.questions.map((q) => <QRow key={q.question_id} q={q} selected={q.question_id === r.q} onPick={() => go({ q: q.question_id, v: null })} />)}
+                    {p.questions.map((q) => <QRow key={q.question_id} q={q} selected={q.question_id === r.q} onPick={() => go({ q: q.question_id, v: null, edit: false })} />)}
                   </div>
                 );
               })}
@@ -185,7 +189,7 @@ function TopicView({ topic, chapter, r, go }: { topic: TopicWithStats; chapter?:
           );
         })
       )}
-      {data && r.tab === 'concepts' && <ConceptsTab data={data} visible={new Set(qs.map((q) => q.question_id))} selected={r.q} onPick={(q) => go({ q, v: null })} />}
+      {data && r.tab === 'concepts' && <ConceptsTab data={data} visible={new Set(qs.map((q) => q.question_id))} selected={r.q} onPick={(q) => go({ q, v: null, edit: false })} />}
       </>}
     </>
   );
