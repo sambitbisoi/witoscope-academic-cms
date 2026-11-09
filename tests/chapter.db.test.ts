@@ -6,9 +6,13 @@ import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { runChapter } from '../scripts/import-chapter.ts';
 import { connect } from '../scripts/lib/db.ts';
+import { LOCAL_CMS_OWNER_URL } from '../scripts/local-bootstrap.ts';
+
+// Database tests write and delete test rows: they ONLY ever use this repo's local
+// container, whatever CMS_DATABASE_URL says (connect() also checks the container).
 import type { ChapterFile, Question } from '../scripts/lib/chapter/types.ts';
 
-const sql = connect(process.env.CMS_DATABASE_URL ?? 'postgres://cms_owner:cms_owner_local@127.0.0.1:55422/postgres');
+const sql = connect(LOCAL_CMS_OWNER_URL);
 const dir = mkdtempSync(join(tmpdir(), 'cms-chapter-test-'));
 
 const STRATEGY_TYPES = ['Pattern', 'Work backwards', 'Table / list', 'Cases', 'Guess and check', 'Draw / bar model', 'Eliminate',

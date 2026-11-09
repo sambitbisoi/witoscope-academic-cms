@@ -8,6 +8,8 @@ import postgres from 'postgres';
 
 export const LOCAL_SUPERUSER_URL = process.env.LOCAL_SUPERUSER_URL ?? 'postgres://postgres:postgres@127.0.0.1:55422/postgres';
 export const LOCAL_CMS_OWNER_PASSWORD = process.env.LOCAL_CMS_OWNER_PASSWORD ?? 'cms_owner_local';
+/** cms_owner on THIS repo's local container. Tests use this, never CMS_DATABASE_URL. */
+export const LOCAL_CMS_OWNER_URL = `postgres://cms_owner:${LOCAL_CMS_OWNER_PASSWORD}@127.0.0.1:55422/postgres`;
 
 // The witoscope-app project runs its own local Supabase on the default ports
 // (5432x). This project uses 5542x. Refuse any URL that is not served by THIS

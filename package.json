@@ -12,7 +12,7 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "db:local:bootstrap": "tsx --env-file-if-exists=.env scripts/local-bootstrap.ts",
-    "test:db": "node --env-file-if-exists=.env node_modules/vitest/vitest.mjs run --config vitest.db.config.ts",
+    "test:db": "node node_modules/vitest/vitest.mjs run --config vitest.db.config.ts",
     "verify:uid": "tsx --env-file-if-exists=.env scripts/verify-uid.ts",
     "db:set-admin": "tsx --env-file-if-exists=.env scripts/set-admin.ts",
     "import:topics": "tsx --env-file-if-exists=.env scripts/import-topics.ts",
