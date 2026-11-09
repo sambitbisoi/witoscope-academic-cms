@@ -17,7 +17,7 @@ Items marked **[guess]** are inferred and need your check.
 | One exception, read-only | RLS policies call Supabase's built-in `auth.uid()` to recognise your login. It reads nothing from app tables. |
 | Dedicated DB role | `cms_owner` owns `cms`, with no rights elsewhere. Migrations and server functions use it, never `service_role`. |
 | Locked by default | RLS on every table; only your user ID (stored in `cms_config`) may read or write. App users get nothing. |
-| Shared items (approved) | Login = your existing Supabase account · private bucket `cms-sources` · `cms` added to exposed schemas **[default, not yet confirmed]** · pgvector later, installed into `cms`. |
+| Shared items (approved) | Login = your existing Supabase account · files in the private **Cloudflare R2** bucket `cms-sources` (changed 9 Nov 2026 from Supabase Storage; see §9) · `cms` added to exposed schemas **[default, not yet confirmed]** · pgvector later, installed into `cms`. |
 | Explicit Save | No auto-save anywhere. |
 | Book content is internal | Source refs, PDFs and screenshots never leave the CMS. The Publish step (Phase 8) can't read them. |
 
@@ -77,7 +77,7 @@ Catalogue rows are edited in place with an audit row in `cms_reviews` (they're v
 | Table | Purpose | Key columns |
 |---|---|---|
 | `cms_questions` | Stable identity | question_id, **bank** (production / gold), subject, file_key, chapter_id, topic_id, class (+ class_override, placement_note), typical_set_id, pattern_id, clone_batch_id, locale, current_version, approved_version, retired_at. topic_id / typical_set_id / pattern_id here are pointers to the **current** placement (9 Nov 2026) |
-| `cms_question_versions` | **Immutable** content + tags, one row per version | question_id, version_no, status, **topic_id, typical_set_id, pattern_id** (placement of this version; added 9 Nov 2026, since a move creates a new version), text, figure_description, image_status, image_path, format, correct, accepted[], duration_s, signature columns (math_difficulty, is_pure_fact, reading, has_irrelevant_info, steps, working_memory, inhibition, visual, strategy, strategy_type, strategy_type_2, strategy_other_note, insight_id, trick_ref), derived columns (§4), tagging_why (json), tagged_by, tagging_summary, content_hash, created_from (import / edit / generation), import_id or run_id, created_at |
+| `cms_question_versions` | **Immutable** content + tags, one row per version | question_id, version_no, status, **topic_id, typical_set_id, pattern_id** (placement of this version; added 9 Nov 2026, since a move creates a new version), text, figure_description, image_status, image_path (R2 key), format, correct, accepted[], duration_s, signature columns (math_difficulty, is_pure_fact, reading, has_irrelevant_info, steps, working_memory, inhibition, visual, strategy, strategy_type, strategy_type_2, strategy_other_note, insight_id, trick_ref), derived columns (§4), tagging_why (json), tagged_by, tagging_summary, content_hash, created_from (import / edit / generation), import_id or run_id, created_at |
 | `cms_version_parts` | Multi-part: one row per part | version_id, part_label, text, format, correct, accepted[] |
 | `cms_version_options` | MCQ / T-F options | version_id, part_label, position, text, is_correct |
 | `cms_version_wrong_answers` | Tagged wrong options or typed values | version_id, part_label, value, option_position, tag, misconception_id, target_concept_id, why |
@@ -106,10 +106,10 @@ Catalogue rows are edited in place with an audit row in `cms_reviews` (they're v
 
 | Table | Purpose | Key columns |
 |---|---|---|
-| `cms_sources` | Books, links, screenshot sets | source_id, kind (pdf / scanned_pdf / web / screenshots), title, publisher (NCERT / DAV / IXL / SOF / other), class, storage_path or url, page_offset (printed page = pdf page − offset), captured_at |
+| `cms_sources` | Books, links, screenshot sets | source_id, kind (pdf / scanned_pdf / web / screenshots), title, publisher (NCERT / DAV / IXL / SOF / other), class, storage_path (the file's **R2 key**, e.g. `NCERT-fegp101/fegp101.pdf`) or url, page_offset (printed page = pdf page − offset), captured_at |
 | `cms_source_chapters` | Which part of a source covers a chapter | source_id, chapter_id, page_from, page_to |
 | `cms_source_jumps` | "Open at" buttons | source_id, chapter_id, label, pdf_page |
-| `cms_source_assets` | Screenshots | source_id, storage_path, caption, captured_at |
+| `cms_source_assets` | Screenshots | source_id, storage_path (R2 key), caption, captured_at |
 | `cms_source_items` | Extracted book items (N7-031…) | ref_id, source_id, page, item_text, topic_id, pattern_id, numbers (json) for the originality check |
 
 ### F. Workflow
@@ -234,5 +234,6 @@ Errors are listed per question key, in plain words.
 | 5 | Strand IDs | Use the topic workbooks' IDs if they exist; otherwise `<subject>-<name>`. Check in Phase 2 |
 | 6 | Formats | Typed split into Typed-number / Typed-decimal / Typed-fraction / Typed-text |
 | — | Login | Sambit's existing Supabase account |
-| — | Storage | Private bucket `cms-sources` |
+| — | Storage | ~~Supabase Storage bucket~~ → **Cloudflare R2** private bucket `cms-sources` (Sambit, 9 Nov 2026) |
+| — | Files (9 Nov 2026) | All files (PDFs, scans, screenshots, figure images) live in R2; Supabase keeps text, metadata and each file's R2 key (`storage_path`, `image_path`). Files are served only by the Pages Function `/api/files`: `sign` and `put` require a valid Cloudflare Access JWT (team keys, AUD, issuer, expiry, allowed email); `get` serves a file only with a 5-minute HMAC-signed link. The bucket is private and reached through an R2 binding (no R2 API keys); no list, no delete. Dev uses a local stand-in running the same code |
 | — | pgvector | Phase 6, installed into `cms` |

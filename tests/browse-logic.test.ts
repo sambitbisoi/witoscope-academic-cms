@@ -17,6 +17,7 @@ describe('routes', () => {
     ['#/q/G5-007', { name: 'question', id: 'G5-007' }],
     ['#/browse/math/6', { name: 'browse', subject: 'math', cls: '6', topic: null, q: null, v: null, tab: 'types' }],
     ['#/browse/science/all/ST0001?q=SQ000001&v=2&tab=concepts', { name: 'browse', subject: 'science', cls: 'all', topic: 'ST0001', q: 'SQ000001', v: 2, tab: 'concepts' }],
+    ['#/browse/math/6/MT0393?tab=sources', { name: 'browse', subject: 'math', cls: '6', topic: 'MT0393', q: null, v: null, tab: 'sources' }],
     ['#/browse/math/9', { name: 'browse', subject: 'math', cls: 'all', topic: null, q: null, v: null, tab: 'types' }],
     ['#/browse/art/6', { name: 'notfound' }],
   ])('%s', (hash, route) => expect(parseRoute(hash)).toEqual(route));

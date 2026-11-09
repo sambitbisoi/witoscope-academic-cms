@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { questionDetail, type QuestionDetailData } from './api';
 import { derivedRows, signatureRows, STATUS_LABEL, TAG_LABEL } from './logic';
+import { openSource, sourceItems } from './sourcesApi';
+import { supabase } from './supabase';
 
 export function QuestionDetail({ id, versionNo, onVersion }: { id: string; versionNo: number | null; onVersion: (v: number | null) => void }) {
   const [d, setD] = useState<QuestionDetailData | null | undefined>(undefined);
@@ -144,7 +146,7 @@ export function QuestionDetail({ id, versionNo, onVersion }: { id: string; versi
             </Section>
           )}
           <Section title="Source refs (internal, never published)">
-            {d.refs.length === 0 ? <div className="muted small">None.</div> : <ul className="plain small">{d.refs.map((r) => <li key={r.ref_id + r.relation}><span className="mono">{r.ref_id}</span> · {r.relation.replace('_', ' ')}</li>)}</ul>}
+            {d.refs.length === 0 ? <div className="muted small">None.</div> : <Refs refs={d.refs} />}
           </Section>
           <Section title="Versions">
             <ul className="plain small">
@@ -167,6 +169,40 @@ export function QuestionDetail({ id, versionNo, onVersion }: { id: string; versi
         </>
       )}
     </div>
+  );
+}
+
+/** Source refs resolved to their book items (internal only), with a link to open the source at the item's page. */
+function Refs({ refs }: { refs: QuestionDetailData['refs'] }) {
+  const [items, setItems] = useState<Awaited<ReturnType<typeof sourceItems>> | null>(null);
+  const [sources, setSources] = useState<Map<string, { source_id: string; title: string; storage_path: string | null; url: string | null; page_offset: number }>>(new Map());
+  useEffect(() => {
+    sourceItems(refs.map((r) => r.ref_id)).then(async (it) => {
+      setItems(it);
+      const ids = [...new Set(it.map((x) => x.source_id))];
+      if (!ids.length) return;
+      const { data } = await supabase.from('cms_sources').select('source_id, title, storage_path, url, page_offset').in('source_id', ids);
+      setSources(new Map((data ?? []).map((x) => [x.source_id, x])));
+    }).catch(() => setItems([]));
+  }, [refs.map((r) => r.ref_id).join()]);
+  return (
+    <ul className="plain small">
+      {refs.map((r) => {
+        const it = items?.find((x) => x.ref_id === r.ref_id);
+        const src = it ? sources.get(it.source_id) : undefined;
+        return (
+          <li key={r.ref_id + r.relation} className="ref">
+            <span className="mono">{r.ref_id}</span> · {r.relation.replace('_', ' ')}
+            {items === null ? null : !it ? <span className="muted"> · not in the CMS yet</span> : (
+              <>
+                {src && <> · {src.title}{it.page ? `, p${it.page}` : ''} {(src.storage_path || src.url) && <button className="link" onClick={() => openSource(src, it.page ? it.page + src.page_offset : null)}>open ↗</button>}</>}
+                <div className="muted ref-text">{it.item_text}</div>
+              </>
+            )}
+          </li>
+        );
+      })}
+    </ul>
   );
 }
 

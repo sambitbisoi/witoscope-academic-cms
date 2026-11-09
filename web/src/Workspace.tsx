@@ -4,9 +4,11 @@ import {
   applyFilters, browseHash, countsLabel, gapLabel, groupBySet, NO_FILTERS, statusLabel, subjectLabel, SUBJECTS, type Filters, type Subject,
 } from './logic';
 import { QuestionDetail } from './QuestionDetail';
+import { SourcesTab } from './Sources';
+import { chapterSourceCount } from './sourcesApi';
 import { rememberBrowse } from './Shell';
 
-type R = { subject: Subject; cls: string; topic: string | null; q: string | null; v: number | null; tab: 'types' | 'concepts' };
+type R = { subject: Subject; cls: string; topic: string | null; q: string | null; v: number | null; tab: 'types' | 'concepts' | 'sources' };
 const SOURCE_LABEL: Record<string, string> = { ncert: 'NCERT', dav: 'DAV', ixl: 'IXL', imo: 'IMO', iso: 'ISO', ieo: 'IEO' };
 
 export function Workspace(r: R) {
@@ -103,10 +105,12 @@ function TopicView({ topic, chapter, r, go }: { topic: TopicWithStats; chapter?:
   const [data, setData] = useState<Awaited<ReturnType<typeof topicData>> | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [filters, setFilters] = useState<Filters>(NO_FILTERS);
+  const [nSources, setNSources] = useState<number | null>(null);
   useEffect(() => {
     setData(null); setError(null); setFilters(NO_FILTERS);
     topicData(topic.topic_id).then(setData).catch((e) => setError(e.message));
   }, [topic.topic_id]);
+  useEffect(() => { setNSources(null); chapterSourceCount(topic.chapter_id).then(setNSources).catch(() => setNSources(null)); }, [topic.chapter_id]);
 
   const sources = Object.entries(topic.source_flags ?? {}).map(([k, v]) => `${SOURCE_LABEL[k] ?? k.toUpperCase()} ${v}`).join(' · ');
   const s = topic.stats;
@@ -135,7 +139,11 @@ function TopicView({ topic, chapter, r, go }: { topic: TopicWithStats; chapter?:
         <button role="tab" aria-selected={r.tab === 'concepts'} className={r.tab === 'concepts' ? 'on' : ''} onClick={() => go({ tab: 'concepts' })}>
           By concept{data ? ` · ${data.concepts.length}` : ''}
         </button>
+        <button role="tab" aria-selected={r.tab === 'sources'} className={r.tab === 'sources' ? 'on' : ''} onClick={() => go({ tab: 'sources' })}>
+          Sources{nSources !== null ? ` · ${nSources}` : ''}
+        </button>
       </div>
+      {r.tab === 'sources' ? <SourcesTab chapterId={topic.chapter_id} chapterName={chapter?.name ?? ''} cls={topic.class} /> : <>
 
       <div className="filters">
         <span className="muted small">Filter</span>
@@ -178,6 +186,7 @@ function TopicView({ topic, chapter, r, go }: { topic: TopicWithStats; chapter?:
         })
       )}
       {data && r.tab === 'concepts' && <ConceptsTab data={data} visible={new Set(qs.map((q) => q.question_id))} selected={r.q} onPick={(q) => go({ q, v: null })} />}
+      </>}
     </>
   );
 }

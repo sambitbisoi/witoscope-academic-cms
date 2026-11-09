@@ -2,6 +2,7 @@
 // (docs/phase2-plan.md §3, step 3). Read-only; connects as cms_owner.
 // Every check must pass; any failure exits non-zero and says what is wrong.
 import { assertCmsOwner, connect } from './lib/db.ts';
+import { unexpectedGrants } from './lib/grants.ts';
 
 const sql = connect();
 const results: { check: string; ok: boolean; detail?: string }[] = [];
@@ -32,8 +33,10 @@ try {
 
   const grants = await sql`select grantee, privilege_type, table_name from information_schema.role_table_grants
                            where table_schema = 'cms' and grantee not in ('cms_owner', 'postgres')`;
-  const notSelect = grants.filter((g) => g.grantee !== 'authenticated' || g.privilege_type !== 'SELECT');
-  check('table grants: authenticated SELECT only; nobody else', notSelect.length === 0, notSelect.map((g) => `${g.grantee} ${g.privilege_type} ${g.table_name}`).join(', '));
+  const others = grants.filter((g) => g.grantee !== 'authenticated');
+  check('table grants: nobody but authenticated', others.length === 0, others.map((g) => `${g.grantee} ${g.privilege_type} ${g.table_name}`).join(', '));
+  const extra = unexpectedGrants(grants.filter((g) => g.grantee === 'authenticated') as never);
+  check('authenticated: SELECT, plus only the listed writes (no DELETE anywhere)', extra.length === 0, extra.join(', '));
 
   const [s] = await sql`select has_schema_privilege('anon', 'cms', 'usage') as anon_usage,
                                has_schema_privilege('authenticated', 'cms', 'usage') as auth_usage,

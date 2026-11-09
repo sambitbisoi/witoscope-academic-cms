@@ -6,3 +6,6 @@ dist/
 !.env.example
 supabase/.temp/
 web/.vite/
+.r2-local/
+.dev-access/
+.wrangler/
