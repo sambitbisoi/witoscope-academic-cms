@@ -124,7 +124,7 @@ Catalogue rows are edited in place with an audit row in `cms_reviews` (they're v
 | `cms_release_items` | Which version went out | release_no, question_id, version_id |
 | `cms_config` | Settings the rules depend on | key, value (json): admin_user_id, multistep_bands, difficulty_points (3/5/8), load thresholds (3 / 4) |
 
-Later (Phase 6): `cms_embeddings` (version_id, vector) for duplicate and similarity checks.
+~~Later (Phase 6): `cms_embeddings`~~ dropped: no pgvector (see §9).
 
 Total: 39 tables now, 40 with embeddings.
 
@@ -236,4 +236,5 @@ Errors are listed per question key, in plain words.
 | — | Login | Sambit's existing Supabase account |
 | — | Storage | ~~Supabase Storage bucket~~ → **Cloudflare R2** private bucket `cms-sources` (Sambit, 9 Nov 2026) |
 | — | Files (9 Nov 2026) | All files (PDFs, scans, screenshots, figure images) live in R2; Supabase keeps text, metadata and each file's R2 key (`storage_path`, `image_path`). Files are served only by the Pages Function `/api/files`: `sign` and `put` require a valid Cloudflare Access JWT (team keys, AUD, issuer, expiry, allowed email); `get` serves a file only with a 5-minute HMAC-signed link. The bucket is private and reached through an R2 binding (no R2 API keys); no list, no delete. Dev uses a local stand-in running the same code |
-| — | pgvector | Phase 6, installed into `cms` |
+| — | pgvector | ~~Phase 6, installed into `cms`~~ → **not used** (Sambit, 9 Nov 2026): duplicate and copy checks are shared TypeScript (number sets + text similarity, threshold in `cms_config`) |
+| — | AI calls (9 Nov 2026) | A Cloudflare Pages Function (`/api/ai/*`) behind Access, holding only the Claude API key; it returns drafts and the browser saves them through `cms_apply_save`. Bulk runs use the Batch API, tracked in `cms_jobs`. No Supabase Edge Function and no database credentials in the cloud. A model per task (generate, tag, extract; default `claude-haiku-5-5`), the refusal-fallback model, per-run limit (20), daily cap ($5), similarity threshold and prices live in `cms_config`; every request stays under 100K tokens (cached fixed rules + the topic's concept cards and relevant calibration cases); tokens and cost are logged per run in `cms_generation_runs` |

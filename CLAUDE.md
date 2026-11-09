@@ -27,10 +27,10 @@ Design source of truth: `docs/phase1-design.md` (approved 8 Nov 2026). Question 
 - Explicit Save buttons, no auto-save. Secondary features are best-effort and must never break the main flow.
 - Clean, simple screens; optional settings behind a "More" link.
 - Git: feature branch per phase, small commits, PR into `main` for Sambit to approve.
-- Secrets (Supabase keys, DB passwords, Claude API key) never go in the repo; AI calls run server-side only.
+- Secrets (Supabase keys, DB passwords, Claude API key) never go in the repo; AI calls run server-side only, in the `/api/ai` Pages Function behind Access, which holds only the Claude API key (no database credentials in the cloud).
 
 ## Stack
-React + TypeScript + Vite · Supabase (Postgres, Auth; pgvector later) · Supabase Edge Functions for AI and import jobs · Cloudflare Pages (+ Pages Functions) behind Cloudflare Access · Cloudflare R2 for files.
+React + TypeScript + Vite · Supabase (Postgres, Auth) · AI via a Cloudflare Pages Function (Claude API, Batch API for bulk) · imports run locally · Cloudflare Pages (+ Pages Functions) behind Cloudflare Access · Cloudflare R2 for files.
 
 ## Phases
 1. Data model + JSON schema — **done**

@@ -10,7 +10,7 @@ import { loadBundle } from '../scripts/lib/bundle.ts';
 import { connect } from '../scripts/lib/db.ts';
 import { assertLocal, LOCAL_CMS_OWNER_URL, LOCAL_SUPERUSER_URL } from '../scripts/local-bootstrap.ts';
 import { questionFromDb } from '../shared/fromDb.ts';
-import { planSave } from '../shared/save.ts';
+import { planSave, rowsFor } from '../shared/save.ts';
 import type { ChapterFile, DerivedConfig, Question } from '../shared/types.ts';
 import { structureHash } from '../shared/version.ts';
 
@@ -46,6 +46,7 @@ async function plan(edit: (q: Question) => void, opts: { forceNewVersion?: boole
 
 async function cleanup() {
   const qids = (await owner`select question_id from cms.cms_questions where file_key like 'MC97-%' or question_id = 'G6-997'`).map((r) => r.question_id as string);
+  await owner`delete from cms.cms_reviews where target_table = 'cms_generation_runs'`;
   if (qids.length) {
     const vids = (await owner`select version_id from cms.cms_question_versions where question_id in ${owner(qids)}`).map((r) => r.version_id);
     for (const t of ['cms_version_parts', 'cms_version_options', 'cms_version_wrong_answers', 'cms_version_concepts', 'cms_version_solutions', 'cms_version_hints', 'cms_version_source_refs']) {
@@ -57,6 +58,9 @@ async function cleanup() {
     await owner`delete from cms.cms_questions where question_id in ${owner(qids)}`;
   }
   await owner`delete from cms.cms_reviews where import_id in (select import_id from cms.cms_imports where chapter_id = 'MC97')`;
+  await owner`delete from cms.cms_generation_runs where model = 'claude-test-model'`;
+  await owner`delete from cms.cms_tagging_packs where pack_version like 'test-pack-%'`;
+  await owner`delete from cms.cms_jobs where type = 'test_batch'`;
   await owner`delete from cms.cms_imports where chapter_id = 'MC97'`;
   await owner`delete from cms.cms_typical_sets where typical_set_id = 'TS-G6-ZX-TEST'`;
   await owner`delete from cms.cms_misconceptions where misconception_id = 'G6-M-ZXZ1'`;
@@ -213,5 +217,60 @@ describe('save path (planSave → cms_apply_save)', () => {
     expect((await current()).q.retired_at).toBeNull();
     const actions = (await owner`select action from cms.cms_reviews where target_id = ${qid} order by review_id`).map((r) => r.action);
     expect(actions).toEqual(['retire', 'restore']);
+  });
+});
+
+describe('Phase 6: generated drafts, runs and jobs', () => {
+  const createPayload = async (runId: number | null, text: string) => {
+    const c = await current();
+    const q = structuredClone(c.question); q.text = text; q.clone_batch_id = 'gen-test'; delete q.pattern_id;
+    const rows = rowsFor(q, cfg, 6, () => 6);
+    return { mode: 'create', base_version_no: null, content_hash: structureHash(q, q.topic_id), run_id: runId,
+      question: { subject: 'math', chapter_id: 'MC97', class: 6, topic_id: q.topic_id, typical_set_id: q.typical_set_id, pattern_id: null, clone_batch_id: q.clone_batch_id, class_override: null, placement_note: null },
+      version: { ...rows.version, tagged_by: 'ai' }, parts: rows.parts, options: rows.options, wrong_answers: rows.wrong_answers, concepts: rows.concepts,
+      solutions: rows.solutions, hints: rows.hints, source_refs: [], diff: { generated: true }, reason: 'generated draft' };
+  };
+  let runId = 0;
+
+  it('a run is logged with its tagging pack; tokens and cost are added when it finishes', async () => {
+    runId = Number(await as(adminId, async (tx) => (await tx`select cms.cms_record_run(${tx.json({ kind: 'generate_similar', model: 'claude-test-model',
+      pack: { version: 'test-pack-1', rule_version: 'v10', content: 'PACK', hash: 'h' }, params: { count: 2 } } as never)}) as id`)[0]!.id));
+    await as(adminId, (tx) => tx`select cms.cms_record_run(${tx.json({ run_id: runId, tokens_in: 1200, tokens_out: 900, cost: 0.0114, status: 'ok', params: { usage: { cache_read_input_tokens: 8000 } } } as never)})`);
+    const [r] = await owner`select kind, model, pack_version, tokens_in, tokens_out, cost::float as cost, status, params from cms.cms_generation_runs where run_id = ${runId}`;
+    expect(r).toMatchObject({ kind: 'generate_similar', model: 'claude-test-model', pack_version: 'test-pack-1', tokens_in: 1200, tokens_out: 900, cost: 0.0114, status: 'ok' });
+    expect(r!.params).toEqual({ count: 2, usage: { cache_read_input_tokens: 8000 } });
+  });
+
+  it('create: a new PRODUCTION draft with the next MQ id and a reserved file key, linked to its run', async () => {
+    const res = await as(adminId, async (tx) => (await tx`select cms.cms_apply_save(${tx.json(await createPayload(runId, '7/8 − 1/3 = ?') as never)}) as r`)[0]!.r);
+    expect(res.question_id).toMatch(/^MQ\d{6}$/);
+    const [q] = await owner`select bank, file_key, current_version from cms.cms_questions where question_id = ${res.question_id}`;
+    const [v] = await owner`select version_no, status, created_from, run_id, content_hash from cms.cms_question_versions where question_id = ${res.question_id}`;
+    expect(q).toEqual({ bank: 'production', file_key: 'MC97-5001', current_version: 1 });
+    expect([v!.version_no, v!.status, v!.created_from, Number(v!.run_id)]).toEqual([1, 'draft', 'generation', runId]);
+    const back = questionFromDb(await loadBundle(owner, Number((await owner`select version_id from cms.cms_question_versions where question_id = ${res.question_id}`)[0]!.version_id)));
+    expect(structureHash(back, back.topic_id)).toBe(v!.content_hash);
+    const res2 = await as(adminId, async (tx) => (await tx`select cms.cms_apply_save(${tx.json(await createPayload(runId, '9/10 − 1/5 = ?') as never)}) as r`)[0]!.r);
+    expect((await owner`select file_key from cms.cms_questions where question_id = ${res2.question_id}`)[0]!.file_key).toBe('MC97-5002');
+  });
+
+  it('create never makes gold, whatever the payload says', async () => {
+    const p = await createPayload(runId, '11/12 − 1/6 = ?') as Record<string, any>;
+    p.bank = 'gold'; p.question.bank = 'gold';
+    const res = await as(adminId, async (tx) => (await tx`select cms.cms_apply_save(${tx.json(p as never)}) as r`)[0]!.r);
+    expect((await owner`select bank from cms.cms_questions where question_id = ${res.question_id}`)[0]!.bank).toBe('production');
+  });
+
+  it('jobs: a batch job is recorded, updated and finished', async () => {
+    const jid = Number(await as(adminId, async (tx) => (await tx`select cms.cms_save_job(${tx.json({ type: 'test_batch', payload: { batch_id: 'msgbatch_x', run_id: runId } } as never)}) as id`)[0]!.id));
+    await as(adminId, (tx) => tx`select cms.cms_save_job(${tx.json({ job_id: jid, status: 'ok', progress: 100, result: { saved: 3 } } as never)})`);
+    const [j] = await owner`select status, progress::int as progress, payload, result, finished_at is not null as done from cms.cms_jobs where job_id = ${jid}`;
+    expect(j).toEqual({ status: 'ok', progress: 100, payload: { batch_id: 'msgbatch_x', run_id: runId }, result: { saved: 3 }, done: true });
+  });
+
+  it('an app user can neither create drafts nor log runs or jobs', async () => {
+    await expect(as(APP_USER_ID, async (tx) => tx`select cms.cms_apply_save(${tx.json(await createPayload(null, '1/2 + 1/3 = ?') as never)})`)).rejects.toThrow(/Only the CMS admin/);
+    await expect(as(APP_USER_ID, (tx) => tx`select cms.cms_record_run(${tx.json({ kind: 'tag', model: 'claude-test-model' } as never)})`)).rejects.toThrow(/Only the CMS admin/);
+    await expect(as(APP_USER_ID, (tx) => tx`select cms.cms_save_job(${tx.json({ type: 'test_batch' } as never)})`)).rejects.toThrow(/Only the CMS admin/);
   });
 });

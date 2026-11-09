@@ -166,7 +166,8 @@ function TopicView({ topic, chapter, r, go }: { topic: TopicWithStats; chapter?:
           return (
             <div key={g.setId ?? 'none'} className="group">
               <div className="group-head">
-                <div className="group-title">{g.setId ? <>{g.setId} · {set?.name ?? ''}</> : 'No typical set'}</div>
+                <div className="group-title">{g.setId ? <>{g.setId} · {set?.name ?? ''}</> : 'No typical set'}
+                  {g.setId && <a className="small fill-link" href={`#/generate?set=${encodeURIComponent(g.setId)}&topic=${encodeURIComponent(topic.topic_id)}`}>Fill gaps</a>}</div>
                 {set && <div className="muted small">
                   Class {set.class} · {set.parent_visible ? 'parent-visible' : 'hidden from parents'} · {set.status}
                   {set.instruction_pattern && ` · "${set.instruction_pattern}"`}{main.length ? ` · concepts ${main.join(', ')}` : ''}

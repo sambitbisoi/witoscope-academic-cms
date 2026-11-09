@@ -60,3 +60,17 @@ Already done by Claude on the real project (inside `cms` only): migration 0011, 
 | D7 | Terminal, in the repo | First real upload, **Class 6 Math only**: `npx tsx --env-file=.env.real scripts/upload-sources.ts --class 6 --subject math --dry-run` (lists 10 Ganita Prakash PDFs, 21.7 MB), then the same command without `--dry-run` | "uploaded 10/10"; each source's R2 key is recorded in the CMS |
 | D8 | CMS (deployed) → Browse → Class 6 Math → a topic in MC27 → **Sources** | Click *Open full screen* on "Ganita Prakash … Ch 1", then the jump "1.4 … p6" | The PDF opens in a new tab at that page |
 | D9 | Finder | When you have the DAV scans, put them under `~/WitoScope/ContentResearch/Math/DAV/` and tell Claude | Claude checks sizes, splits any book over 50 MB per chapter, and sets page offsets |
+
+## E. Claude API for generation (Phase 6)
+
+The AI function (`/api/ai`) runs in the same Pages project, behind the same Access application, and holds **only** the Claude API key. Do B–D first.
+
+| # | Where | Exact steps | Expected result |
+|---|---|---|---|
+| E1 | console.anthropic.com → **API keys** | Create a key named `witoscope-cms` (in its own workspace if you use workspaces). Copy it once; don't save it anywhere else | A key starting `sk-ant-` |
+| E2 | console.anthropic.com → **Limits / Spend limits** | Set a monthly spend limit for that workspace or organisation, e.g. **$30**. The CMS's $5 daily cap is checked in the browser; this is the hard backstop the API itself enforces | Limit shown |
+| E3 | Pages project → **Settings → Variables and secrets** (Production **and** Preview) | Add the **Secret** `ANTHROPIC_API_KEY` = the key from E1. Optional plain variable `AI_MAX_DRAFTS` = `20`. Then **Deployments → latest → Retry deployment** | The deployment succeeds |
+| E4 | Terminal | `curl -s -o /dev/null -w '%{http_code} %{redirect_url}\n' -X POST 'https://<project>.pages.dev/api/ai/generate'` | `302` to `…cloudflareaccess.com…`: without Access nothing reaches the function or the API |
+| E5 | CMS (deployed) → a Class 6 Math production question → **Generate similar** | Choose 3, *now*, and click Generate | A run page with 3 drafts, their checks, and tokens and cost logged; Home → Jobs shows today's AI spend |
+| E5b | CMS (deployed) → Home → **Model check** | Keep `claude-haiku-5-5` selected and run it (42 test-only gold, a few cents) | A report of agreement per attribute. To compare, run it again with `claude-sonnet-5-5`, then decide whether `ai_model_tag` needs the bigger model |
+| E6 | *(optional)* `cms_config` | To change the model, cap, per-run limit or similarity threshold, edit `ai_model_generate` / `ai_model_tag` / `ai_model_extract` (all `claude-haiku-5-5`), `ai_fallback_model`, `ai_daily_cap_usd`, `ai_max_drafts_per_run` or `similarity_threshold` (ask Claude to do it, logged) | — |

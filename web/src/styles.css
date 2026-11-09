@@ -237,3 +237,23 @@ table.opts input, table.opts select { width: 100%; }
 .save-preview.idle { border-color: var(--line); }
 .save-preview .warn { color: #8a5a00; }
 ul.diff { margin: 0; padding-left: 18px; }
+
+/* ---------------- Phase 6: generation ---------------- */
+.gen h2 { margin-bottom: 4px; }
+.gen-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 14px 0; }
+.gen label.small { display: grid; gap: 4px; }
+label.check.inline { display: inline-flex; margin-right: 12px; }
+.draft-card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; margin: 10px 0; display: flex; flex-direction: column; gap: 6px; }
+.draft-card.blocked { border-color: #f3b8b2; background: #fffafa; }
+.draft-head { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.warn { color: #8a5a00; }
+.fill-link { margin-left: 10px; font-weight: 500; }
+.secondary-link { align-self: center; }
+@media (max-width: 760px) { .gen-cols { grid-template-columns: 1fr; } }
+
+/* Model check report + refusal-fallback notice (Phase 6 update) */
+table.report { border-collapse: collapse; background: var(--card); border: 1px solid var(--line); border-radius: 8px; font-size: 0.92rem; margin: 10px 0 16px; }
+table.report th, table.report td { text-align: left; padding: 6px 14px; border-bottom: 1px solid var(--line); }
+table.report th { font-weight: 600; color: var(--muted, #666); font-size: 0.85rem; }
+.fallback-notice { background: #fff8e6; border: 1px solid #f0d58c; border-radius: 6px; padding: 8px 12px; margin: 8px 0; }
+.fallback-notice ul { margin: 4px 0 0; padding-left: 18px; }
