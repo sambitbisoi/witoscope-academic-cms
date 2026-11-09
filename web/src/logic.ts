@@ -13,7 +13,7 @@ export const subjectOfChapter = (chapterId: string): Subject =>
 // ---------------------------------------------------------------- routes (hash)
 export type Route =
   | { name: 'home'; grade: string | null }
-  | { name: 'browse'; subject: Subject; cls: string; topic: string | null; q: string | null; v: number | null; tab: 'types' | 'concepts' }
+  | { name: 'browse'; subject: Subject; cls: string; topic: string | null; q: string | null; v: number | null; tab: 'types' | 'concepts' | 'sources' }
   | { name: 'question'; id: string }
   | { name: 'imports' }
   | { name: 'import'; id: number }
@@ -30,7 +30,7 @@ export function parseRoute(hash: string): Route {
     const cls = p[2] && /^([1-6]|all)$/.test(p[2]) ? p[2] : 'all';
     const v = qs.get('v');
     return { name: 'browse', subject: p[1] as Subject, cls, topic: p[3] ?? null, q: qs.get('q'), v: v && /^\d+$/.test(v) ? Number(v) : null,
-      tab: qs.get('tab') === 'concepts' ? 'concepts' : 'types' };
+      tab: qs.get('tab') === 'concepts' ? 'concepts' : qs.get('tab') === 'sources' ? 'sources' : 'types' };
   }
   return { name: 'notfound' };
 }
