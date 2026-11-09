@@ -1,4 +1,6 @@
-# Phase 4 plan: Chapter Sources tab (draft, waiting on D1)
+# Phase 4 plan: Chapter Sources tab
+
+Decisions (Sambit, 9 Nov): **D1 = a**, **D2 go ahead**, **D3 import the source and item rows now, without the v11 fields**. PDF sizes checked: no splitting needed (see §4).
 
 9 Nov 2026. Sources: design §2E (source tables, which already exist since migration 0006), `docs/wireframe/Sources.dc.html`, CLAUDE.md ("Storage: only the private bucket `cms-sources`"; "book questions are internal references only").
 
@@ -31,3 +33,32 @@
 | 4 | Add / edit source form with Save, upload to `cms-sources/<source_id>/…` | M |
 | 5 | `import:book` for `cms-book-chapter/0.1` files (D3) + tests | M |
 | 6 | Tests: storage RLS (an app user can't list or read objects), UI smoke tests, screenshots | S |
+
+## 4. As built (9 Nov)
+
+| Item | Result |
+|---|---|
+| PDF sizes | 83 NCERT Math PDFs on this Mac, already one per chapter, largest 23.4 MB (limit 50 MB): no splitting. No DAV scans on this Mac yet (checklist D7) |
+| Bootstrap 02 | Private bucket + 3 admin-only policies (no delete). Tested locally through the Storage API: admin uploads, replaces and reads; can't delete; app user and anon get nothing; only PDF and images |
+| Migration 0011 | Write grants (D2) in one checked list (`scripts/lib/grants.ts`); audit-log inserts; `cms_chapter_sources` view. Local and real; `db-verify` passes on both |
+| `import:sources` | 180 NCERT chapter PDFs (Math 77, Science 44, English 59), 647 chapter links. Local and real |
+| `import:book` | NCERT-C6-01: 42 items, 7 jumps (6 sections + Answers), PDF page range on MC27. Accepts book schema 0.1 and 0.2. Local and real |
+| `upload:sources` | Local: 77 PDFs (355 MB) uploaded as the admin. Real: checklist D5 (needs your login) |
+| UI | Sources tab (open at page via 1-hour signed URLs, jumps, gallery, add/edit with Save + audit); question detail resolves source refs to book items |
+| Tests | 142 unit, 51 database (incl. 6 Storage API tests, app-user writes refused by RLS); end-to-end Sources flow in Chrome |
+
+Guesses, all listed in the PR:
+- **P1:** a source's ID is `NCERT-<pdf file stem>`, e.g. `NCERT-fegp101`.
+- **P2:** registered sources open their public NCERT link until the file is uploaded; after that the private file wins.
+- **P3:** page ranges and jumps are stored as PDF pages (printed page + offset).
+- **P4:** a book file sets page ranges only on the chapters its items are placed in; registry links stay.
+- **P5:** item snapshot images (book schema 0.2) aren't imported yet.
+- **P6:** an item's kind, label, section and assessable flag aren't stored, because the design has no column for them; they stay in the book file.
+- **P7:** sources sort NCERT, DAV, IXL, SOF, other, with the topic's class first.
+- **P8:** the form suggests an ID from publisher + title, editable under *More* and permanent after Save.
+- **P9:** edits can add jumps and change pages, but not remove jumps.
+- **P10:** replacing a file overwrites the same path; there's no delete.
+- **P11:** the tab shows the sources of the topic's chapter.
+- **P12:** signed URLs last 1 hour.
+- **P13:** a browser save is upload → rows → audit, not one transaction; errors are shown, and a failed save can leave an unused file.
+- **P14:** DAV isn't registered until the scans exist.
