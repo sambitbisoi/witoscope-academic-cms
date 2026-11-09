@@ -39,7 +39,7 @@ const SEQ = { math: 'cms_mq_seq', science: 'cms_sq_seq', grammar: 'cms_gq_seq' }
 
 // ---------------------------------------------------------------- catalog
 async function loadCatalog(tx: Tx, file: ChapterFile): Promise<Catalog> {
-  const [ruleVersions, chapter, topics, sets, patterns, concepts, miscs, insights, stems, keys] = await Promise.all([
+  const [ruleVersions, chapter, topics, sets, patterns, concepts, miscs, insights, stems, keys, sourceItems] = await Promise.all([
     tx`select rule_version from cms.cms_rule_versions`,
     tx`select chapter_id, subject from cms.cms_chapters where chapter_id = ${file.chapter_id}`,
     tx`select topic_id, chapter_id, class, topic_kind, taught_in_school, status from cms.cms_topics`,
@@ -52,6 +52,7 @@ async function loadCatalog(tx: Tx, file: ChapterFile): Promise<Catalog> {
        join cms.cms_question_versions v on v.question_id = q.question_id and v.version_no = q.current_version
        where q.bank = 'production' and q.retired_at is null`,
     tx`select file_key, question_id from cms.cms_questions where file_key is not null`,
+    tx`select ref_id from cms.cms_source_items`,
   ]);
   return {
     ruleVersions: new Set(ruleVersions.map((r) => r.rule_version)),
@@ -64,6 +65,7 @@ async function loadCatalog(tx: Tx, file: ChapterFile): Promise<Catalog> {
     insights: new Map(insights.map((i) => [i.insight_id, { status: i.status }])),
     stems: new Map(stems.map((s) => [normaliseStem(s.text), s.file_key ?? s.question_id])),
     keyToQuestionId: new Map(keys.map((k) => [k.file_key, k.question_id])),
+    sourceItems: new Set(sourceItems.map((s) => s.ref_id)),
   };
 }
 
@@ -97,9 +99,10 @@ async function textsFromDb(tx: Tx, versionId: number, placementNote: string | nu
 }
 
 // ---------------------------------------------------------------- writing a version
-function versionColumns(q: Question, d: ReturnType<typeof derive>, hash: string, importId: number) {
+function versionColumns(q: Question, topicId: string, d: ReturnType<typeof derive>, hash: string, importId: number) {
   const s = q.signature;
   return {
+    topic_id: topicId, typical_set_id: q.typical_set_id, pattern_id: q.pattern_id ?? null,
     text: q.text,
     figure_description: q.figure?.description ?? null,
     image_status: q.figure?.image_status ?? null,
@@ -248,7 +251,7 @@ export async function runChapter(sql: Sql, filePath: string, mode: 'validate' | 
           const topicId = resolveTopicId(q, file);
           const hash = structureHash(q, topicId);
           const d = derive(q, q.class_override ?? file.class, (id) => cat.concepts.get(id)?.class, cfg);
-          const cols = versionColumns(q, d, hash, importId);
+          const cols = versionColumns(q, topicId, d, hash, importId);
           const qFields = {
             topic_id: topicId, class: file.class, class_override: q.class_override ?? null, placement_note: q.placement_note ?? null,
             typical_set_id: q.typical_set_id, pattern_id: q.pattern_id ?? null, clone_batch_id: q.clone_batch_id, locale: q.locale,

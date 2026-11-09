@@ -12,6 +12,8 @@ export interface Catalog {
   concepts: Map<string, { class: number }>;
   misconceptions: Set<string>;
   insights: Map<string, { status: string }>;
+  /** extracted book items (cms_source_items.ref_id); filled from Phase 4 */
+  sourceItems: Set<string>;
   /** normalised stem → owner (file key or question ID) of OTHER questions' current versions */
   stems: Map<string, string>;
   /** file key → question ID already in the CMS */
@@ -61,7 +63,9 @@ export function checkFile(file: ChapterFile, cat: Catalog): Problem[] {
     // topic
     const topicId = resolveTopicId(q, file);
     const topic = cat.topics.get(topicId);
-    if (!topic) {
+    if (q.topic_id === 'ACHIEVERS' && file.subject !== 'math') {
+      err(k, `topic ACHIEVERS is Math only for now; ${file.subject} has no Achiever rule yet`);
+    } else if (!topic) {
       err(k, q.topic_id === 'ACHIEVERS'
         ? `topic ACHIEVERS: there is no Achievers row ${topicId} for ${file.chapter_id} class ${file.class}`
         : `topic ${topicId} does not exist`);
@@ -131,6 +135,12 @@ export function checkFile(file: ChapterFile, cat: Catalog): Problem[] {
     if (second?.strategy === 'Smart calculation' && second.type === 'Another way') warn(k, 'solution 2 uses Smart calculation, so its type should be "Smarter way", not "Another way" (v10 rule)');
     if (s.visual >= 2 && !q.figure) warn(k, `visual ${s.visual} but the question has no figure`);
     if (s.working_memory >= 4 && !NO_WRITING.test(q.text)) warn(k, `working memory ${s.working_memory} but the text doesn't say to work without writing`);
+
+    // source refs: internal links to extracted book items. Until Phase 4 (sources) a
+    // missing item is a warning, not an error (Sambit, 9 Nov 2026).
+    for (const r of q.source_refs ?? []) {
+      if (!cat.sourceItems.has(r.ref_id)) warn(k, `source ref ${r.ref_id} is not in the CMS yet (sources arrive in Phase 4)`);
+    }
 
     // duplicate stems
     const stem = normaliseStem(q.text);

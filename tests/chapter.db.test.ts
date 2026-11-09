@@ -93,6 +93,9 @@ describe('chapter importer', () => {
     const { q, versions } = await state();
     expect(q!.question_id).toMatch(/^MQ\d{6}$/);
     expect(q).toMatchObject({ bank: 'production', class: 6, chapter_id: 'MC98', topic_id: 'MT9998', current_version: 1, approved_version: null });
+    const [placement] = await sql`select topic_id, typical_set_id, pattern_id from cms.cms_question_versions where question_id = ${q!.question_id}`;
+    expect(placement).toEqual({ topic_id: 'MT9998', typical_set_id: 'TS-G6-ZZ-TEST', pattern_id: 'MP9998' });
+    expect(r.problems.map((p) => p.message)).toContain('source ref N7-031 is not in the CMS yet (sources arrive in Phase 4)');
     expect(versions).toHaveLength(1);
     expect(versions[0]).toMatchObject({ version_no: 1, status: 'draft', multistep_band: 1, load: 1, load_driver: 'reading', style: 'one-liner',
       tier: 'School', trap_level: 2, is_isolating: true, difficulty_points: 5 });

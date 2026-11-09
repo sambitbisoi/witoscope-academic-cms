@@ -33,6 +33,7 @@ const catalog = (over: Partial<Catalog> = {}): Catalog => ({
   insights: new Map([['INS-LAST-STEP', { status: 'active' }]]),
   stems: new Map(),
   keyToQuestionId: new Map(),
+  sourceItems: new Set(['N7-031']),
   ...over,
 });
 const msgs = (f: ChapterFile, c = catalog()) => checkFile(f, c).map((p) => `${p.level}: ${p.message}`);
@@ -88,6 +89,17 @@ describe('checks (design §8)', () => {
   it('Achievers questions may leave wrong options untagged', () => {
     const q = q0(); q.topic_id = 'ACHIEVERS'; q.answer.wrong_answers = [];
     expect(errs(withQ(q))).toEqual([]);
+  });
+
+  it('ACHIEVERS outside Math is an error (no Achiever rule yet)', () => {
+    const f = withQ(Object.assign(q0(), { topic_id: 'ACHIEVERS' }));
+    expect(errs({ ...f, subject: 'science' }, catalog({ chapter: { chapter_id: 'MC19', subject: 'science' } })))
+      .toContain('topic ACHIEVERS is Math only for now; science has no Achiever rule yet');
+  });
+
+  it('a source ref not in the CMS is a warning until Phase 4', () => {
+    expect(msgs(example, catalog({ sourceItems: new Set() }))).toContain('warning: source ref N7-031 is not in the CMS yet (sources arrive in Phase 4)');
+    expect(errs(example, catalog({ sourceItems: new Set() }))).toEqual([]);
   });
 
   it('ACHIEVERS with no Achievers row is an error', () => {
