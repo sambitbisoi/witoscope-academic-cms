@@ -11,8 +11,9 @@ function sdkClient(apiKey: string): AiClient {
   return {
     create: async (params) => {
       const { betas, ...rest } = params as { betas?: string[] } & Record<string, unknown>;
-      return (await client.beta.messages.create({ ...rest, betas } as never)) as never;
+      return (await client.beta.messages.create({ ...rest, ...(betas ? { betas } : {}) } as never)) as never;
     },
+    countTokens: async (params) => (await client.messages.countTokens(params as never)) as never,
     batchCreate: async (requests) => (await client.messages.batches.create({ requests } as never)) as never,
     batchRetrieve: async (id) => (await client.messages.batches.retrieve(id)) as never,
     batchResults: async function* (id) { for await (const r of await client.messages.batches.results(id)) yield r as never; },

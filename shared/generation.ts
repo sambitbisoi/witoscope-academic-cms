@@ -51,38 +51,93 @@ export interface RawDraft {
   solution_second_strategy: string; hints: string[]; tagging_why: { attribute: string; why: string; confidence: 'high' | 'medium' | 'low' }[]; tagging_summary: string;
 }
 
-// ---------------------------------------------------------------- tagging pack (cached system prompt)
-export interface PackInput {
+// ---------------------------------------------------------------- prompt parts
+// Phase 6 update (9 Nov 2026): every request = a FIXED rules block (cached system prompt,
+// identical for every request of a task) + a small per-topic context (the topic's concept
+// cards and the relevant calibration cases) in the user message, so requests stay well
+// under 100K tokens (the long-context price threshold) and the cache is reused across topics.
+export type AiTask = 'generate' | 'tag' | 'extract';
+
+export interface RulesInput {
   ruleVersion: string;
   attributes: { attribute: string; meaning: string | null; values: string | null }[];
   rubric: { attribute: string; definition: string | null; levels_anchors: string | null; rules: string | null; edge_cases: string | null }[];
-  calibration: { case_id: string; attribute: string | null; first_value: string | null; final_value: string | null; why_wrong: string | null; rule: string | null }[];
   strategyTypes: string[];
+}
+
+const GENERATE_RULES = [
+  '## Rules for every draft',
+  '- Write original questions. Never copy a textbook question or keep its numbers.',
+  '- Every wrong MCQ option is a believable mistake and is tagged; a misconception tag names a misconception ID from the request.',
+  '- The correct answer must be exactly one of the options for MCQ and True/False.',
+  '- Use Indian context (₹, Indian names) and simple English for the class.',
+];
+const TAG_RULES = [
+  '## Rules for tagging',
+  '- Tag the question exactly as it is written; do not rewrite it.',
+  '- Use only concept IDs and misconception IDs listed in the request.',
+  '- Tag every wrong answer listed in the request, in the same order, with its value unchanged.',
+  '- Give a short why for each attribute.',
+];
+
+/** The fixed, cached system prompt for a task: attribute definitions, the tagging rubric, strategy types and the task's rules. No topic data. */
+export function buildRules(task: AiTask, p: RulesInput): { text: string; version: string; hash: string } {
+  const lines = [
+    task === 'generate' ? 'You write practice questions for an Indian school app (classes 1-6) and tag them with the WitoScope question attributes.'
+      : 'You tag practice questions for an Indian school app (classes 1-6) with the WitoScope question attributes.',
+    `Attribute rules: ${p.ruleVersion}. Follow them exactly; when unsure, choose the lower value and say why.`,
+    'The request gives the topic\'s concept cards, the calibration cases that matter for it, and reference questions.',
+    '', '## Attributes', ...p.attributes.map((a) => `- ${a.attribute}: ${a.meaning ?? ''}${a.values ? ` (values: ${a.values})` : ''}`),
+    '', '## Tagging rubric', ...p.rubric.map((r) => [`### ${r.attribute}`, r.definition, r.levels_anchors && `Levels: ${r.levels_anchors}`, r.rules && `Rules: ${r.rules}`, r.edge_cases && `Edge cases: ${r.edge_cases}`].filter(Boolean).join('\n')),
+    '', `## Strategy types: ${p.strategyTypes.join(', ')}`,
+    '', ...(task === 'generate' ? GENERATE_RULES : TAG_RULES),
+  ];
+  const text = lines.join('\n');
+  const hash = sha256Hex(text);
+  return { text, hash, version: `${p.ruleVersion}-${task}-${hash.slice(0, 10)}` };
+}
+
+export interface CalibrationCase { case_id: string; attribute: string | null; first_value: string | null; final_value: string | null; why_wrong: string | null; rule: string | null;
+  /** class of the case's question, and whether that question is test-only gold (never sent) */
+  class: number | null; test_only: boolean }
+
+/** Calibration cases for a class: per attribute, the cases within one class of it; an attribute with none there keeps its nearest cases. Test-only never. */
+export function pickCalibration(cases: CalibrationCase[], classLevel: number): CalibrationCase[] {
+  const usable = cases.filter((c) => !c.test_only);
+  const dist = (c: CalibrationCase) => c.class === null ? 9 : Math.abs(c.class - classLevel);
+  const out: CalibrationCase[] = [];
+  for (const attr of [...new Set(usable.map((c) => c.attribute ?? ''))]) {
+    const mine = usable.filter((c) => (c.attribute ?? '') === attr);
+    const near = mine.filter((c) => dist(c) <= 1);
+    const min = Math.min(...mine.map(dist));
+    out.push(...(near.length ? near : mine.filter((c) => dist(c) === min)));
+  }
+  return out.sort((a, b) => a.case_id.localeCompare(b.case_id));
+}
+
+export interface ConceptCard { concept_id: string; name: string; type?: string | null; description?: string | null; includes?: string | null; excludes?: string | null; example_question?: string | null }
+export interface ContextInput {
+  cards: ConceptCard[];
+  misconceptions: { misconception_id: string; concept_id?: string | null; description: string }[];
+  calibration: CalibrationCase[];
   /** gold questions marked "prompt example" only; test-only gold must never reach a prompt */
   examples: { qid: string; use: string; question: Question }[];
 }
 
-export function buildPack(p: PackInput): { text: string; version: string; hash: string; excludedTestOnly: number } {
-  const examples = p.examples.filter((e) => e.use === 'prompt_example');
-  const lines = [
-    'You write practice questions for an Indian school app (classes 1-6) and tag them with the WitoScope question attributes.',
-    `Attribute rules: ${p.ruleVersion}. Follow them exactly; when unsure, choose the lower value and say why.`,
-    '', '## Attributes', ...p.attributes.map((a) => `- ${a.attribute}: ${a.meaning ?? ''}${a.values ? ` (values: ${a.values})` : ''}`),
-    '', '## Tagging rubric', ...p.rubric.map((r) => [`### ${r.attribute}`, r.definition, r.levels_anchors && `Levels: ${r.levels_anchors}`, r.rules && `Rules: ${r.rules}`, r.edge_cases && `Edge cases: ${r.edge_cases}`].filter(Boolean).join('\n')),
+/** The per-topic part of the user message. */
+export function buildContext(c: ContextInput): { text: string; excludedTestOnly: number } {
+  const examples = c.examples.filter((e) => e.use === 'prompt_example');
+  const text = [
+    '## Concept cards for this topic',
+    ...(c.cards.length ? c.cards.map((k) => [`- ${k.concept_id} ${k.name}${k.type ? ` [${k.type}]` : ''}`, k.description && `  ${k.description}`, k.includes && `  Includes: ${k.includes}`,
+      k.excludes && `  Excludes: ${k.excludes}`, k.example_question && `  Example: ${k.example_question}`].filter(Boolean).join('\n')) : ['(none)']),
+    '', '## Misconceptions', ...(c.misconceptions.length ? c.misconceptions.map((m) => `- ${m.misconception_id}${m.concept_id ? ` (${m.concept_id})` : ''}: ${m.description}`) : ['(none)']),
     '', '## Calibration cases (first value was wrong; the final value is right)',
-    ...p.calibration.map((c) => `- ${c.case_id} ${c.attribute}: ${c.first_value} → ${c.final_value}. ${c.why_wrong ?? ''} Rule: ${c.rule ?? ''}`),
-    '', `## Strategy types: ${p.strategyTypes.join(', ')}`,
+    ...c.calibration.map((k) => `- ${k.case_id} ${k.attribute}: ${k.first_value} → ${k.final_value}. ${k.why_wrong ?? ''} Rule: ${k.rule ?? ''}`),
     '', '## Reference questions (already tagged correctly)',
-    ...examples.map((e) => `${e.qid}: ${stableJson({ text: e.question.text, answer: e.question.answer, concepts: e.question.concepts, signature: e.question.signature })}`),
-    '', '## Rules for every draft',
-    '- Write original questions. Never copy a textbook question or keep its numbers.',
-    '- Every wrong MCQ option is a believable mistake and is tagged; a misconception tag names a misconception ID from the request.',
-    '- The correct answer must be exactly one of the options for MCQ and True/False.',
-    '- Use Indian context (₹, Indian names) and simple English for the class.',
-  ];
-  const text = lines.join('\n');
-  const hash = sha256Hex(text);
-  return { text, hash, version: `${p.ruleVersion}-${hash.slice(0, 10)}`, excludedTestOnly: p.examples.length - examples.length };
+    ...(examples.length ? examples.map((e) => `${e.qid}: ${stableJson({ text: e.question.text, answer: e.question.answer, concepts: e.question.concepts, signature: e.question.signature })}`) : ['(none)']),
+  ].join('\n');
+  return { text, excludedTestOnly: c.examples.length - examples.length };
 }
 
 // ---------------------------------------------------------------- request prompt
@@ -92,9 +147,10 @@ export interface GenerateSettings {
   concepts: { concept_id: string; name: string }[]; misconceptions: { misconception_id: string; description: string }[];
 }
 
-export function buildPrompt(source: Question | null, s: GenerateSettings): string {
+export function buildPrompt(source: Question | null, s: GenerateSettings, context = ''): string {
   const vary = [s.vary.numbers && 'the numbers', s.vary.story && 'the story or context', s.vary.format && 'the answer format'].filter(Boolean).join(', ') || 'the numbers';
   return [
+    ...(context ? [context, '', '## Request'] : []),
     `Write ${s.count} new draft question${s.count === 1 ? '' : 's'} for Class ${s.classLevel}, topic "${s.topicName}", question type "${s.setName}"${s.patternName ? `, pattern "${s.patternName}"` : ''}.`,
     `Math difficulty for the drafts, in order: ${s.difficulties.join(', ')}.`,
     `Change ${vary} compared with the source; keep the same skill.`,
@@ -165,9 +221,116 @@ export function checkAgainst(text: string, candidates: Candidate[], threshold: n
 }
 
 // ---------------------------------------------------------------- cost
-export interface Price { input: number; output: number; cache_write: number; cache_read: number } // USD per million tokens
+/** USD per million tokens; batch runs cost half. `long` = the rates once a request's prompt passes `above` tokens (Haiku 5.5: 5× above 100K). */
+export interface Rates { input: number; output: number; cache_write: number; cache_read: number }
+export interface Price extends Rates { long?: Rates & { above: number } }
 export interface Usage { input_tokens: number; output_tokens: number; cache_creation_input_tokens?: number | null; cache_read_input_tokens?: number | null }
+/** The long-context price threshold every request must stay under (prompt tokens, cache reads and writes included). */
+export const PROMPT_TOKEN_LIMIT = 100_000;
+export const promptTokens = (u: Usage) => u.input_tokens + (u.cache_creation_input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0);
 export function costUsd(u: Usage, p: Price, batch = false): number {
-  const usd = (u.input_tokens * p.input + u.output_tokens * p.output + (u.cache_creation_input_tokens ?? 0) * p.cache_write + (u.cache_read_input_tokens ?? 0) * p.cache_read) / 1e6;
+  const r: Rates = p.long && promptTokens(u) > p.long.above ? p.long : p;
+  const usd = (u.input_tokens * r.input + u.output_tokens * r.output + (u.cache_creation_input_tokens ?? 0) * r.cache_write + (u.cache_read_input_tokens ?? 0) * r.cache_read) / 1e6;
   return Math.round(usd * (batch ? 0.5 : 1) * 1e6) / 1e6;
+}
+
+/** One model attempt within a request. A refusal fallback adds attempts: "server_fallback"
+ *  (the API re-ran the request on another model) or "client_fallback" (the AI function retried
+ *  on ai_fallback_model, for models with no server-side fallback such as Haiku 5.5). */
+export interface Attempt { model: string; via: 'requested' | 'server_fallback' | 'client_fallback'; usage: Usage; stop_reason: string | null }
+export const attemptCost = (a: Attempt, priceOf: (model: string) => Price, batch = false) => costUsd(a.usage, priceOf(a.model), batch);
+export function attemptsCost(attempts: Attempt[], priceOf: (model: string) => Price, batch = false): number {
+  return Math.round(attempts.reduce((n, a) => n + attemptCost(a, priceOf, batch), 0) * 1e6) / 1e6;
+}
+export const sumUsage = (attempts: Attempt[]): Usage => attempts.reduce<Usage>((t, a) => ({
+  input_tokens: t.input_tokens + a.usage.input_tokens, output_tokens: t.output_tokens + a.usage.output_tokens,
+  cache_creation_input_tokens: (t.cache_creation_input_tokens ?? 0) + (a.usage.cache_creation_input_tokens ?? 0),
+  cache_read_input_tokens: (t.cache_read_input_tokens ?? 0) + (a.usage.cache_read_input_tokens ?? 0) }), { input_tokens: 0, output_tokens: 0, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 });
+/** What a fallback did, for the run log: null when the requested model answered. */
+export function fallbackOf(attempts: Attempt[]): { kind: 'server' | 'client'; from: string; to: string; answered: boolean } | null {
+  const fb = attempts.find((a) => a.via !== 'requested');
+  if (!fb) return null;
+  const last = attempts[attempts.length - 1]!;
+  return { kind: fb.via === 'server_fallback' ? 'server' : 'client', from: attempts[0]!.model, to: last.model, answered: last.stop_reason !== 'refusal' };
+}
+
+// ---------------------------------------------------------------- tagging (model check)
+const sigSchema = (DRAFT_SCHEMA.properties.drafts.items.properties.signature);
+/** Tags for one question (structured output). Wrong answers are returned in the order given, value unchanged. */
+export const TAG_SCHEMA = {
+  type: 'object', additionalProperties: false, required: ['concepts', 'signature', 'duration_s', 'wrong_answers', 'tagging_why'],
+  properties: {
+    concepts: { type: 'array', items: conceptRef }, signature: sigSchema,
+    duration_s: { type: 'integer', enum: [30, 60, 90, 120] },
+    wrong_answers: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['value', 'tag', 'misconception_id'],
+      properties: { value: str, tag: wrong.properties.tag, misconception_id: str } } },
+    tagging_why: { type: 'array', items: why },
+  },
+} as const;
+export interface RawTags {
+  concepts: { concept_id: string; involvement: number }[]; signature: RawDraft['signature']; duration_s: number;
+  wrong_answers: { value: string; tag: string; misconception_id: string }[]; tagging_why: RawDraft['tagging_why'];
+}
+
+const wrongValues = (q: Question) => [...(q.answer.wrong_answers ?? []).map((w) => ({ part: '', w })),
+  ...(q.parts ?? []).flatMap((p) => (p.answer.wrong_answers ?? []).map((w) => ({ part: p.part_label, w })))];
+
+/** The question with every tagged value hidden: no concepts, signature, duration, wrong-answer tags, solutions, hints or tagging notes. */
+export function hideValues(q: Question) {
+  const ans = (a: Question['answer']) => ({ format: a.format, ...(a.options ? { options: a.options } : {}), correct: a.correct, accepted: a.accepted ?? [] });
+  return { text: q.text, ...(q.figure ? { figure: q.figure.description } : {}), answer: ans(q.answer),
+    ...(q.parts?.length ? { parts: q.parts.map((p) => ({ part_label: p.part_label, text: p.text, answer: ans(p.answer) })) } : {}),
+    wrong_answers: wrongValues(q).map((x) => ({ ...(x.part ? { part: x.part } : {}), value: x.w.value })) };
+}
+
+export function buildTagPrompt(q: Question, classLevel: number, topicName: string, context: string): string {
+  return [context, '', '## Request',
+    `Tag this Class ${classLevel} question (topic "${topicName}") with every attribute. Use only the concept IDs on the concept cards above.`,
+    `Question: ${stableJson(hideValues(q))}`,
+    'Return JSON matching the schema.'].join('\n');
+}
+
+export interface AttrScore { attribute: string; gold: string; got: string; hits: number; n: number; near: boolean; note?: string }
+const ORD = { Simple: 0, Medium: 1, Complex: 2 } as Record<string, number>;
+const DUR = [30, 60, 90, 120];
+/** Compare a model's tags with a gold question's values, attribute by attribute. `near` = off by one level. */
+export function compareTags(gold: Question, got: RawTags, offered: string[]): AttrScore[] {
+  const g = gold.signature, t = got.signature;
+  const one = (attribute: string, a: unknown, b: unknown, near = false, note?: string): AttrScore =>
+    ({ attribute, gold: String(a ?? ''), got: String(b ?? ''), hits: String(a ?? '') === String(b ?? '') ? 1 : 0, n: 1, near: String(a ?? '') !== String(b ?? '') && near, ...(note ? { note } : {}) });
+  const num = (attribute: string, a: number, b: number) => one(attribute, a, b, Math.abs(a - b) === 1);
+  const goldConcepts = [...new Set([...gold.concepts, ...(gold.parts ?? []).flatMap((p) => p.concepts)].map((c) => c.concept_id))].sort();
+  const gotConcepts = [...new Set(got.concepts.map((c) => c.concept_id))].sort();
+  const primary = (cs: { concept_id: string; involvement: number }[]) => [...new Set(cs.filter((c) => c.involvement === 1).map((c) => c.concept_id))].sort().join(', ');
+  const missingFromCards = goldConcepts.filter((c) => !offered.includes(c));
+  const wa = wrongValues(gold);
+  const waHits = wa.filter((x, i) => got.wrong_answers[i]?.tag === x.w.tag).length;
+  return [
+    one('Math difficulty', g.math_difficulty, t.math_difficulty, Math.abs((ORD[g.math_difficulty] ?? 0) - (ORD[t.math_difficulty] ?? 9)) === 1),
+    one('IsPureFact', g.is_pure_fact, t.is_pure_fact),
+    num('Reading', g.reading, t.reading),
+    one('Has_Irrelevant_Info', g.has_irrelevant_info, t.has_irrelevant_info),
+    num('Steps', g.steps, t.steps),
+    num('WorkingMemory', g.working_memory, t.working_memory),
+    num('Inhibition', g.inhibition, t.inhibition),
+    num('Visual', g.visual, t.visual),
+    num('Strategy', g.strategy, t.strategy),
+    one('Strategy_type', g.strategy_type ?? '', t.strategy_type ?? ''),
+    one('Insight_ID', g.insight_id ?? '', t.insight_id ?? ''),
+    one('Expected duration', gold.duration_s, got.duration_s, Math.abs(DUR.indexOf(gold.duration_s) - DUR.indexOf(got.duration_s)) === 1),
+    one('Concepts', goldConcepts.join(', '), gotConcepts.join(', '), false, missingFromCards.length ? `not on the topic's cards: ${missingFromCards.join(', ')}` : undefined),
+    one('Primary concept', primary([...gold.concepts, ...(gold.parts ?? []).flatMap((p) => p.concepts)]), primary(got.concepts)),
+    { attribute: 'Wrong-answer tags', gold: wa.map((x) => x.w.tag).join(', '), got: got.wrong_answers.map((w) => w.tag).join(', '), hits: waHits, n: wa.length, near: false },
+  ].filter((x) => x.n > 0);
+}
+
+export interface Agreement { attribute: string; hits: number; n: number; near: number; pct: number }
+/** Agreement per attribute over all questions (wrong-answer tags pooled over every wrong answer). */
+export function agreement(perQuestion: AttrScore[][]): Agreement[] {
+  const m = new Map<string, Agreement>();
+  for (const rows of perQuestion) for (const r of rows) {
+    const a = m.get(r.attribute) ?? { attribute: r.attribute, hits: 0, n: 0, near: 0, pct: 0 };
+    a.hits += r.hits; a.n += r.n; a.near += r.near ? 1 : 0; m.set(r.attribute, a);
+  }
+  return [...m.values()].map((a) => ({ ...a, pct: a.n ? Math.round((a.hits / a.n) * 1000) / 10 : 0 }));
 }

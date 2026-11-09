@@ -2,7 +2,7 @@
 // It reads the source question and settings from the prompt and returns drafts with the
 // whole numbers shifted, so they pass the same checks a real draft must pass.
 import type { AiClient } from '../../functions/_lib/ai.ts';
-import type { RawDraft } from '../../shared/generation.ts';
+import type { RawDraft, RawTags } from '../../shared/generation.ts';
 
 const shift = (s: string, by: number) => s.replace(/\d+/g, (n) => String(Number(n) + by));
 
@@ -32,15 +32,47 @@ export function fakeDrafts(prompt: string): RawDraft[] {
 
 const usage = { input_tokens: 1200, output_tokens: 900, cache_creation_input_tokens: 0, cache_read_input_tokens: 8000 };
 
-export function fakeAiClient(): AiClient & { batches: Map<string, { custom_id: string; prompt: string }[]>; calls: Record<string, unknown>[] } {
+/** Fake tags: plain mid-range values, and the wrong answers echoed back tagged "concept_error". */
+export function fakeTags(prompt: string): RawTags {
+  const q = JSON.parse(/^Question: (\{.*\})$/m.exec(prompt)?.[1] ?? '{}') as { wrong_answers?: { value: string }[] };
+  const card = /^- ([A-Z0-9-]+-C\d+[A-Za-z0-9-]*) /m.exec(prompt)?.[1];
+  return {
+    concepts: card ? [{ concept_id: card, involvement: 1 }] : [],
+    signature: { math_difficulty: 'Medium', is_pure_fact: false, reading: 1, has_irrelevant_info: false, steps: 2, working_memory: 1, inhibition: 0, visual: 0, strategy: 0, strategy_type: '', insight_id: '' },
+    duration_s: 60, wrong_answers: (q.wrong_answers ?? []).map((w) => ({ value: w.value, tag: 'concept_error', misconception_id: '' })),
+    tagging_why: [{ attribute: 'math_difficulty', why: 'Fake model (local dev).', confidence: 'low' }],
+  };
+}
+/** A prompt containing FAKE_REFUSE is declined by Haiku models (no server-side fallback) and, server-side, re-served by the fallback. */
+const REFUSE = 'FAKE_REFUSE';
+/** Local dev only: FAKE_AI_REFUSE=1 npm run dev:files makes the fake decline every request, to see the fallback in the UI. */
+const refuses = (prompt: string) => prompt.includes(REFUSE) || (typeof process !== 'undefined' && process.env.FAKE_AI_REFUSE === '1');
+
+export function fakeAiClient(): AiClient & { batches: Map<string, { custom_id: string; prompt: string }[]>; calls: Record<string, unknown>[]; counts: Record<string, unknown>[] } {
   const batches = new Map<string, { custom_id: string; prompt: string }[]>();
   const calls: Record<string, unknown>[] = [];
+  const counts: Record<string, unknown>[] = [];
   const promptOf = (p: Record<string, unknown>) => ((p.messages as { content: string }[])[0]!.content);
   return {
-    batches, calls,
+    batches, calls, counts,
     async create(params) {
       calls.push(params);
-      return { content: [{ type: 'text', text: JSON.stringify({ drafts: fakeDrafts(promptOf(params)) }) }], usage, model: String(params.model), stop_reason: 'end_turn' };
+      const prompt = promptOf(params), model = String(params.model);
+      const isTag = JSON.stringify(params.output_config).includes('"wrong_answers":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["value","tag","misconception_id"]');
+      const text = JSON.stringify(isTag ? fakeTags(prompt) : { drafts: fakeDrafts(prompt) });
+      if (refuses(prompt) && /^claude-haiku/.test(model)) return { content: [], usage: { ...usage, output_tokens: 0 }, model, stop_reason: 'refusal' };
+      if (refuses(prompt) && params.fallbacks === 'default') {
+        // server-side fallback: the first attempt declines, the fallback model serves
+        const it = (m: string, type: string, out: number) => ({ type, model: m, input_tokens: usage.input_tokens, output_tokens: out, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 });
+        return { content: [{ type: 'fallback', from: { model }, to: { model: 'claude-opus-5' } }, { type: 'text', text }], model: 'claude-opus-5', stop_reason: 'end_turn',
+          usage: { ...usage, iterations: [it(model, 'message', 0), it('claude-opus-5', 'fallback_message', usage.output_tokens)] } };
+      }
+      return { content: [{ type: 'text', text }], usage, model, stop_reason: 'end_turn' };
+    },
+    async countTokens(params) {
+      counts.push(params);
+      const sys = (params.system as { text: string }[]).map((b) => b.text).join('');
+      return { input_tokens: Math.ceil((sys.length + promptOf(params).length) / 3.5) };
     },
     async batchCreate(requests) {
       const id = `msgbatch_fake${batches.size + 1}`;
@@ -54,7 +86,7 @@ export function fakeAiClient(): AiClient & { batches: Map<string, { custom_id: s
     },
     async *batchResults(id) {
       for (const r of batches.get(id) ?? []) {
-        yield { custom_id: r.custom_id, result: { type: 'succeeded', message: { content: [{ type: 'text', text: JSON.stringify({ drafts: fakeDrafts(r.prompt) }) }], usage, model: 'claude-sonnet-5-5' } } };
+        yield { custom_id: r.custom_id, result: { type: 'succeeded', message: { content: [{ type: 'text', text: JSON.stringify({ drafts: fakeDrafts(r.prompt) }) }], usage, model: 'claude-haiku-5-5', stop_reason: 'end_turn' } } };
       }
     },
   };
