@@ -18,3 +18,27 @@ Steps 1–8 are done (9 Nov): bootstrap, pooler connection, 9 migrations, admin 
 | A8 | Browser | Sign out, then sign in with any other account, for example a test user of the app | "… can't use the CMS." |
 
 If A4 shows `false`, or A8 shows anything other than "can't use the CMS", stop and tell Claude. To undo A5, remove `cms` from Exposed schemas.
+
+## B. Cloudflare Pages: build and host the CMS (Phase 3)
+
+Do A1–A5 first: the deployed site only works once `cms` is exposed. Do **C right after B1**, before sharing or using the URL.
+
+| # | Where | Exact steps | Expected result |
+|---|---|---|---|
+| B1 | Cloudflare dashboard → **Workers & Pages** → Create → **Pages** → *Connect to Git* | Authorise GitHub for the repo `sambitbisoi/witoscope-academic-cms` only. Project name: e.g. `witoscope-cms` (this gives `witoscope-cms.pages.dev`). Production branch: `main` | Project created |
+| B2 | Same screen, *Build settings* | Framework preset **None**. Build command `npm ci && npm run build -w web`. Build output directory `web/dist`. Root directory: leave empty | — |
+| B3 | Same screen, *Environment variables* (Production **and** Preview) | `NODE_VERSION` = `22`; `VITE_SUPABASE_URL` = the Project URL; `VITE_SUPABASE_ANON_KEY` = the anon key (both public by design). **Never** the service_role key | Save and deploy; the build log ends with "Success" |
+| B4 | Pages project → Settings → *Builds & deployments* → **Preview branch control** | Choose *None* (only `main` deploys), or *Custom* if you want branch previews; Access covers both | — |
+
+## C. Cloudflare Access: only you can open the CMS (Phase 3)
+
+| # | Where | Exact steps | Expected result |
+|---|---|---|---|
+| C1 | Cloudflare **Zero Trust** → Access → **Applications** → Add an application → **Self-hosted** | Name `WitoScope CMS`. Session duration 24 h. Application domains: add **both** `witoscope-cms.pages.dev` and `*.witoscope-cms.pages.dev` (use your project name from B1) | — |
+| C2 | Same wizard → **Policies** | Add a policy: name `Sambit only`, Action **Allow**, Include → **Emails** → your email. No other rules | — |
+| C3 | Same wizard → *Login methods* | Keep **One-time PIN** (needs no other setup) | Application saved |
+| C4 | Private browser window | Open `https://witoscope-cms.pages.dev` | Cloudflare's Access page asks for your email; after the PIN you see the CMS sign-in |
+| C5 | Private browser window | Try the same URL with any other email | Access refuses it; the CMS is never shown |
+| C6 | Terminal | `curl -sI https://witoscope-cms.pages.dev` | A redirect to `…cloudflareaccess.com` (not the app) |
+
+Optional, later: a custom domain (Pages → Custom domains), then add it to the Access application as well.
