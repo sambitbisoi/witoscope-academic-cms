@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Generate similar and review</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#F4F4F2}
+a{color:#2F5BD3}a:hover{color:#1F3F99}
+</style>
+</helmet>
+<div style="font-family: Inter, system-ui, sans-serif; color: #1F1F1F; background: #F4F4F2; min-height: 1040px; box-sizing: border-box; display: flex; flex-direction: column">
+  <header style="display: flex; flex-wrap: wrap; gap: 14px; align-items: center; padding: 12px 24px; background: #FFFFFF; border-bottom: 1px solid #D6D6D3">
+    <a href="Main.dc.html" style="font-weight: 700; font-size: 16px; color: #1F1F1F; text-decoration: none">WitoScope CMS</a>
+    <span aria-hidden="true" style="color: #8A8A85">/</span>
+    <a href="Workspace.dc.html" style="font-size: 14px">Class 6 · Math · MT0332 Equivalent fractions</a>
+    <span aria-hidden="true" style="color: #8A8A85">/</span>
+    <span style="font-size: 14px; font-weight: 600">Generate similar</span>
+  </header>
+
+  <main style="max-width: 1280px; width: 100%; margin: 0 auto; padding: 24px; box-sizing: border-box; display: flex; flex-wrap: wrap; gap: 20px; align-items: flex-start">
+    <!-- LEFT: original + settings -->
+    <section aria-label="Original and settings" style="flex: 1 1 340px; max-width: 400px; display: flex; flex-direction: column; gap: 16px">
+      <div style="background: #FFFFFF; border: 1px solid #D6D6D3; border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 10px">
+        <div style="font-size: 12px; font-weight: 600; color: #555555; text-transform: uppercase; letter-spacing: 0.04em">Original · MQ000035</div>
+        <div style="font-size: 16px; font-weight: 600">Fill in the missing number: 3/4 = ? / 20</div>
+        <div style="font-size: 13px; color: #555555; line-height: 1.5">Answer 15 · Simple (1) · MP0012 · traps MM006, MM007</div>
+      </div>
+
+      <div style="background: #FFFFFF; border: 1px solid #D6D6D3; border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 14px">
+        <div style="font-size: 12px; font-weight: 600; color: #555555; text-transform: uppercase; letter-spacing: 0.04em">Settings</div>
+        <div style="display: flex; flex-direction: column; gap: 6px">
+          <label for="n" style="font-size: 14px; font-weight: 500">How many</label>
+          <input id="n" value="5" style="width: 96px; height: 40px; padding: 0 10px; border: 1px solid #C9C9C5; border-radius: 8px; font: inherit; font-size: 14px; box-sizing: border-box">
+        </div>
+        <div role="group" aria-label="Difficulty" style="display: flex; flex-direction: column; gap: 6px">
+          <span style="font-size: 14px; font-weight: 500">Difficulty</span>
+          <div style="display: flex; gap: 6px; flex-wrap: wrap">
+            <button aria-pressed="true" style="height: 36px; padding: 0 12px; border-radius: 18px; border: 1px solid #1F1F1F; background: #1F1F1F; color: #FFFFFF; font: inherit; font-size: 13px; font-weight: 600">Same as original</button>
+            <button aria-pressed="false" style="height: 36px; padding: 0 12px; border-radius: 18px; border: 1px solid #C9C9C5; background: #FFFFFF; font: inherit; font-size: 13px">One level up</button>
+            <button aria-pressed="false" style="height: 36px; padding: 0 12px; border-radius: 18px; border: 1px solid #C9C9C5; background: #FFFFFF; font: inherit; font-size: 13px">Mix</button>
+          </div>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 8px; font-size: 14px">
+          <label style="display: flex; gap: 8px; align-items: center"><input type="checkbox" checked style="width: 18px; height: 18px"> Keep the same mistakes targeted</label>
+          <label style="display: flex; gap: 8px; align-items: center"><input type="checkbox" style="width: 18px; height: 18px"> Allow word-problem version</label>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 6px">
+          <label for="note" style="font-size: 14px; font-weight: 500">Extra instruction (optional)</label>
+          <textarea id="note" placeholder="e.g. use denominators up to 50" style="height: 64px; padding: 8px 10px; border: 1px solid #C9C9C5; border-radius: 8px; font: inherit; font-size: 14px; resize: vertical"></textarea>
+        </div>
+        <button style="height: 44px; border-radius: 8px; border: none; background: #2F5BD3; color: #FFFFFF; font: inherit; font-size: 14px; font-weight: 600">Generate</button>
+      </div>
+    </section>
+
+    <!-- RIGHT: results -->
+    <section aria-label="Generated drafts" style="flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column; gap: 14px">
+      <div style="display: flex; flex-wrap: wrap; gap: 10px; justify-content: space-between; align-items: center">
+        <div style="display: flex; flex-direction: column; gap: 2px">
+          <h1 style="margin: 0; font-size: 20px">4 drafts generated</h1>
+          <div style="font-size: 13px; color: #555555">Checks run automatically: answer, duplicate, copy from source</div>
+        </div>
+        <div style="display: flex; gap: 8px">
+          <button style="height: 40px; padding: 0 14px; border-radius: 8px; border: 1px solid #C9C9C5; background: #FFFFFF; font: inherit; font-size: 14px">Regenerate</button>
+          <button style="height: 40px; padding: 0 14px; border-radius: 8px; border: none; background: #1F1F1F; color: #FFFFFF; font: inherit; font-size: 14px; font-weight: 600">Approve selected (3)</button>
+        </div>
+      </div>
+
+      <sc-for list="{{drafts}}" as="d" hint-placeholder-count="4">
+        <div style="background: #FFFFFF; border: 1px solid #D6D6D3; border-radius: 12px; padding: 14px 16px; display: flex; gap: 14px; align-items: flex-start">
+          <input type="checkbox" checked="{{d.ok}}" aria-label="Select draft" style="width: 20px; height: 20px; margin-top: 2px; flex: none">
+          <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px">
+            <div style="display: flex; flex-wrap: wrap; gap: 8px; justify-content: space-between; align-items: baseline">
+              <div style="font-size: 16px; font-weight: 600">{{d.stem}}</div>
+              <div style="font-size: 13px; color: #444444">Answer {{d.ans}} · {{d.lvl}}</div>
+            </div>
+            <div style="font-size: 13px; color: #444444">Options: {{d.opts}}</div>
+            <div style="display: flex; flex-wrap: wrap; gap: 6px">
+              <span style="font-size: 12px; font-weight: 600; padding: 3px 8px; border-radius: 10px; background: #E7F0E4; color: #234B1C">✓ Answer checked</span>
+              <span style="font-size: 12px; font-weight: 600; padding: 3px 8px; border-radius: 10px; background: #E7F0E4; color: #234B1C">✓ Not a duplicate</span>
+              <sc-if value="{{d.ok}}" hint-placeholder-val="{{true}}">
+                <span style="font-size: 12px; font-weight: 600; padding: 3px 8px; border-radius: 10px; background: #E7F0E4; color: #234B1C">✓ Not copied</span>
+              </sc-if>
+              <sc-if value="{{d.flag}}" hint-placeholder-val="{{false}}">
+                <span style="font-size: 12px; font-weight: 600; padding: 3px 8px; border-radius: 10px; background: #FBE3D6; color: #7A2E0B">⚠ Same numbers as DAV item D5-023 (8/9 = [ ]/72)</span>
+              </sc-if>
+              <span style="font-size: 12px; padding: 3px 8px; border-radius: 10px; background: #EDEDEA">Signature: same as original</span>
+            </div>
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 6px; flex: none">
+            <button style="height: 36px; padding: 0 12px; border-radius: 8px; border: 1px solid #C9C9C5; background: #FFFFFF; font: inherit; font-size: 13px">Edit</button>
+            <button style="height: 36px; padding: 0 12px; border-radius: 8px; border: 1px solid #C9C9C5; background: #FFFFFF; font: inherit; font-size: 13px">Reject</button>
+          </div>
+        </div>
+      </sc-for>
+
+      <div style="font-size: 13px; color: #555555">Approved drafts get a question ID and appear under MP0012 in the workspace. Rejected drafts are kept for 30 days with the reason.</div>
+    </section>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1040}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const d = (stem, ans, opts, flag) => ({ stem, ans, opts, lvl: 'Simple (1)', ok: !flag, flag: !!flag });
+    return {
+      drafts: [
+        d('Fill in the missing number: 2/5 = ? / 30', '12', '12 ✓ · 27 (MM006) · 6 (MM007) · 10'),
+        d('Fill in the missing number: 5/6 = ? / 24', '20', '20 ✓ · 23 (MM006) · 4 (MM007) · 18'),
+        d('Fill in the missing number: 7/9 = ? / 45', '35', '35 ✓ · 43 (MM006) · 5 (MM007) · 28'),
+        d('Fill in the missing number: 8/9 = ? / 72', '64', '64 ✓ · 71 (MM006) · 8 (MM007) · 56', true),
+      ],
+    };
+  }
+}
+</script>
+</body>
+</html>

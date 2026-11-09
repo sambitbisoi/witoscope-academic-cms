@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Chapter sources</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#F4F4F2}
+a{color:#2F5BD3}a:hover{color:#1F3F99}
+</style>
+</helmet>
+<div style="font-family: Inter, system-ui, sans-serif; color: #1F1F1F; background: #F4F4F2; min-height: 1040px; box-sizing: border-box; display: flex; flex-direction: column">
+  <header style="display: flex; flex-wrap: wrap; gap: 16px; align-items: center; justify-content: space-between; padding: 12px 24px; background: #FFFFFF; border-bottom: 1px solid #D6D6D3">
+    <div style="display: flex; gap: 14px; align-items: center; flex-wrap: wrap">
+      <a href="Main.dc.html" style="font-weight: 700; font-size: 16px; color: #1F1F1F; text-decoration: none">WitoScope CMS</a>
+      <span aria-hidden="true" style="color: #8A8A85">/</span>
+      <button style="height: 36px; padding: 0 12px; border: 1px solid #C9C9C5; border-radius: 8px; background: #FFFFFF; font: inherit; font-size: 14px">Class 6 ▾</button>
+      <button style="height: 36px; padding: 0 12px; border: 1px solid #C9C9C5; border-radius: 8px; background: #FFFFFF; font: inherit; font-size: 14px">Math ▾</button>
+    </div>
+    <a href="Review.dc.html" style="display: inline-flex; align-items: center; height: 36px; padding: 0 12px; border-radius: 8px; background: #EDEDEA; color: #1F1F1F; font-size: 14px; font-weight: 600; text-decoration: none">Review queue · 110</a>
+  </header>
+
+  <div style="display: flex; flex-wrap: wrap; flex: 1; align-items: stretch">
+    <!-- LEFT: tree (chapter selected) -->
+    <nav aria-label="Chapters and topics" style="flex: 1 1 280px; max-width: 320px; min-width: 260px; background: #FFFFFF; border-right: 1px solid #D6D6D3; padding: 16px; box-sizing: border-box; display: flex; flex-direction: column; gap: 6px">
+      <div style="font-size: 13px; font-weight: 600; color: #555555; text-transform: uppercase; letter-spacing: 0.04em; padding-bottom: 6px">Chapters · topics</div>
+      <button style="text-align: left; padding: 8px 10px; border-radius: 8px; border: 2px solid #2F5BD3; background: #EEF2FC; font: inherit; font-size: 14px; font-weight: 700; color: #1F1F1F">MC18 Fraction Concepts</button>
+      <div style="display: flex; flex-direction: column; gap: 2px; padding-left: 10px; font-size: 13px; color: #444444">
+        <span style="padding: 5px 4px">MT0332 Equivalent fractions</span>
+        <span style="padding: 5px 4px">MT0334 Mixed numbers</span>
+        <span style="padding: 5px 4px">MT0392 Simplest form</span>
+        <span style="padding: 5px 4px">MT0390 Fractions on a number line</span>
+        <span style="padding: 5px 4px">MT0391 Compare and order unlike fractions</span>
+      </div>
+      <button style="text-align: left; padding: 8px 10px; border-radius: 8px; border: 1px solid transparent; background: #FFFFFF; font: inherit; font-size: 14px; font-weight: 700; color: #1F1F1F">MC19 Fraction Operations</button>
+      <div style="font-size: 13px; color: #555555; padding: 4px 10px">More Class 6 chapters…</div>
+    </nav>
+
+    <!-- MAIN: chapter sources -->
+    <section aria-label="Sources" style="flex: 999 1 560px; min-width: 0; padding: 20px 24px; box-sizing: border-box; display: flex; flex-direction: column; gap: 16px">
+      <div style="display: flex; flex-wrap: wrap; gap: 12px; justify-content: space-between; align-items: flex-start">
+        <div style="display: flex; flex-direction: column; gap: 4px">
+          <h1 style="margin: 0; font-size: 22px">MC18 · Fraction Concepts</h1>
+          <div style="font-size: 13px; color: #555555">Source books for cross-checking · internal only · everything opens full screen in its own tab, so you can put two side by side</div>
+        </div>
+        <button style="height: 40px; padding: 0 14px; border-radius: 8px; border: 1px dashed #8A8A85; background: #FFFFFF; font: inherit; font-size: 14px">+ Add PDF, link or screenshots</button>
+      </div>
+
+      <div role="tablist" style="display: flex; gap: 4px; border-bottom: 1px solid #D6D6D3">
+        <a href="Workspace.dc.html" role="tab" aria-selected="false" style="display: inline-flex; align-items: center; height: 44px; padding: 0 16px; border-bottom: 3px solid transparent; font-size: 14px; color: #555555; text-decoration: none">Questions</a>
+        <button role="tab" aria-selected="true" style="height: 44px; padding: 0 16px; border: none; border-bottom: 3px solid #1F1F1F; background: transparent; font: inherit; font-size: 14px; font-weight: 700">Sources · 4</button>
+      </div>
+
+      <sc-for list="{{books}}" as="b" hint-placeholder-count="4">
+        <div style="background: #FFFFFF; border: 1px solid #D6D6D3; border-radius: 12px; padding: 16px 18px; display: flex; flex-direction: column; gap: 12px">
+          <div style="display: flex; flex-wrap: wrap; gap: 12px; justify-content: space-between; align-items: flex-start">
+            <div style="display: flex; gap: 14px; align-items: flex-start">
+              <div aria-hidden="true" style="width: 40px; height: 50px; border-radius: 4px; background: #DADAD6; flex: none"></div>
+              <div style="display: flex; flex-direction: column; gap: 3px">
+                <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap">
+                  <span style="font-size: 16px; font-weight: 700">{{b.title}}</span>
+                  <span style="font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 10px; background: #EDEDEA; letter-spacing: 0.03em">{{b.kind}}</span>
+                </div>
+                <div style="font-size: 13px; color: #444444">{{b.where}}</div>
+                <div style="font-size: 12px; color: #555555">{{b.meta}}</div>
+              </div>
+            </div>
+            <div style="display: flex; gap: 8px; flex-wrap: wrap">
+              <button style="height: 40px; padding: 0 14px; border-radius: 8px; border: none; background: #1F1F1F; color: #FFFFFF; font: inherit; font-size: 14px; font-weight: 600">{{b.open}}</button>
+              <sc-if value="{{b.hasShots}}" hint-placeholder-val="{{false}}">
+                <button style="height: 40px; padding: 0 14px; border-radius: 8px; border: 1px solid #1F1F1F; background: #FFFFFF; font: inherit; font-size: 14px; font-weight: 600">{{b.shots}}</button>
+              </sc-if>
+            </div>
+          </div>
+          <sc-if value="{{b.hasJumps}}" hint-placeholder-val="{{true}}">
+            <div style="display: flex; flex-wrap: wrap; gap: 6px; align-items: center">
+              <span style="font-size: 12px; color: #555555; margin-right: 2px">Open full screen at</span>
+              <sc-for list="{{b.jumps}}" as="j" hint-placeholder-count="5">
+                <button style="height: 32px; padding: 0 10px; border-radius: 16px; border: 1px solid #C9C9C5; background: #FAFAF8; font: inherit; font-size: 12px">{{j}} ↗</button>
+              </sc-for>
+            </div>
+          </sc-if>
+        </div>
+      </sc-for>
+
+      <div style="font-size: 13px; color: #555555; line-height: 1.5">PDFs open in the browser's own full-screen viewer at the chosen page. Web links (IXL, SOF) open in a new browser tab. Screenshots, for pages that change or need a login, open as a full-screen gallery.</div>
+    </section>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1040}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const b = (o) => ({ ...o, hasJumps: o.jumps.length > 0, hasShots: !!o.shots });
+    return {
+      books: [
+        b({ title: 'NCERT Ganita Prakash, Grade 6', kind: 'PDF', where: 'Ch 7 Fractions · pages 151–186', meta: '56 items mapped · stored privately', open: 'Open full screen ↗',
+          jumps: ['7.1 Equal shares p151', '7.5 Mixed fractions p161', '7.6 Equivalent p163', '7.7 Comparing p173', 'Solutions p187'] }),
+        b({ title: 'DAV Mathematics, Class 5', kind: 'SCANNED PDF', where: 'Unit 4 Fractional Numbers · pdf pages 44–76', meta: '281 items mapped · stored privately', open: 'Open full screen ↗',
+          jumps: ['Types of fractions p44', 'Lowest terms p46', 'Comparing p49', 'Ordering p51', 'Brain Teasers p74'] }),
+        b({ title: 'IXL India, Class 6 Fractions', kind: 'WEB + SCREENSHOTS', where: 'in.ixl.com · skill pages mapped to MC18 topics', meta: 'Live page may change · screenshots kept as a dated copy', open: 'Open in browser ↗', shots: 'Screenshots · [n] ↗',
+          jumps: [] }),
+        b({ title: 'SOF IMO syllabus, Class 6', kind: 'WEB', where: 'sofworld.org · syllabus page', meta: 'Syllabus only', open: 'Open in browser ↗',
+          jumps: [] }),
+      ],
+    };
+  }
+}
+</script>
+</body>
+</html>
