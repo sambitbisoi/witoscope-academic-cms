@@ -1,0 +1,34 @@
+# Phase 5 plan: Edit, review and versions (draft, waiting on E1)
+
+9 Nov 2026. Sources: design §3 (statuses, same version vs new version, "the Save button decides which case applies and tells you before saving"), §4 (derived fields), CLAUDE.md (explicit Save; typo fix = same version, logged; everything else = new version; never delete; gold never publishable), wireframe (Edit / Approve / Reject in question detail; review queue).
+
+## 1. What Phase 5 delivers
+
+| Item | Detail |
+|---|---|
+| Edit a question | From the question detail: a form for the text, figure, answer/options, accepted forms, wrong-answer tags, parts, concepts and involvement, the v10 signature, solutions, hints, placement (topic / set / pattern) and notes. Optional fields sit behind *More* |
+| Save tells you first | Before saving it shows **"Typo fix: same version vN, logged"** or **"New version vN+1 (draft)"**, with the reason, using the same rules as the chapter importer (structure + numbers in the wording). Derived fields are recomputed on save |
+| Review | Draft → *Submit for review* → In review → **Approve** / **Reject (reason required)**. Approve moves `approved_version`. Rejected versions are kept with their reason. At most one open version, as the database already enforces |
+| Review queue | Home's review-queue card opens a queue: drafts and in-review versions, by subject, class and topic, oldest first, opening the question detail with the actions |
+| Versions | History with a **compare** view (field-by-field diff of any two versions) and the audit log |
+| Retire / restore | Retire a question (hidden from coverage and Publish; never deleted) and restore it, with a reason |
+| Gold | Gold questions can be edited and versioned like any other; they stay `bank = 'gold'` and are never publishable |
+
+## 2. Decision needed
+
+| # | Decision | Options | My recommendation |
+|---|---|---|---|
+| **E1** | **Where the save logic runs.** A save touches up to 9 tables (version + parts, options, wrong answers, concepts, solutions, hints, refs + question pointers + audit row) and must be **one transaction**, validated with the same §8 checks and versioning rules as the importer | (a) **SQL functions in `cms`** (`cms.cms_save_version(jsonb)`, `cms_review(…)`, `cms_retire(…)`). Security definer, owned by `cms_owner`, each one checking `cms_is_admin` first; it's the only write path, so the logged-in role gets **no** write grants on question tables. The TypeScript checks run in the browser *before* Save to show the "typo / new version" preview; the SQL function re-checks the essentials (open-version rule, enums, references) and recomputes the structure hash. (b) **An Edge Function** running as `cms_owner` that reuses the importer's TypeScript as-is. It needs deploying (`supabase functions deploy`, with your access token) and a DB secret in the function settings, which is new infrastructure. (c) Browser writes with table grants: rejected, since it can't be one transaction | **(a)**: one transaction, no new infrastructure, no write grants on question tables, and every rule lives in the migration. The risk is two implementations of the versioning rule (TS and SQL), so the tests run both on the same cases and must agree |
+
+## 3. Work items (after E1)
+
+| # | Item | Size |
+|---|---|---|
+| 1 | Shared code: move the versioning rule, derived fields and §8 checks into `shared/`, used by the scripts and the web app | S |
+| 2 | Migration 0012: `cms_save_version`, `cms_set_status` (submit / approve / reject), `cms_retire` / `cms_restore`, plus `cms_typo_fix`; all admin-checked and audited; tests that TS and SQL classify the same cases identically | L |
+| 3 | Edit form (sections, *More*), with the save preview and plain-words errors | L |
+| 4 | Review actions in question detail; review queue screen | M |
+| 5 | Version compare view | M |
+| 6 | Tests (DB: every path, RLS, one open version, gold never publishable; UI end to end), screenshots, PR | M |
+
+Also before Phase 5 is built: PRs #3, #4 and #5 are stacked and unmerged. Merging them first keeps Phase 5's PR reviewable.
