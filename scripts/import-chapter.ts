@@ -19,11 +19,11 @@ import { homedir } from 'node:os';
 import { relative, resolve } from 'node:path';
 import type postgres from 'postgres';
 import { assertCmsOwner, connect } from './lib/db.ts';
-import { checkFile, normaliseStem, resolveTopicId, type Catalog } from './lib/chapter/checks.ts';
-import { derive } from './lib/chapter/derive.ts';
+import { checkFile, normaliseStem, resolveTopicId, type Catalog } from '../shared/checks.ts';
+import { derive } from '../shared/derive.ts';
 import { schemaProblems } from './lib/chapter/schema.ts';
-import type { Answer, ChapterFile, Problem, Question } from './lib/chapter/types.ts';
-import { classify, structureHash, textsOf, type Texts } from './lib/chapter/version.ts';
+import type { Answer, ChapterFile, Problem, Question } from '../shared/types.ts';
+import { classify, structureHash, textsOf, type Texts } from '../shared/version.ts';
 import type { DerivedConfig } from './lib/v10-config.ts';
 
 type Sql = ReturnType<typeof connect>;

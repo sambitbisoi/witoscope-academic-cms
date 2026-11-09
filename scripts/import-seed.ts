@@ -13,10 +13,10 @@
 import { homedir } from 'node:os';
 import { basename, join } from 'node:path';
 import { enc, loadCatalog, textsFromDb, versionColumns, writeChildren } from './import-chapter.ts';
-import { checkFile } from './lib/chapter/checks.ts';
-import { derive } from './lib/chapter/derive.ts';
-import type { ChapterFile } from './lib/chapter/types.ts';
-import { classify, structureHash, textsOf } from './lib/chapter/version.ts';
+import { checkFile } from '../shared/checks.ts';
+import { derive } from '../shared/derive.ts';
+import type { ChapterFile } from '../shared/types.ts';
+import { classify, structureHash, textsOf } from '../shared/version.ts';
 import { assertCmsOwner, connect } from './lib/db.ts';
 import { upsertCatalogue, type UpsertCounts } from './lib/upsert.ts';
 import { parseDerivedConfig } from './lib/v10-config.ts';

@@ -9,7 +9,7 @@
 // Equal structure + same numbers in texts → typo (same version, logged)
 // Anything else                           → new version
 import { createHash } from 'node:crypto';
-import { stableJson } from '../topics.ts';
+import { stableJson } from './json.ts';
 import type { Question } from './types.ts';
 
 const T = '§text';
