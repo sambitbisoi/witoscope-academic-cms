@@ -17,7 +17,8 @@
     "db:set-admin": "tsx --env-file-if-exists=.env scripts/set-admin.ts",
     "import:topics": "tsx --env-file-if-exists=.env scripts/import-topics.ts",
     "import:seed": "tsx --env-file-if-exists=.env scripts/import-seed.ts",
-    "chapter": "tsx --env-file-if-exists=.env scripts/import-chapter.ts"
+    "chapter": "tsx --env-file-if-exists=.env scripts/import-chapter.ts",
+    "db:verify": "tsx --env-file-if-exists=.env scripts/db-verify.ts"
   },
   "devDependencies": {
     "@types/node": "22.9.0",
