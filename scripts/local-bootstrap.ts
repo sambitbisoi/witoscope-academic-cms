@@ -25,7 +25,21 @@ export function assertLocal(url: string) {
   }
 }
 
-if (import.meta.filename === process.argv[1]) {
+if (import.meta.filename === process.argv[1] && process.argv[2] === '--storage') {
+  // npm run db:local:storage — bootstrap 02 (Storage) on the LOCAL dev database only.
+  assertLocal(LOCAL_SUPERUSER_URL);
+  const sql = postgres(LOCAL_SUPERUSER_URL, { max: 1, onnotice: () => {} });
+  try {
+    const [has] = await sql`select 1 from storage.buckets where id = 'cms-sources'`;
+    if (has) console.log('local storage bootstrap: bucket cms-sources already exists, skipped.');
+    else { await sql.unsafe(readFileSync(join(import.meta.dirname, '..', 'db', 'bootstrap', '02-storage.sql'), 'utf8')); console.log('local storage bootstrap: done.'); }
+    const [check] = await sql.unsafe(readFileSync(join(import.meta.dirname, '..', 'db', 'bootstrap', '02-storage.sql'), 'utf8').split('-- Verification:')[1]!.replace(/^.*\n/, ''));
+    console.log(check);
+    if (Object.values(check!).some((v) => v !== true)) throw new Error('storage verification failed');
+  } finally {
+    await sql.end();
+  }
+} else if (import.meta.filename === process.argv[1]) {
   assertLocal(LOCAL_SUPERUSER_URL);
   // max: 1 — the bootstrap file carries its own BEGIN/COMMIT.
   const sql = postgres(LOCAL_SUPERUSER_URL, { max: 1, onnotice: () => {} });

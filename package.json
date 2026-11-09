@@ -18,7 +18,8 @@
     "import:topics": "tsx scripts/import-topics.ts",
     "import:seed": "tsx scripts/import-seed.ts",
     "chapter": "tsx scripts/import-chapter.ts",
-    "db:verify": "tsx scripts/db-verify.ts"
+    "db:verify": "tsx scripts/db-verify.ts",
+    "db:local:storage": "tsx scripts/local-bootstrap.ts --storage"
   },
   "devDependencies": {
     "@types/node": "22.9.0",
