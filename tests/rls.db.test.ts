@@ -4,7 +4,7 @@
 //   missing or malformed claims mean deny · cms_current_uid() = auth.uid().
 import postgres from 'postgres';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { assertLocal, LOCAL_SUPERUSER_URL } from '../scripts/local-bootstrap.ts';
+import { assertLocal, LOCAL_CMS_OWNER_URL, LOCAL_SUPERUSER_URL } from '../scripts/local-bootstrap.ts';
 import { connect } from '../scripts/lib/db.ts';
 import { localApi, rest, signInOrUp, type Api, type Session } from '../scripts/lib/supabase-session.ts';
 import { compareLocally, LOCAL_ADMIN } from '../scripts/verify-uid.ts';
@@ -13,7 +13,7 @@ const APP_USER = { email: 'app-user@cms.local.test', password: 'local-test-pw-2'
 
 assertLocal(LOCAL_SUPERUSER_URL);
 const su = postgres(LOCAL_SUPERUSER_URL, { max: 1, onnotice: () => {} }); // role switching (tests only)
-const owner = connect(process.env.CMS_DATABASE_URL ?? 'postgres://cms_owner:cms_owner_local@127.0.0.1:55422/postgres');
+const owner = connect(LOCAL_CMS_OWNER_URL);
 
 let api: Api;
 let admin: Session;
