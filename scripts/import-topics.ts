@@ -11,7 +11,8 @@ import { createHash } from 'node:crypto';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { assertCmsOwner, connect } from './lib/db.ts';
-import { achieversTopics, diffRow, parseSubject, type Chapter, type Problem, type Strand, type Subject, type Topic } from './lib/topics.ts';
+import { achieversTopics, parseSubject, type Chapter, type Problem, type Strand, type Subject, type Topic } from './lib/topics.ts';
+import { upsertCatalogue } from './lib/upsert.ts';
 import { readWorkbook } from './lib/xlsx.ts';
 
 const CR = join(homedir(), 'WitoScope', 'ContentResearch');
@@ -76,37 +77,9 @@ try {
     if (errors.length) return; // record the failed attempt only
 
     async function upsert<T extends object>(table: string, key: keyof T & string, rows: T[], jsonCols: string[] = []) {
-      const c = (counts[table] = { inserted: 0, updated: 0, unchanged: 0, missing_from_workbook: 0 });
-      const existing = new Map<string, Record<string, unknown>>(
-        (await tx.unsafe(`select * from cms.${table}`)).map((r) => [String(r[key]), r]),
-      );
-      const enc = (row: T) => Object.fromEntries(Object.entries(row).map(([k, v]) => [k, jsonCols.includes(k) ? tx.json(v as never) : v]));
-      const fresh = rows.filter((r) => !existing.has(String(r[key])));
-      for (let i = 0; i < fresh.length; i += 500) {
-        await tx`insert into ${tx(`cms.${table}`)} ${tx(fresh.slice(i, i + 500).map(enc) as never[])}`;
-      }
-      c.inserted = fresh.length;
-      for (const row of rows) {
-        const before = existing.get(String(row[key]));
-        if (!before) continue;
-        const diff = diffRow(before as Partial<T>, row);
-        if (!Object.keys(diff).length) { c.unchanged++; continue; }
-        const set = Object.fromEntries(Object.keys(diff).map((k) => [k, enc(row)[k]]));
-        await tx`update ${tx(`cms.${table}`)} set ${tx(set as never)} where ${tx(key as string)} = ${row[key] as string}`;
-        const action = 'status' in diff ? (diff.status!.after === 'retired' ? 'retire' : 'restore') : 'edit_catalogue';
-        await tx`
-          insert into cms.cms_reviews (target, target_table, target_id, action, field_diff, by_label, import_id, reason)
-          values ('catalogue', ${table}, ${row[key] as string}, ${action}, ${tx.json(diff as never)}, 'topic importer', ${importId},
-                  'master topic list re-import')`;
-        c.updated++;
-      }
-      const inWorkbook = new Set(rows.map((r) => String(r[key])));
-      for (const id of existing.keys()) {
-        if (!inWorkbook.has(id)) {
-          c.missing_from_workbook++;
-          notes.push({ level: 'warning', where: table, message: `${id} is in the CMS but not in the workbook; left unchanged (never deleted)` });
-        }
-      }
+      const r = await upsertCatalogue(tx, table, [key], rows, { jsonCols, byLabel: 'topic importer', importId: importId!, reason: 'master topic list re-import' });
+      counts[table] = { inserted: r.counts.inserted, updated: r.counts.updated, unchanged: r.counts.unchanged, missing_from_workbook: r.counts.missing_from_source };
+      notes.push(...r.notes.map((n) => ({ ...n, message: n.message.replace('not in the source', 'not in the workbook') })));
     }
 
     // `tx(\`cms.${table}\`)` is postgres.js identifier escaping: "cms"."cms_x".

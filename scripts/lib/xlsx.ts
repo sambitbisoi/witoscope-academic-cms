@@ -18,6 +18,8 @@ export function cellValue(v: unknown): Cell {
     if ('result' in o) return cellValue(o.result);
     if ('text' in o) return cellValue(o.text);
     if ('error' in o) return null;
+    // A formula whose cached result is missing (e.g. a shared formula): no value.
+    if ('formula' in o || 'sharedFormula' in o) return null;
   }
   return String(v);
 }
