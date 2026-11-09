@@ -1,4 +1,4 @@
-# Phase 5 plan: Edit, review and versions (draft, waiting on E1)
+# Phase 5 plan: Edit, review and versions
 
 9 Nov 2026. Sources: design §3 (statuses, same version vs new version, "the Save button decides which case applies and tells you before saving"), §4 (derived fields), CLAUDE.md (explicit Save; typo fix = same version, logged; everything else = new version; never delete; gold never publishable), wireframe (Edit / Approve / Reject in question detail; review queue).
 
@@ -14,7 +14,18 @@
 | Retire / restore | Retire a question (hidden from coverage and Publish; never deleted) and restore it, with a reason |
 | Gold | Gold questions can be edited and versioned like any other; they stay `bank = 'gold'` and are never publishable |
 
-## 2. Decision needed
+## 2. Decision (Sambit, 9 Nov 2026): E1 = (a), modified
+
+The versioning logic lives **only in the shared TypeScript** (`shared/`), which computes the save in the browser: same version or new version, the diff, the checks and the derived fields. **One admin-checked SQL function, `cms.cms_apply_save(jsonb)`**, plus `cms.cms_set_status` and `cms.cms_retire`, applies it in one transaction and enforces only the hard rules:
+1. no structured-field change on an approved version;
+2. one open version per question;
+3. gold never publishable.
+
+There are **no write grants on the question tables**.
+
+The analysis below is kept for the record.
+
+### Options considered
 
 | # | Decision | Options | My recommendation |
 |---|---|---|---|
