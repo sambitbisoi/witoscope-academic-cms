@@ -67,3 +67,26 @@ Guesses, all listed in the PR:
 - **H11:** drafts keep the source's clone batch, or `gen-<run>` if there's none.
 - **H12:** "Generate similar" is only offered on production questions.
 - **H13:** local dev uses a fake model; the real API is only used in the deployed function.
+
+## 5. Phase 6 updates (Sambit, 9 Nov 2026; no new phase)
+
+| Update | As built |
+|---|---|
+| **Model per task** | `cms_config` keys `ai_model_generate`, `ai_model_tag`, `ai_model_extract`, all **`claude-haiku-5-5`** (migration 0014). The single `ai_model` key is removed, but only while it still held the 0013 default. Haiku 5.5 prices are in `ai_prices`, including the 5× long-context rate above 100K prompt tokens. |
+| **Model check** | Home → Jobs → *Model check* (`#/model-check`). Pick a model, and it tags every **test-only gold** question with its values hidden. The report gives agreement per attribute, an "off by one" count for levels, and the disagreements per question. It is logged as a `tag` run (`params.purpose = model_check`). Nothing is saved to the question bank. The first request runs alone so the rules get cached; the rest run 3 at a time, and the check stops at the daily cap. |
+| **Under 100K tokens** | Every request = the **fixed rules** (attributes, rubric, strategy types, task rules) as the cached system block, plus a small per-topic context in the user message: the topic's **concept cards** and their misconceptions, the **relevant calibration cases**, and up to 4 prompt-example gold questions. The AI function counts each request with `count_tokens` (free) and refuses anything above **95,000** tokens with a 413, before calling the model. Locally, a Generate request counts about 6.8K tokens. |
+| **Refusal fallback** | **Haiku 5.5 has no server-side fallback**; the API guidance says not to send `fallbacks` for it. So for Haiku, the function retries once on `ai_fallback_model` (`claude-sonnet-5-5`), and Sonnet keeps the server-side `"default"` fallback. Every attempt (model, how it ran, stop reason, tokens, cost) goes into the run log, and the cost is priced per model. When a fallback fires, the run page shows a yellow notice with each attempt, and Home lists every run where it fired in the last 30 days. Batches have no fallback (the API rejects it); a declined batch request shows as `refused` in the run's failed requests. |
+
+Guesses for these updates:
+- **H14:** Haiku 5.5's cache rates are $0.125 to write and $0.01 to read per million tokens (1.25× and 0.1× of input). Its input and output rates are published; check the cache-read rate on the pricing page.
+- **H15:** the guard is 95K tokens: a 5% margin under 100K for the fallback model's tokenizer. If `count_tokens` fails, the function estimates 2.5 characters per token (on the high side) instead of blocking.
+- **H16:** "relevant calibration cases" = for each attribute, the cases on questions within one class of the topic's class. An attribute with none in that range keeps its nearest cases. A case on test-only gold is never sent; today all 37 cases are on prompt-example gold.
+- **H17:** the reference examples are cut from 8 to 4 per request: same topic first, then the nearest class. They now sit in the per-topic part, not the cached block.
+- **H18:** values hidden in the model check: concepts, the whole signature, duration, wrong-answer tags and misconceptions, solutions and hints. The model sees the text, figure description, format, options, correct and accepted answers, and the wrong-answer values. It is offered only the topic's concept cards; a gold concept missing from them is noted in the report.
+- **H19:** the model check compares 15 attributes: Math difficulty, IsPureFact, Reading, Has_Irrelevant_Info, Steps, WorkingMemory, Inhibition, Visual, Strategy, Strategy_type, Insight_ID, Expected duration, Concepts (exact set), Primary concept, and Wrong-answer tags (pooled over every wrong answer).
+- **H20:** `ai_effort` stays `high` for every task. Haiku 5.5's own default is `medium`, so run the model check at both if cost matters.
+- **H21:** a model with no row in `ai_prices` is priced as the most expensive known one, so costs show high, never low. A server-side fallback to `claude-opus-5` is priced this way until its price is added.
+- **H22:** the model check runs direct calls only (no batch option), so results come back in about a minute.
+- Fact to note: there are **42** test-only gold questions locally and on the real project, not 43.
+
+H5 (pack), H7 (effort is the API default), H8 (fallback) and H9 (estimate: now ≈ 3 characters per token) are replaced by the above.
