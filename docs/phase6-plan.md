@@ -41,3 +41,29 @@ How it fits together:
 | 6 | Tests (no live API calls in tests: recorded responses), screenshots, PR | M |
 
 Before building: PRs #3–#6 are stacked and unmerged, and the deployed site (checklist A–D) isn't live yet. Merging and deploying first means Phase 6 can be tried for real.
+
+## 4. As built (9 Nov)
+
+| Item | Result |
+|---|---|
+| AI function | `functions/api/ai/[[path]].ts` with `@anthropic-ai/sdk` 0.135.0: Access check, then `generate` (cached system prompt, the fixed JSON schema through `output_config.format`, server-side refusal fallback `"default"`) and `batch` create / status / results. Caps: model id, effort, 20 drafts (`AI_MAX_DRAFTS`), 32k `max_tokens`, prompt sizes, batch totals. Builds with wrangler 4.151.2 (≈1 MB) |
+| Shared logic | `shared/generation.ts`: draft schema, tagging pack (never test-only gold), prompt, draft → question, duplicate and copy checks (number sets + trigram Dice similarity ≥ threshold), cost (cache write and read; batches half price) |
+| Migration 0013 | `cms_apply_save` "create" mode (production only, next MQ/SQ/GQ id, file keys `<chapter>-5001…9999`, `created_from = 'generation'`, linked to the run); `cms_record_run`; `cms_save_job`; G3 defaults in `cms_config`. Local and real; `db-verify` passes |
+| UI | Generate (settings, estimate vs today's spend and cap, now or batch), run review (checks, similar items, approve selected, reject with a reason, edit), Jobs on Home (check and collect batches, today's AI spend); "Generate similar" on questions, "Fill gaps" on typical sets |
+| Local dev | `npm run dev:files` also serves `/api/ai` with a fake model (no key, no cost), through the same Access check |
+| Tests | 186 unit (incl. 11 for the AI function and generation: refused without Access, params, caps, batches, pack excludes test-only gold, checks, cost) and 64 database (create mode, runs, jobs, app user refused). End to end in Chrome: 403 without Access; 3 drafts now with cost logged; approve 2, reject 1; a batch fill of the missing levels at half price, collected from Home |
+
+Guesses, all listed in the PR:
+- **H1:** the daily cap is checked in the browser, because the function has no database. A spend limit in the Anthropic Console is the hard backstop (checklist E2).
+- **H2:** the cap's "day" is Asia/Kolkata.
+- **H3:** generated drafts get file keys `<chapter>-5001…9999`.
+- **H4:** drafts with §8 errors aren't saved and appear only on the run page. Duplicate and copy-from-source hits are saved but flagged for review.
+- **H5:** the pack holds the v10 attributes, rubric and calibration cases plus up to 8 prompt-example gold questions, the same class first.
+- **H6:** batch requests carry up to 5 drafts each, grouped by difficulty.
+- **H7:** effort defaults to `high`, the API default (`ai_effort`).
+- **H8:** the refusal fallback is on for direct calls; cost uses the price of the model that actually answered.
+- **H9:** the estimate is input ≈ characters / 3.5 at full price, plus 900 output tokens per draft.
+- **H10:** a fill run with no source question uses one of the set's questions as the model.
+- **H11:** drafts keep the source's clone batch, or `gen-<run>` if there's none.
+- **H12:** "Generate similar" is only offered on production questions.
+- **H13:** local dev uses a fake model; the real API is only used in the deployed function.
