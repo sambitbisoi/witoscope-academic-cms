@@ -1,4 +1,7 @@
 // Phase 4: sources for a chapter, opening files, and saving (D2: insert/update only, audited).
+// Files live in the private R2 bucket cms-sources; Supabase keeps only metadata and each
+// file's R2 key (storage_path). Files are reached only through /api/files (a Pages
+// Function behind Cloudflare Access) which hands out short-lived signed URLs.
 import { supabase } from './supabase';
 
 const must = <T>(r: { data: T | null; error: { message: string } | null }): T => {
@@ -38,6 +41,14 @@ export function sortSources(list: ChapterSource[], cls: number): ChapterSource[]
     || (a.class ?? 99) - (b.class ?? 99) || a.title.localeCompare(b.title));
 }
 
+/** A 5-minute signed URL for an R2 key, from the file service (Access-checked). */
+export async function signedUrl(key: string): Promise<string> {
+  const r = await fetch(`/api/files/sign?key=${encodeURIComponent(key)}`, { credentials: 'include' });
+  const body = await r.json().catch(() => ({})) as { url?: string; error?: string };
+  if (!r.ok || !body.url) throw new Error(body.error ?? `file service answered ${r.status}`);
+  return body.url;
+}
+
 /**
  * Open a source full screen in a new tab, at a PDF page if given. The tab is opened
  * synchronously (inside the click) so pop-up blockers allow it, then pointed at a
@@ -47,11 +58,7 @@ export async function openSource(s: { storage_path: string | null; url: string |
   const w = window.open('about:blank', '_blank');
   try {
     let href = s.url ?? '';
-    if (s.storage_path) {
-      const { data, error } = await supabase.storage.from('cms-sources').createSignedUrl(s.storage_path, 3600);
-      if (error || !data) throw new Error(error?.message ?? 'no signed URL');
-      href = data.signedUrl;
-    }
+    if (s.storage_path) href = await signedUrl(s.storage_path);
     if (!href) throw new Error('This source has no file or link yet.');
     if (pdfPage) href += `#page=${pdfPage}`;
     if (w) w.location.href = href; else window.location.href = href;
@@ -59,11 +66,6 @@ export async function openSource(s: { storage_path: string | null; url: string |
     w?.close();
     alert(`Couldn't open the source: ${(e as Error).message}`);
   }
-}
-export async function signedUrl(path: string) {
-  const { data, error } = await supabase.storage.from('cms-sources').createSignedUrl(path, 3600);
-  if (error || !data) throw new Error(error?.message ?? 'no signed URL');
-  return data.signedUrl;
 }
 
 // ---------------------------------------------------------------- saving
@@ -98,9 +100,15 @@ export function validate(f: SourceForm): string[] {
   return e;
 }
 
-async function upload(path: string, file: File) {
-  const { error } = await supabase.storage.from('cms-sources').upload(path, file, { upsert: true, contentType: file.type || undefined });
-  if (error) throw new Error(`Upload of ${file.name} failed: ${error.message}`);
+/** Upload one file to R2 through the file service (Access-checked; PDF/images, ≤ 50 MB). */
+async function upload(key: string, file: File) {
+  const r = await fetch(`/api/files/put?key=${encodeURIComponent(key)}`, {
+    method: 'PUT', body: file, credentials: 'include', headers: { 'content-type': file.type || 'application/octet-stream' },
+  });
+  if (!r.ok) {
+    const body = await r.json().catch(() => ({})) as { error?: string };
+    throw new Error(`Upload of ${file.name} failed: ${body.error ?? r.status}`);
+  }
 }
 
 /** Save with an explicit button: upload first, then the rows, then one audit entry. */

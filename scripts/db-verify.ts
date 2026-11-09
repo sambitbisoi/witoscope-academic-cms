@@ -22,19 +22,6 @@ try {
   const unsafeViews = views.filter((v) => !(v.opts as string[]).includes('security_invoker=true'));
   check('every cms view is security_invoker (RLS applies through it)', unsafeViews.length === 0, unsafeViews.map((v) => v.relname).join(', '));
 
-  // Storage (bootstrap 02). cms_owner can't read storage.buckets, so this checks the
-  // policies through the catalog; bucket settings are checked by 02's own verification.
-  const sp = await sql`select policyname, cmd, roles::text[] as roles, coalesce(qual, with_check) as expr
-                       from pg_policies where schemaname = 'storage' and tablename = 'objects' and policyname like 'cms_sources_%'`;
-  if (sp.length === 0) {
-    console.log('… storage not set up yet (bootstrap 02); skipping storage checks');
-  } else {
-    check('storage: exactly 3 cms-sources policies (read, upload, replace), no delete',
-      sp.length === 3 && !sp.some((p) => p.cmd === 'DELETE'), sp.map((p) => `${p.policyname}:${p.cmd}`).join(', '));
-    check('storage: every cms-sources policy is admin-only and limited to the bucket',
-      sp.every((p) => p.roles.join() === 'authenticated' && String(p.expr).includes("'cms-sources'") && String(p.expr).includes('cms_is_admin')));
-  }
-
   const policies = await sql`select tablename, roles::text[] as roles, qual, with_check from pg_policies where schemaname = 'cms'`;
   const want = tables.map((t) => t.relname).filter((t) => t !== 'cms_schema_migrations');
   const bad = want.filter((t) => {
