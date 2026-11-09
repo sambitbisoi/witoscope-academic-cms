@@ -29,7 +29,11 @@ export const resolveTopicId = (q: Question, file: ChapterFile) =>
 const NO_WRITING = /\b(without writing|no writing|don'?t write|do not write|in your head|mentally)\b/i;
 const OPTION_COUNT: Partial<Record<Answer['format'], number>> = { 'MCQ-4': 4, 'MCQ-3': 3, 'True/False': 2 };
 
-export function checkFile(file: ChapterFile, cat: Catalog): Problem[] {
+/**
+ * @param opts.gold the v10 gold set: keys are gold QIDs (G6-001), not chapter keys,
+ *                  and they have no file-key / question_id mapping or bank-stem duplicates.
+ */
+export function checkFile(file: ChapterFile, cat: Catalog, opts: { gold?: boolean } = {}): Problem[] {
   const out: Problem[] = [];
   const err = (key: string, message: string) => out.push({ level: 'error', key, message });
   const warn = (key: string, message: string) => out.push({ level: 'warning', key, message });
@@ -54,10 +58,10 @@ export function checkFile(file: ChapterFile, cat: Catalog): Problem[] {
     const k = q.key;
     if (keys.has(k)) err(k, `key appears twice in this file (questions ${keys.get(k)! + 1} and ${i + 1})`);
     keys.set(k, i);
-    if (!k.startsWith(`${file.chapter_id}-`)) err(k, `key must start with ${file.chapter_id}-`);
+    if (!opts.gold && !k.startsWith(`${file.chapter_id}-`)) err(k, `key must start with ${file.chapter_id}-`);
 
-    const known = cat.keyToQuestionId.get(k);
-    if (q.question_id && !known) err(k, `question_id ${q.question_id} given, but this key has never been imported; leave question_id out on first import`);
+    const known = opts.gold ? undefined : cat.keyToQuestionId.get(k);
+    if (q.question_id && !known && !opts.gold) err(k, `question_id ${q.question_id} given, but this key has never been imported; leave question_id out on first import`);
     if (q.question_id && known && q.question_id !== known) err(k, `question_id ${q.question_id} does not match ${known}, the ID this key already has`);
 
     // topic
@@ -148,7 +152,7 @@ export function checkFile(file: ChapterFile, cat: Catalog): Problem[] {
     if (inFile) warn(k, `same question text as ${inFile} in this file`);
     else stemsInFile.set(stem, k);
     const owner = cat.stems.get(stem);
-    if (owner && owner !== k && owner !== known) warn(k, `same question text as ${owner} already in the bank`);
+    if (!opts.gold && owner && owner !== k && owner !== known) warn(k, `same question text as ${owner} already in the bank`);
   });
   return out;
 }
