@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { activeJobs, homeStats, lastImport, type HomeStats, type Job, type LastImport } from './api';
 import { browseHash, SUBJECTS, subjectLabel } from './logic';
+import { Jobs } from './Jobs';
 
 const GRADES = ['all', '1', '2', '3', '4', '5', '6'];
 const GRADE_KEY = 'cms.grade';
@@ -46,12 +47,7 @@ export function Home({ grade: routeGrade }: { grade: string | null }) {
         </div>
         <div className="card">
           <div className="eyebrow">Jobs</div>
-          {jobs === null ? <div className="muted">…</div> : jobs.length === 0 ? <div className="muted">No jobs running.</div> : jobs.map((j) => (
-            <div key={j.job_id} className="job">
-              <div><strong>{j.type}</strong> · {j.status}</div>
-              <div className="bar" aria-hidden="true"><div style={{ width: `${Math.max(2, Number(j.progress))}%` }} /></div>
-            </div>
-          ))}
+          <Jobs />
           {last && (
             <div className="small">
               Last import: <a href={`#/imports/${last.import_id}`}>#{last.import_id}</a> {last.kind === 'chapter' ? `chapter ${last.chapter_id ?? ''}` : last.kind === 'seed' ? 'v10 seed' : 'topic lists'}
