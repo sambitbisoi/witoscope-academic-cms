@@ -38,7 +38,7 @@ const ID_PREFIX = { math: 'MQ', science: 'SQ', grammar: 'GQ' } as const;
 const SEQ = { math: 'cms_mq_seq', science: 'cms_sq_seq', grammar: 'cms_gq_seq' } as const;
 
 // ---------------------------------------------------------------- catalog
-async function loadCatalog(tx: Tx, file: ChapterFile): Promise<Catalog> {
+export async function loadCatalog(tx: Tx, file: ChapterFile): Promise<Catalog> {
   const [ruleVersions, chapter, topics, sets, patterns, concepts, miscs, insights, stems, keys, sourceItems] = await Promise.all([
     tx`select rule_version from cms.cms_rule_versions`,
     tx`select chapter_id, subject from cms.cms_chapters where chapter_id = ${file.chapter_id}`,
@@ -69,7 +69,7 @@ async function loadCatalog(tx: Tx, file: ChapterFile): Promise<Catalog> {
   };
 }
 
-async function loadConfig(tx: Tx): Promise<DerivedConfig> {
+export async function loadConfig(tx: Tx): Promise<DerivedConfig> {
   const rows = await tx`select key, value from cms.cms_config where key in ('multistep_bands', 'difficulty_points', 'load_thresholds')`;
   const cfg = Object.fromEntries(rows.map((r) => [r.key, r.value]));
   if (!cfg.multistep_bands || !cfg.difficulty_points) throw new Error('derived-field config is missing from cms_config; run `npm run import:seed` first');
@@ -77,7 +77,7 @@ async function loadConfig(tx: Tx): Promise<DerivedConfig> {
 }
 
 // ---------------------------------------------------------------- previous version as texts
-async function textsFromDb(tx: Tx, versionId: number, placementNote: string | null): Promise<Texts> {
+export async function textsFromDb(tx: Tx, versionId: number, placementNote: string | null): Promise<Texts> {
   const [v] = await tx`select text, figure_description, tagging_why, tagging_summary, author_notes from cms.cms_question_versions where version_id = ${versionId}`;
   const [sols, hints, wrong, parts] = await Promise.all([
     tx`select slot, text from cms.cms_version_solutions where version_id = ${versionId}`,
@@ -99,7 +99,7 @@ async function textsFromDb(tx: Tx, versionId: number, placementNote: string | nu
 }
 
 // ---------------------------------------------------------------- writing a version
-function versionColumns(q: Question, topicId: string, d: ReturnType<typeof derive>, hash: string, importId: number) {
+export function versionColumns(q: Question, topicId: string, d: ReturnType<typeof derive>, hash: string, importId: number) {
   const s = q.signature;
   return {
     topic_id: topicId, typical_set_id: q.typical_set_id, pattern_id: q.pattern_id ?? null,
@@ -125,7 +125,7 @@ function versionColumns(q: Question, topicId: string, d: ReturnType<typeof deriv
 }
 const JSON_COLS = ['proposed_insight', 'tagging_why'];
 
-async function writeChildren(tx: Tx, versionId: number, q: Question) {
+export async function writeChildren(tx: Tx, versionId: number, q: Question) {
   const answers: [string, Answer][] = [['', q.answer], ...(q.parts ?? []).map((p) => [p.part_label, p.answer] as [string, Answer])];
   for (const p of q.parts ?? []) {
     await tx`insert into cms.cms_version_parts ${tx({ version_id: versionId, part_label: p.part_label, text: p.text, format: p.answer.format, correct: p.answer.correct, accepted: p.answer.accepted ?? [] })}`;
@@ -158,7 +158,7 @@ async function deleteChildren(tx: Tx, versionId: number) {
   }
 }
 
-const enc = (tx: Tx, row: Record<string, unknown>) =>
+export const enc = (tx: Tx, row: Record<string, unknown>) =>
   Object.fromEntries(Object.entries(row).map(([k, v]) => [k, JSON_COLS.includes(k) && v !== null ? tx.json(v as never) : v]));
 
 // ---------------------------------------------------------------- typo fix in place

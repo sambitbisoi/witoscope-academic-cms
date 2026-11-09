@@ -100,3 +100,34 @@ Then: Dashboard → Project Settings → Data API → Exposed schemas → add `c
 Behaviour: whole run in one transaction; `--dry-run` rolls back. Re-import inserts new rows, updates changed rows with a `cms_reviews` row (`edit_catalogue`, or `retire` / `restore` for status changes, with before/after), and never deletes; rows missing from the workbook are reported. Every run is recorded in `cms_imports` with file hashes and the git commit. Workbooks: zero warnings.
 
 Achievers change, 8 Nov: the first local import created 444 Achievers rows. On Sambit's instruction the 261 Science and English rows were deleted (one transaction, as `cms_owner`, local only; checked first that no question, concept, prerequisite, typical set, pattern, source item or review referenced them). This is an approved one-off exception to "never delete"; the real project never had them. Rule added to CLAUDE.md: the topic workbooks are the source of truth for strands, chapters and topics; the CMS only re-imports.
+
+## 8. v10 seed (`npm run import:seed`, local, 9 Nov)
+
+Source: `WitoScope_Question_Attributes_v10.xlsx` (sha256 `643808671372…`) only. One transaction; re-runnable (second run: everything unchanged).
+
+| Table | Rows |
+|---|---|
+| `cms_config` (derived-field keys) | 3 |
+| `cms_strategy_types` | 14 |
+| `cms_insights` | 9 |
+| `cms_concepts` / `cms_concept_links` / `cms_concept_prereq_topics` | 83 / 58 / 86 |
+| `cms_misconceptions` | 44 |
+| `cms_typical_sets` / `cms_typical_set_concepts` | 76 / 90 |
+| `cms_attribute_defs` / `cms_tagging_rubric` / `cms_calibration_cases` | 32 / 13 / 37 |
+| Gold questions (`bank = 'gold'`, v1) + `cms_gold_meta` | 78 (all pass the §8 checks; 0 blocked) |
+
+Interpretations to check **[guess]**:
+
+| # | Item | What the seed does |
+|---|---|---|
+| S1 | Gold format "Typed" (pre-decision 6) | Split by the correct answer: whole number → Typed-number, decimal → Typed-decimal, fraction → Typed-fraction, else Typed-text (3: G5-004 "8:36 am", G4-008 "12:00 p.m.", G3-006 "2 hours 35 minutes") |
+| S2 | G5-007-a / G5-007-b ("Multi-part (typed)", one row per part) | Kept as two gold questions with their own IDs (matches the design's ID example), each Typed-decimal |
+| S3 | Gold topic "Achievers (chapter level)" (9 questions, 9 typical sets) | → `ACH-<chapter>-<class>` |
+| S4 | Gold version status | `approved` (the reviewed reference set); `approved_version = 1` |
+| S5 | Gold figures (14) | `image_status = needs_image` |
+| S6 | Typical set concepts | First listed = `main`, others = `other` |
+| S7 | Concepts | All `draft` (v10 marks them as drafts); "Prereq status" column not stored (no column) |
+| S8 | Not stored (no column in the design) | Question Attributes: "Used in", example, change log, and the nuance of "Needed by gap engine?" (stored as yes/no); Gold Wrong Answers: "Your verdict" / "Your notes" |
+| S9 | Re-seed with a changed gold row | Reported, not overwritten (gold editing comes with Phase 5) |
+
+Workbook findings: G6-014, G5-006, G4-004 and G1-008 have Solution 2 = Smart calculation typed "Another way" (v10's own rule says Smarter way); G4-M-TIM2 is on the Misconceptions sheet but not listed on concept G4-TIM-C1; G6-013 has WM 4 and no "without writing" wording.
