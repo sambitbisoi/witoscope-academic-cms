@@ -70,7 +70,10 @@ describe('book-chapter files (D3)', () => {
 
   it('refuses files that are not marked internal, have the wrong schema, or repeat a ref_id', () => {
     expect(parseBook({ ...book(), internal_only: false }, topics).problems.map((x) => x.message)).toContain('internal_only must be true: book text never leaves the CMS');
-    expect(parseBook({ ...book(), file_schema: 'x' }, topics).problems[0]!.message).toBe('file_schema must be cms-book-chapter/0.1, got "x"');
+    expect(parseBook({ ...book(), file_schema: 'x' }, topics).problems[0]!.message).toBe('file_schema must be cms-book-chapter/0.1 or cms-book-chapter/0.2, got "x"');
+    const v2 = { ...book(), file_schema: 'cms-book-chapter/0.2' }; (v2.items[0] as Record<string, unknown>).snapshot_image = 'images/N6-01-004.png';
+    expect(parseBook(v2, topics).problems.filter((x) => x.level === 'error')).toEqual([]);
+    expect(parseBook(v2, topics).problems.map((x) => x.message)).toContain('1 item snapshot image not imported yet (they need the admin\'s Storage upload; follow-up)');
     const dup = book(); dup.items.push({ ...dup.items[0]! });
     expect(parseBook(dup, topics).problems.map((x) => x.message)).toContain('ref_id appears twice');
   });

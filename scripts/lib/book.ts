@@ -10,8 +10,9 @@ export interface BookFile {
   chapter: { chapter_no: number; chapter_name: string; page_from: number; page_to: number; answer_key_pdf_pages?: string;
     sections?: { section_no: string; title: string; page: number }[] };
   items: { ref_id: string; page: number; section_no?: string; item_label?: string; kind?: string; text: string; numbers?: string[];
-    assessable?: boolean; placement?: { chapter_id?: string; topic_id?: string } }[];
+    assessable?: boolean; placement?: { chapter_id?: string; topic_id?: string }; snapshot_image?: string }[];
 }
+export const SUPPORTED = ['cms-book-chapter/0.1', 'cms-book-chapter/0.2'];
 export interface BookProblem { level: 'error' | 'warning'; where: string; message: string }
 
 export function parseBook(data: unknown, topics: Map<string, string /* chapter */>) {
@@ -19,7 +20,8 @@ export function parseBook(data: unknown, topics: Map<string, string /* chapter *
   const err = (where: string, message: string) => problems.push({ level: 'error', where, message });
   const warn = (where: string, message: string) => problems.push({ level: 'warning', where, message });
   const b = data as BookFile;
-  if (b?.file_schema !== 'cms-book-chapter/0.1') { err('file', `file_schema must be cms-book-chapter/0.1, got "${b?.file_schema}"`); return { problems }; }
+  // 0.2 (9 Nov) only adds items[].snapshot_image; both are accepted.
+  if (!SUPPORTED.includes(b?.file_schema)) { err('file', `file_schema must be ${SUPPORTED.join(' or ')}, got "${b?.file_schema}"`); return { problems }; }
   if (b.internal_only !== true) err('file', 'internal_only must be true: book text never leaves the CMS');
   if (!b.source?.file_path || !b.chapter || !Array.isArray(b.items)) { err('file', 'needs source.file_path, chapter and items'); return { problems }; }
   const stem = pdfStem(b.source.file_path);
@@ -45,6 +47,8 @@ export function parseBook(data: unknown, topics: Map<string, string /* chapter *
     if (ch) chapters.add(ch);
     items.push({ ref_id: it.ref_id, source_id, page: it.page, item_text: it.text, topic_id: topic, pattern_id: null, numbers: it.numbers ?? [] });
   }
+  const snaps = b.items.filter((i) => i.snapshot_image).length;
+  if (snaps) warn('file', `${snaps} item snapshot image${snaps === 1 ? '' : 's'} not imported yet (they need the admin's Storage upload; follow-up)`);
   if (!chapters.size) warn('file', 'no item is placed in a CMS chapter; the source is not linked to any chapter');
 
   const pageFrom = pdf(b.chapter.page_from), pageTo = pdf(b.chapter.page_to);
