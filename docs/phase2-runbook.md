@@ -1,5 +1,7 @@
 # Phase 2 runbook: setting up the real project
 
+**Status (9 Nov 2026):** steps 1–8 are done on the real project. The pooler connection works (it needed about 5 minutes after the password reset, to clear the pooler's cached password); there were 9 migrations; the admin ID is set from `CMS_ADMIN_USER_ID` in `.env.real`; 1,234 topics; the v10 seed loaded with 77 gold questions and 0 blocked; `db-verify` passed all 16 checks. Steps 9–12 are Sambit's, as A2–A8 in `docs/sambit-checklist.md`.
+
 Every step here touches the real Supabase project, so each one needs Sambit's go-ahead. Run the steps in order and stop at the first failure. Secrets (the `cms_owner` password, your login password) live only in your password manager and in the git-ignored `.env.real`. They never go in the repo or in chat. Real-project commands always name `--env-file=.env.real` explicitly; `npm run …` scripts and the database tests stay local.
 
 | # | Step | Who | Command / where | Must show |
@@ -12,7 +14,7 @@ Every step here touches the real Supabase project, so each one needs Sambit's go
 | 6 | Topic lists | Claude | `npx tsx --env-file=.env.real scripts/import-topics.ts --dry-run`, then without `--dry-run` | 25 strands · 157 chapters · 1,234 topics (1,051 + 183 Math Achievers) |
 | 7 | v10 seed | Claude | `npx tsx --env-file=.env.real scripts/import-seed.ts --dry-run`, then without `--dry-run` | 77 gold, 0 blocked, the 8 known warnings |
 | 8 | Safety checks | Claude | `npx tsx --env-file=.env.real scripts/db-verify.ts` | "all checks passed" |
-| 9 | `cms_current_uid()` = `auth.uid()` for a real session | Sambit + Claude | In your shell: `CMS_VERIFY_EMAIL=… CMS_VERIFY_PASSWORD=… VITE_SUPABASE_URL=… VITE_SUPABASE_ANON_KEY=… npx tsx scripts/verify-uid.ts hosted`, then paste the printed SQL into the SQL editor | `matches = true` |
+| 9 | `cms_current_uid()` = `auth.uid()` for a real session, and that session is the stored admin | Sambit + Claude | In your shell: `CMS_VERIFY_EMAIL=… CMS_VERIFY_PASSWORD=… VITE_SUPABASE_URL=… VITE_SUPABASE_ANON_KEY=… npx tsx scripts/verify-uid.ts hosted`, then paste the printed SQL into the SQL editor | "Session user ID = CMS_ADMIN_USER_ID"; SQL: `matches = true` and `is_admin = true` |
 | 10 | **Expose schema `cms`** (only after 1–9) | Sambit | Dashboard → Project Settings → Data API → Exposed schemas → add `cms` → Save | — |
 | 11 | Sign in | Sambit | `web/.env.local` with the project URL and anon key; `npm run dev -w web`; sign in at http://127.0.0.1:5199 | Home, then Imports lists the runs from steps 6–7 |
 | 12 | A non-admin account sees nothing | Sambit | Sign in with any other account | "… can't use the CMS." |
