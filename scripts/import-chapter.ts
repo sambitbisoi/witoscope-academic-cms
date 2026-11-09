@@ -15,6 +15,7 @@
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { relative, resolve } from 'node:path';
 import type postgres from 'postgres';
 import { assertCmsOwner, connect } from './lib/db.ts';
@@ -185,7 +186,9 @@ export async function runChapter(sql: Sql, filePath: string, mode: 'validate' | 
   const abs = resolve(filePath);
   const raw = readFileSync(abs);
   const fileHash = createHash('sha256').update(raw).digest('hex');
-  const shown = relative(process.cwd(), abs);
+  const rel = relative(process.cwd(), abs);
+  // inside the repo: repo-relative; elsewhere: absolute, with ~ for the home folder
+  const shown = rel.startsWith('..') ? abs.replace(homedir(), '~') : rel;
   const report: ChapterReport = { file: shown, mode, importId: null, result: 'failed', problems: [], outcomes: [], counts: {} };
 
   let data: unknown;
