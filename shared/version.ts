@@ -8,49 +8,84 @@
 // Equal structure + equal texts           → unchanged
 // Equal structure + same numbers in texts → typo (same version, logged)
 // Anything else                           → new version
-import { createHash } from 'node:crypto';
 import { stableJson } from './json.ts';
-import type { Question } from './types.ts';
+import { sha256Hex } from './sha256.ts';
+import type { Answer, ConceptRef, Question } from './types.ts';
 
 const T = '§text';
 export type Texts = Record<string, string>;
 
+/**
+ * Canonical structure: identical whether the question comes from a chapter file or is
+ * rebuilt from database rows (shared/fromDb.ts). Absent and empty lists are the same,
+ * numbers are numbers, unordered lists are sorted, every key is always present, and
+ * each free text is a placeholder (only its presence counts).
+ */
+const t = (x: string | null | undefined) => (x === undefined || x === null || x === '' ? null : T);
+const canonConcepts = (cs: ConceptRef[] | undefined) =>
+  [...(cs ?? [])].map((c) => ({ concept_id: c.concept_id, involvement: Number(c.involvement) })).sort((a, b) => a.concept_id.localeCompare(b.concept_id));
+const canonAnswer = (a: Answer) => ({
+  format: a.format,
+  options: a.options ?? [],
+  correct: a.format === 'Multi-part' ? null : (a.correct ?? null),
+  accepted: a.accepted ?? [],
+  wrong_answers: [...(a.wrong_answers ?? [])]
+    .map((w) => ({ value: w.value, tag: w.tag, misconception_id: w.misconception_id ?? null, target_concept_id: w.target_concept_id ?? null, why: t(w.why) }))
+    .sort((x, y) => x.value.localeCompare(y.value)),
+});
+
 export function structureOf(q: Question, topicId: string): unknown {
-  const blankWhy = (a: Question['answer']) => ({ ...a, wrong_answers: (a.wrong_answers ?? []).map((w) => ({ ...w, why: w.why === undefined ? undefined : T })) });
-  const { key: _k, question_id: _q, text: _t, placement_note, author_notes, tagging, figure, solutions, hints, parts, answer, topic_id: _tp, ...rest } = q;
+  const s = q.signature;
   return {
-    ...rest,
     topic_id: topicId,
-    placement_note: placement_note === undefined ? undefined : T,
-    author_notes: author_notes === undefined ? undefined : T,
-    figure: figure && { ...figure, description: T },
-    solutions: { school: T, second: solutions.second && { ...solutions.second, text: T } },
-    hints: hints.map(() => T),
-    answer: blankWhy(answer),
-    parts: parts?.map((p) => ({ ...p, text: T, answer: blankWhy(p.answer) })),
-    tagging: tagging && {
-      tagged_by: tagging.tagged_by,
-      why: tagging.why && Object.fromEntries(Object.entries(tagging.why).map(([a, w]) => [a, { why: T, confidence: w.confidence }])),
-      summary: tagging.summary === undefined ? undefined : T,
+    typical_set_id: q.typical_set_id ?? null,
+    pattern_id: q.pattern_id ?? null,
+    clone_batch_id: q.clone_batch_id ?? null,
+    locale: q.locale ?? 'IN',
+    class_override: q.class_override ?? null,
+    placement_note: t(q.placement_note),
+    figure: q.figure ? { description: T, image_status: q.figure.image_status, image_file: q.figure.image_file ?? null } : null,
+    answer: canonAnswer(q.answer),
+    parts: [...(q.parts ?? [])].map((p) => ({ part_label: p.part_label, text: T, answer: canonAnswer(p.answer), concepts: canonConcepts(p.concepts) }))
+      .sort((a, b) => a.part_label.localeCompare(b.part_label)),
+    concepts: canonConcepts(q.concepts),
+    signature: {
+      math_difficulty: s.math_difficulty, is_pure_fact: s.is_pure_fact, reading: Number(s.reading), has_irrelevant_info: s.has_irrelevant_info,
+      steps: Number(s.steps), working_memory: Number(s.working_memory), inhibition: Number(s.inhibition), visual: Number(s.visual), strategy: Number(s.strategy),
+      strategy_type: s.strategy_type ?? null, strategy_type_2: s.strategy_type_2 ?? null, strategy_other_note: t(s.strategy_other_note),
+      insight_id: s.insight_id ?? null, proposed_insight: s.proposed_insight ? stableJson(s.proposed_insight) : null, trick_ref: s.trick_ref ?? null,
     },
+    duration_s: q.duration_s ?? null,
+    solutions: { school: T, second: q.solutions.second ? { text: T, type: q.solutions.second.type, strategy: q.solutions.second.strategy ?? null } : null },
+    hints: q.hints.map(() => T),
+    source_refs: [...(q.source_refs ?? [])].map((r) => `${r.ref_id}|${r.relation}`).sort(),
+    tagging: {
+      tagged_by: q.tagging?.tagged_by ?? null,
+      why: Object.keys(q.tagging?.why ?? {}).sort().map((k) => `${k}|${q.tagging!.why![k]!.confidence}`),
+      summary: t(q.tagging?.summary),
+    },
+    author_notes: t(q.author_notes),
   };
 }
 
-export const structureHash = (q: Question, topicId: string) =>
-  createHash('sha256').update(stableJson(structureOf(q, topicId))).digest('hex');
+export const structureHash = (q: Question, topicId: string) => sha256Hex(stableJson(structureOf(q, topicId)));
 
 export function textsOf(q: Question): Texts {
-  const t: Texts = { text: q.text, 'solution.1': q.solutions.school };
-  if (q.figure) t['figure.description'] = q.figure.description;
-  if (q.solutions.second) t['solution.2'] = q.solutions.second.text;
-  q.hints.forEach((h, i) => (t[`hint.${i + 1}`] = h));
-  const wrong = (label: string, a: Question['answer']) => (a.wrong_answers ?? []).forEach((w) => { if (w.why !== undefined) t[`wrong.${label}.${w.value}`] = w.why; });
+  const t: Texts = {};
+  const put = (k: string, v: string | null | undefined) => { if (v !== undefined && v !== null && v !== '') t[k] = v; };
+  put('text', q.text);
+  put('solution.1', q.solutions.school);
+  if (q.figure) put('figure.description', q.figure.description);
+  if (q.solutions.second) put('solution.2', q.solutions.second.text);
+  q.hints.forEach((h, i) => put(`hint.${i + 1}`, h));
+  const wrong = (label: string, a: Question['answer']) => (a.wrong_answers ?? []).forEach((w) => put(`wrong.${label}.${w.value}`, w.why));
   wrong('', q.answer);
-  for (const p of q.parts ?? []) { t[`part.${p.part_label}.text`] = p.text; wrong(p.part_label, p.answer); }
-  for (const [a, w] of Object.entries(q.tagging?.why ?? {})) t[`why.${a}`] = w.why;
-  if (q.tagging?.summary !== undefined) t['tagging.summary'] = q.tagging.summary;
-  if (q.author_notes !== undefined) t.author_notes = q.author_notes;
-  if (q.placement_note !== undefined) t.placement_note = q.placement_note;
+  for (const p of q.parts ?? []) { put(`part.${p.part_label}.text`, p.text); wrong(p.part_label, p.answer); }
+  for (const [a, w] of Object.entries(q.tagging?.why ?? {})) put(`why.${a}`, w.why);
+  put('tagging.summary', q.tagging?.summary);
+  put('author_notes', q.author_notes);
+  put('placement_note', q.placement_note);
+  put('signature.strategy_other_note', q.signature.strategy_other_note);
   return t;
 }
 
