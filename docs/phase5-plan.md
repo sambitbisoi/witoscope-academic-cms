@@ -43,3 +43,28 @@ The analysis below is kept for the record.
 | 6 | Tests (DB: every path, RLS, one open version, gold never publishable; UI end to end), screenshots, PR | M |
 
 Also before Phase 5 is built: PRs #3, #4 and #5 are stacked and unmerged. Merging them first keeps Phase 5's PR reviewable.
+
+## 4. As built (9 Nov)
+
+| Item | Result |
+|---|---|
+| Shared code | `shared/` holds the versioning rule, checks, derived fields, the save planner (`save.ts`), the rebuild from database rows (`fromDb.ts`) and a browser-safe SHA-256; used by the scripts, the web app and the tests |
+| Canonical fingerprint | The structure hash is now identical whether built from a chapter file or from database rows: absent and empty lists are the same, numbers are numbers, and unordered lists are sorted (option order still counts). `rehash` recomputed the stored values once: locally 78, real 77. Proof: the importer and the seed then see every existing question as unchanged, locally and on the real project |
+| Migration 0012 | `cms_apply_save(jsonb)` (typo fix / update draft / new version), `cms_set_status` (submit / withdraw / approve / reject with a reason) and `cms_retire` (with a reason): admin-checked, one transaction, audited; hard rules only. No write grants on question tables. Applied locally and on the real project; `db-verify` passes |
+| UI | Edit form with a live "When you click Save" preview (mode, diff, checks; errors block Save); actions in the question detail; version compare; review queue `#/review` |
+| Tests | 172 unit tests and 59 database tests, including 14 on the save path: typo fix on an approved version, a tampered typo refused, new version, a second open version refused, a draft edited in place, editing blocked in review, reject needs a reason, a stale save refused, app user and anon refused, no direct table writes even for the admin, gold stays gold, retire and restore. End to end in Chrome on a local question |
+
+Guesses, all listed in the PR:
+- **F1:** Approve works from draft as well as from in review, since there's one reviewer.
+- **F2:** editing is blocked while a version is in review; use "Back to draft" first.
+- **F3:** a typo fix applies only to an approved version; after a rejection, any change is a new version.
+- **F4:** a draft is edited in place whoever created it, and is marked edited, so imports never overwrite it.
+- **F5:** for Multi-part questions, each part's wording and answer can be edited; adding or removing parts, and per-part tags and concepts, come later.
+- **F6:** wrong-answer tags can be edited for options; tags on typed answers are shown but not editable yet.
+- **F7:** the duplicate-wording and source-ref warnings stay import-time checks.
+- **F8:** a reason is optional when saving and required to reject, retire or restore.
+- **F9:** option order counts as structure; the order of concepts, wrong answers and refs doesn't.
+- **F10:** the compare view lists changed structure fields and changed texts.
+- **F11:** the review queue includes gold drafts.
+- **F12:** the save ignores fields it doesn't own, such as `bank`.
+- **F13:** "gold never publishable" holds because these functions never write `bank` or `question_id`, plus the existing ID check. Phase 8's Publish must still exclude `bank = 'gold'`.
