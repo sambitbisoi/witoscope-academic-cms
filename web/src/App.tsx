@@ -1,5 +1,6 @@
 import type { Session } from '@supabase/supabase-js';
 import { useEffect, useState, type FormEvent } from 'react';
+import { ImportDetail, ImportsList } from './Imports';
 import { configError, isAdmin, supabase } from './supabase';
 
 type Access = 'checking' | 'admin' | 'denied' | 'error';
@@ -69,16 +70,37 @@ function NotAuthorised({ email }: { email?: string }) {
   );
 }
 
+function useHashRoute() {
+  const [hash, setHash] = useState(location.hash);
+  useEffect(() => {
+    const on = () => setHash(location.hash);
+    window.addEventListener('hashchange', on);
+    return () => window.removeEventListener('hashchange', on);
+  }, []);
+  return hash;
+}
+
 function Home({ email }: { email?: string }) {
+  const hash = useHashRoute();
+  const detail = /^#\/imports\/(\d+)$/.exec(hash);
+  const section = hash.startsWith('#/imports') ? 'imports' : 'home';
   return (
     <div className="page">
       <header>
-        <span className="brand">WitoScope CMS</span>
-        <span className="who">{email} <SignOut small /></span>
+        <nav>
+          <span className="brand">WitoScope CMS</span>
+          <a href="#/" className={section === 'home' ? 'active' : ''}>Home</a>
+          <a href="#/imports" className={section === 'imports' ? 'active' : ''}>Imports</a>
+        </nav>
+        <span className="who"><span className="email">{email}</span> <SignOut small /></span>
       </header>
       <main>
-        <h2>Home</h2>
-        <p className="muted">Browsing topics and questions arrives in Phase 3.</p>
+        {detail ? <ImportDetail id={Number(detail[1])} /> : section === 'imports' ? <ImportsList /> : (
+          <>
+            <h2>Home</h2>
+            <p className="muted">Browsing topics and questions arrives in Phase 3.</p>
+          </>
+        )}
       </main>
     </div>
   );
