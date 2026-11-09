@@ -23,7 +23,8 @@ export function uidCheckSql(claims: Record<string, unknown>): string {
     `select set_config('request.jwt.claims', '${literal}', true);`,
     'select cms.cms_current_uid() as cms_uid,',
     '       auth.uid()            as auth_uid,',
-    '       auth.uid() is not null and cms.cms_current_uid() is not distinct from auth.uid() as matches;',
+    '       auth.uid() is not null and cms.cms_current_uid() is not distinct from auth.uid() as matches,',
+    '       cms.cms_is_admin(cms.cms_current_uid()) as is_admin;',
     'rollback;',
   ].join('\n');
 }
@@ -64,7 +65,13 @@ if (import.meta.filename === process.argv[1]) {
     if (!email || !password) throw new Error('Set CMS_VERIFY_EMAIL and CMS_VERIFY_PASSWORD in your shell (not in the repo).');
     const session = await signIn(envApi(), email, password);
     console.log(`Signed in as ${session.userId}.`);
-    console.log('Paste this into the Supabase SQL editor and run it. "matches" must be true.');
+    const expected = process.env.CMS_ADMIN_USER_ID?.trim();
+    if (expected) {
+      console.log(session.userId === expected
+        ? 'Session user ID = CMS_ADMIN_USER_ID: the stored admin ID is your account.'
+        : `MISMATCH: your session user is ${session.userId}, but CMS_ADMIN_USER_ID is ${expected}. Do not expose cms; re-run set-admin with the right ID.`);
+    }
+    console.log('Paste this into the Supabase SQL editor and run it. "matches" and "is_admin" must both be true.');
     console.log('It contains your session claims: do not save or share it.\n');
     console.log(uidCheckSql(session.claims));
   } else {
