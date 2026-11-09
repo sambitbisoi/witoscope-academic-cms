@@ -114,20 +114,20 @@ Source: `WitoScope_Question_Attributes_v10.xlsx` (sha256 `643808671372…`) only
 | `cms_misconceptions` | 44 |
 | `cms_typical_sets` / `cms_typical_set_concepts` | 76 / 90 |
 | `cms_attribute_defs` / `cms_tagging_rubric` / `cms_calibration_cases` | 32 / 13 / 37 |
-| Gold questions (`bank = 'gold'`, v1) + `cms_gold_meta` | 78 (all pass the §8 checks; 0 blocked) |
+| Gold questions (`bank = 'gold'`, v1) + `cms_gold_meta` | 77 (78 sheet rows; G5-007's two part rows are one question). All pass the §8 checks; 0 blocked |
 
-Interpretations to check **[guess]**:
+Interpretations (**approved 9 Nov**, except where marked [guess] — listed in the PR):
 
 | # | Item | What the seed does |
 |---|---|---|
 | S1 | Gold format "Typed" (pre-decision 6) | Split by the correct answer: whole number → Typed-number, decimal → Typed-decimal, fraction → Typed-fraction, else Typed-text (3: G5-004 "8:36 am", G4-008 "12:00 p.m.", G3-006 "2 hours 35 minutes") |
-| S2 | G5-007-a / G5-007-b ("Multi-part (typed)", one row per part) | Kept as two gold questions with their own IDs (matches the design's ID example), each Typed-decimal |
+| S2 | G5-007-a / G5-007-b ("Multi-part (typed)", one row per part) | **Corrected 9 Nov:** ONE gold question G5-007, format Multi-part, parts a and b in `cms_version_parts`, each with its own answer, format (Typed-decimal), concepts and wrong-answer tags. Old IDs in `cms_gold_meta.old_qid`. Question-level fields [guess]: stem = part (a) text before "(a)"; topic = part (a)'s (MT0404; part b is MT0405); concepts = union at highest involvement; signature = highest per attribute, steps added up; duration 90 + 90 capped at 120 s; solutions and hints joined with (a)/(b) labels |
 | S3 | Gold topic "Achievers (chapter level)" (9 questions, 9 typical sets) | → `ACH-<chapter>-<class>` |
 | S4 | Gold version status | `approved` (the reviewed reference set); `approved_version = 1` |
 | S5 | Gold figures (14) | `image_status = needs_image` |
 | S6 | Typical set concepts | First listed = `main`, others = `other` |
 | S7 | Concepts | All `draft` (v10 marks them as drafts); "Prereq status" column not stored (no column) |
-| S8 | Not stored (no column in the design) | Question Attributes: "Used in", example, change log, and the nuance of "Needed by gap engine?" (stored as yes/no); Gold Wrong Answers: "Your verdict" / "Your notes" |
+| S8 | Not stored (no column in the design) | Question Attributes: "Used in", example, change log, and the nuance of "Needed by gap engine?" (stored as yes/no). Gold Wrong Answers "Your verdict" / "Your notes": **appended to why** when not empty (approved 9 Nov) |
 | S9 | Re-seed with a changed gold row | Reported, not overwritten (gold editing comes with Phase 5) |
 
-Workbook findings: G6-014, G5-006, G4-004 and G1-008 have Solution 2 = Smart calculation typed "Another way" (v10's own rule says Smarter way); G4-M-TIM2 is on the Misconceptions sheet but not listed on concept G4-TIM-C1; G6-013 has WM 4 and no "without writing" wording.
+Workbook findings (to be fixed in the workbook as **v11**; the warnings stay): G6-014, G5-006, G4-004 and G1-008 have Solution 2 = Smart calculation typed "Another way" (v10's own rule says Smarter way); G4-M-TIM2 is on the Misconceptions sheet but not listed on concept G4-TIM-C1; G6-013 has WM 4 and no "without writing" wording.
