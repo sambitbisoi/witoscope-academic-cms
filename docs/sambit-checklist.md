@@ -42,3 +42,19 @@ Do A1–A5 first: the deployed site only works once `cms` is exposed. Do **C rig
 | C6 | Terminal | `curl -sI https://witoscope-cms.pages.dev` | A redirect to `…cloudflareaccess.com` (not the app) |
 
 Optional, later: a custom domain (Pages → Custom domains), then add it to the Access application as well.
+
+## D. Storage for source PDFs (Phase 4, decision D1 = a)
+
+Already done by Claude on the real project (inside `cms` only): migration 0011, the NCERT source registry (180 chapter PDFs, 647 chapter links) and the NCERT-C6-01 book file (42 items, 7 jumps).
+
+PDF sizes checked 9 Nov: 83 NCERT Math PDFs on this Mac, already one per chapter, the largest 23.4 MB (limit 50 MB), so no splitting is needed; 77 of them are registered sources (355 MB). **No DAV scans are on this Mac yet.**
+
+| # | Where | Exact steps | Expected result |
+|---|---|---|---|
+| D1 | Supabase → **Project Settings → Usage** (and Storage → Buckets) | Check the project's current storage use against your plan. Uploading the 77 PDFs adds **≈ 355 MB**; the Free plan allows 1 GB in total, shared with the app's own files | Enough headroom (or upgrade first) |
+| D2 | Supabase → **SQL editor** | Paste all of `db/bootstrap/02-storage.sql` and run it. It creates the **private** bucket `cms-sources` (≤ 50 MB per file; PDF/PNG/JPEG/WebP) and 3 admin-only policies on that bucket. It touches nothing of the app's | The last row: all six columns `true` |
+| D3 | Supabase → **Storage → Buckets** | Look at `cms-sources` | Shows **Private**, 50 MB limit |
+| D4 | Chat | Tell Claude D2 is done | Claude runs `db-verify` (storage checks) |
+| D5 | Terminal, in the repo (needs A2: the URL and anon key in `.env.real`) | `export CMS_VERIFY_EMAIL='<your login email>'`, then `read -s CMS_VERIFY_PASSWORD && export CMS_VERIFY_PASSWORD`, then `npx tsx --env-file=.env.real scripts/upload-sources.ts --dry-run` (shows 77 files, 355 MB), then the same command without `--dry-run` | "uploaded 77/77". Uploads run as you, through the bucket's policies |
+| D6 | CMS → Browse → any Class 6 Math topic in MC27 → **Sources** | Click *Open full screen* and a section jump, e.g. "1.4 … p6" | The PDF opens in a new tab at that page |
+| D7 | Finder | When you have the DAV scans, put them under `~/WitoScope/ContentResearch/Math/DAV/` and tell Claude | Claude checks sizes, splits any book over 50 MB into chapter PDFs, and sets page offsets |
