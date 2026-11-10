@@ -16,5 +16,5 @@ Changes to real (non-test) data that Sambit approved, with what was done and whe
 | **Schema (both)** | `cms_sources.storage_path`; `cms_source_assets` table | — | Migration 0015 |
 
 **Not covered by this log:**
-- The PDFs copied into the local R2 stand-in folder `.r2-local/` (on the Mac, ignored by git). They are no longer referenced, and you can delete the folder.
-- The Cloudflare R2 bucket: you skipped checklist D7, so no book file was uploaded. Checklist D0 asks you to confirm it holds 0 objects.
+- The PDFs copied into the local R2 stand-in folder `.r2-local/`: Sambit deleted the folder on 10 Nov 2026.
+- The Cloudflare R2 bucket: Sambit confirmed **0 objects** on 10 Nov 2026 (checklist D0); no book file was ever uploaded.
