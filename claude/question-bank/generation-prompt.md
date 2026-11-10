@@ -1,15 +1,17 @@
-# Question-generation threads: guidance (10 Nov 2026)
+# Question-generation threads: guidance (10 Nov 2026, rule restated and v11)
 
 This guidance is for the Claude chat threads that write chapter files of WitoScope questions. Paste it, or point the thread to it, at the start of every thread.
 
-**This repo copy is the source.** Sambit syncs it by hand to the Claude Project where generation threads run, so edit it here and then re-sync. The Mac-side worker brief (`~/WitoScope/ContentResearch/QuestionBank/_pipeline/BRIEF.md`) follows the same rule.
+**This repo copy is the source.** Sambit syncs it by hand to the Claude Project where generation threads run, so edit it here and then re-sync.
 
 ## The rule
 
-**Only our own content leaves Sambit's Mac.** A generation thread never receives book material:
+The book material rule is defined in one place: **CLAUDE.md in the CMS repo, section "Book material rule"**. If this page and CLAUDE.md ever disagree, CLAUDE.md wins. In short: book material stays on Sambit's Mac. AI threads on the Mac may read the PDFs there, but nothing book-derived is stored in or uploaded to anything outside the Mac, and a Claude Project chat is outside the Mac.
+
+So a generation thread in the Claude Project never receives book material:
 - no NCERT, DAV, IXL or SOF pages, PDFs or scans;
-- no screenshots;
-- no extracted item text or the book's numbers.
+- no page images, screenshots or book snapshots;
+- no extracted or OCR item text, the book's numbers, review packs or chapter workbooks with source questions.
 
 The thread works from citations and our own catalogue instead. If a thread is ever given book material by mistake, it stops and says so instead of using it.
 
@@ -21,7 +23,7 @@ The thread works from citations and our own catalogue instead. If a thread is ev
 | Topic | ID, name and sub-skills from the topic master lists, e.g. `MT0470 Triangular, square and cube number sequences` |
 | Typical set and pattern | ID, name, template and variables, e.g. `MP0007` with its template |
 | Concepts and misconceptions | The topic's concept cards and the misconceptions to target |
-| v10 rules | Question Attributes **v10**: formats, signature, difficulty rubric, strategy types, wrong-answer tags |
+| Current rules | Question Attributes **v11** (current since 10 Nov 2026): formats, signature, difficulty rubric ("size alone is never Complex"), Inhibition key test, strategy types, wrong-answer tags |
 | Our own questions | Existing bank questions of the topic, to vary from and to avoid duplicating |
 
 ## How to write
@@ -30,7 +32,7 @@ The thread works from citations and our own catalogue instead. If a thread is ev
 2. **Never reconstruct a book question from memory.** Models may remember NCERT textbooks. A citation tells you *what skill* the book practises at that spot, not what to write. Don't reproduce its wording, its story or its number set, even approximately.
 3. **Choose new numbers.** Don't reuse a sequence or set of numbers you know from the book, in any order.
 4. **Record the citation, not the content.** Put the item you were asked to cover in `source_refs`, e.g. `{ "ref_id": "N6-01-004", "relation": "same_idea" }`. Use `modelled_on` only if the question follows that item's idea closely, still in new words and numbers. No field may hold book text, including `author_notes`, `tagging.why` and patterns' `notes`.
-5. **Tag with the v10 rules**, as in `content/examples/MC19-example.json`.
+5. **Tag with the current rules (v11)** and set `attribute_version: "v11"`. Follow the shape of `content/examples/MC19-example.json`, which is tagged under v10. Under v11, Inhibition counts only if a child who does NOT hold the misconception would still feel the pull, and WorkingMemory 4–5 only when the question rules out paper.
 6. **Output one chapter file** (`file_schema: cms-chapter/1.0`, see `schema/chapter.schema.json`), with `generated.by`, `thread` and `model` filled in.
 
 ## Before every import (Sambit, on the Mac)

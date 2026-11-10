@@ -20,7 +20,7 @@ Items marked **[guess]** are inferred and need your check.
 | Shared items (approved) | Login = your existing Supabase account · our own figure images in the private **Cloudflare R2** bucket `cms-sources` (changed 9 Nov 2026 from Supabase Storage; book files removed 10 Nov 2026; see §9) · `cms` added to exposed schemas **[default, not yet confirmed]** · pgvector later, installed into `cms`. |
 | Explicit Save | No auto-save anywhere. |
 | Book content is internal | Source refs never leave the CMS; the Publish step (Phase 8) can't read them. |
-| Book material stays on the Mac (10 Nov 2026) | Only our own content leaves Sambit's Mac. Third-party book material (NCERT/DAV/IXL/SOF PDFs, scans, screenshots, extracted item text, their numbers) is never stored in Supabase, R2 or any cloud. The cloud holds only our original content, bare citations (book, class, chapter, page, section, exercise/item number) and official public links. The originality check runs on the Mac. |
+| Book material stays on the Mac (10 Nov 2026) | **The rule is defined in CLAUDE.md ("Book material rule"), which wins over this summary.** AI threads may read the book PDFs on the Mac, but nothing book-derived is stored or uploaded outside it. Only our own content leaves Sambit's Mac. Third-party book material (NCERT/DAV/IXL/SOF PDFs, scans, screenshots, extracted item text, their numbers) is never stored in Supabase, R2 or any cloud. The cloud holds only our original content, bare citations (book, class, chapter, page, section, exercise/item number) and official public links. The originality check runs on the Mac. |
 
 ---
 
@@ -192,7 +192,7 @@ If a config value changes, a one-click "recompute" refreshes these without creat
 
 ---
 
-## 7. How the v10 seed loads (Phase 2)
+## 7. How the seed loads (Phase 2; v10, then v11 on 10 Nov 2026)
 
 | Source (v10 CSV / sheet) | Into |
 |---|---|
@@ -205,6 +205,12 @@ If a config value changes, a one-click "recompute" refreshes these without creat
 | gold_questions, gold_wrong_answers | cms_questions (bank = gold) + version tables + cms_gold_meta |
 
 All seed rows marked **draft** where v10 marks them draft.
+
+**Later versions (v11, Sambit, 10 Nov 2026).** `npm run import:seed` takes the highest `WitoScope_Question_Attributes_vN.xlsx` in `QuestionBank/` (or `--file`), v10 or later:
+- The rules (attribute defs, rubric, calibration cases) are keyed by rule version, so versions load **side by side**. `cms_config.current_rule_version` moves forward to the newest loaded version. Generate, tagging, the model check and the editor use that version.
+- From the current or a newer workbook, catalogues are upserted as before. A gold question whose values changed gets a **new approved version**, following the versioning rule (logged as `new_version` with the field diff). A wording-only change is a typo fix in place. `cms_gold_meta` changes, such as Test only → Prompt example, are updated with an audit row. A gold question with an open draft is never overwritten.
+- An older workbook loads only its own rules. Config, catalogues, gold and the current version stay as they are.
+- Model-check scores count only the gold questions that are test-only *now*, earlier runs included. A question that became a prompt example is left out and named.
 
 ---
 
@@ -237,7 +243,7 @@ Errors are listed per question key, in plain words.
 | 6 | Formats | Typed split into Typed-number / Typed-decimal / Typed-fraction / Typed-text |
 | — | Login | Sambit's existing Supabase account |
 | — | Storage | ~~Supabase Storage bucket~~ → **Cloudflare R2** private bucket `cms-sources` (Sambit, 9 Nov 2026) |
-| — | Book material (10 Nov 2026) | Only our own content leaves the Mac. No book PDFs, scans, screenshots, item text or item numbers in Supabase, R2 or any cloud; citations and official links only (migration 0015, logged in `cms_reviews` as `remove_book_material`). The originality check runs locally (`npm run check:originality`, PDFs read with `pdftotext`) before every import; `import:chapter` records its result. A **near-copy** (similarity ≥ `originality_near_copy`, 0.85, or the same distinctive numbers in the same order) **blocks** that question; moderate similarity (≥ `similarity_threshold`, 0.6, or the same numbers in another order) is a warning (migration 0016). A near-copy draft already in the CMS (e.g. from Generate) is approved only with "override: reviewed, not a copy" and a reason, logged as `override_near_copy` (migration 0017). No AI reads book pages; generation threads work from citations, topics, patterns and the v10 rules (`claude/question-bank/generation-prompt.md`). Phase 7 is re-planned local-only (`docs/phase7-plan.md`) |
+| — | Book material (10 Nov 2026; rule restated the same day: CLAUDE.md "Book material rule" is the single source) | Only our own content leaves the Mac; AI threads may read the PDFs on the Mac, nothing book-derived is stored or uploaded outside it. No book PDFs, scans, screenshots, item text or item numbers in Supabase, R2 or any cloud; citations and official links only (migration 0015, logged in `cms_reviews` as `remove_book_material`). The originality check runs locally (`npm run check:originality`, PDFs read with `pdftotext`) before every import; `import:chapter` records its result. A **near-copy** (similarity ≥ `originality_near_copy`, 0.85, or the same distinctive numbers in the same order) **blocks** that question; moderate similarity (≥ `similarity_threshold`, 0.6, or the same numbers in another order) is a warning (migration 0016). A near-copy draft already in the CMS (e.g. from Generate) is approved only with "override: reviewed, not a copy" and a reason, logged as `override_near_copy` (migration 0017). No AI reads book pages; generation threads work from citations, topics, patterns and the v10 rules (`claude/question-bank/generation-prompt.md`). Phase 7 is re-planned local-only (`docs/phase7-plan.md`) |
 | — | Files (9 Nov 2026; narrowed 10 Nov) | ~~All files (PDFs, scans, screenshots, figure images)~~ Only our own figure images (`figures/…`, PNG/JPEG/WebP) live in R2; Supabase keeps text, metadata and each file's R2 key (`storage_path`, `image_path`). Files are served only by the Pages Function `/api/files`: `sign` and `put` require a valid Cloudflare Access JWT (team keys, AUD, issuer, expiry, allowed email); `get` serves a file only with a 5-minute HMAC-signed link. The bucket is private and reached through an R2 binding (no R2 API keys); no list, no delete. Dev uses a local stand-in running the same code |
 | — | pgvector | ~~Phase 6, installed into `cms`~~ → **not used** (Sambit, 9 Nov 2026): duplicate and copy checks are shared TypeScript (number sets + text similarity, threshold in `cms_config`); the copy-from-book check runs only on the Mac (10 Nov 2026) |
 | — | AI calls (9 Nov 2026) | A Cloudflare Pages Function (`/api/ai/*`) behind Access, holding only the Claude API key; it returns drafts and the browser saves them through `cms_apply_save`. Bulk runs use the Batch API, tracked in `cms_jobs`. No Supabase Edge Function and no database credentials in the cloud. A model per task (generate, tag, extract; default `claude-haiku-5-5`), the refusal-fallback model, per-run limit (20), daily cap ($5), similarity threshold and prices live in `cms_config`; every request stays under 100K tokens (cached fixed rules + the topic's concept cards and relevant calibration cases); tokens and cost are logged per run in `cms_generation_runs` |
