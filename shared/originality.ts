@@ -6,15 +6,19 @@
 import { similarity } from './generation.ts';
 import { numbersIn } from './version.ts';
 
-export const ORIGINALITY_TOOL = 'check-originality 1';
-export const REPORT_SCHEMA = 'cms-originality/1.0';
+export const ORIGINALITY_TOOL = 'check-originality 2';
+/** 1.1 (10 Nov 2026): adds near_copy (blocks the import) and near_copy_threshold. */
+export const REPORT_SCHEMA = 'cms-originality/1.1';
+/** Default near-copy similarity (cms_config originality_near_copy). [guess] */
+export const NEAR_COPY_DEFAULT = 0.85;
 /** Window sizes, in lines of PDF text, compared with each question. */
 const MAX_WINDOW_LINES = 6;
 
 export interface BookPage { source_id: string; pdf_page: number; text: string }
 export interface BookItem { ref_id: string; text: string }
 export interface OriginalityResult {
-  result: 'clear' | 'flagged' | 'no_sources';
+  /** near_copy blocks the import; flagged (moderate) is a warning */
+  result: 'clear' | 'flagged' | 'near_copy' | 'no_sources';
   similarity: number | null;
   same_numbers: boolean;
   /** a citation only: an item ref_id, or "<source_id> p<pdf page>" */
@@ -22,6 +26,14 @@ export interface OriginalityResult {
 }
 
 const nums = (s: string) => numbersIn({ s });
+/** Numbers in reading order (numbersIn sorts them). */
+export const orderedNums = (s: string) => s.match(/\d+(?:[.,/]\d+)*/g) ?? [];
+/** `need` appears in `have` in the same order (gaps allowed). */
+export function inOrder(have: string[], need: string[]) {
+  let i = 0;
+  for (const x of have) if (x === need[i]) i++;
+  return i === need.length;
+}
 /** Numbers that make a question recognisable: at least 3, at least one with 2+ digits. [guess] */
 export const distinctive = (n: string[]) => n.length >= 3 && n.some((x) => x.replace(/\D/g, '').length >= 2);
 /** Every number of `need` appears in `have` (as many times). Both sorted, as numbersIn returns them. */
@@ -33,37 +45,49 @@ export function containsAll(have: string[], need: string[]) {
 }
 
 /** Pieces of a book page to compare with: 1…6 consecutive non-empty lines. */
-export function windows(page: BookPage): { cite: string; text: string; numbers: string[] }[] {
+export interface Piece { cite: string; text: string; numbers: string[]; ordered: string[] }
+export function windows(page: BookPage): Piece[] {
   const lines = page.text.split(/\r?\n/).map((l) => l.replace(/\s+/g, ' ').trim()).filter(Boolean);
-  const out: { cite: string; text: string; numbers: string[] }[] = [];
+  const out: Piece[] = [];
   for (let i = 0; i < lines.length; i++) {
     for (let n = 1; n <= MAX_WINDOW_LINES && i + n <= lines.length; n++) {
       const text = lines.slice(i, i + n).join(' ');
-      out.push({ cite: `${page.source_id} p${page.pdf_page}`, text, numbers: nums(text) });
+      out.push({ cite: `${page.source_id} p${page.pdf_page}`, text, numbers: nums(text), ordered: orderedNums(text) });
     }
   }
   return out;
 }
 
-export interface Corpus { items: { cite: string; text: string; numbers: string[] }[] }
+export interface Corpus { items: Piece[] }
 export const corpus = (pages: BookPage[], items: BookItem[]): Corpus =>
-  ({ items: [...items.map((i) => ({ cite: i.ref_id, text: i.text, numbers: nums(i.text) })), ...pages.flatMap(windows)] });
+  ({ items: [...items.map((i) => ({ cite: i.ref_id, text: i.text, numbers: nums(i.text), ordered: orderedNums(i.text) })), ...pages.flatMap(windows)] });
 
-/** Flag a question whose wording is ≥ threshold similar to a piece of a book, or whose distinctive numbers all appear in one piece. */
-export function checkText(text: string, c: Corpus, threshold: number): OriginalityResult {
+/**
+ * Sambit, 10 Nov 2026:
+ *  - near_copy (blocks the import): wording ≥ nearCopy similar to a piece of a book, or the
+ *    question's distinctive numbers all in one piece IN THE SAME ORDER (the same number set in
+ *    the same pattern);
+ *  - flagged (a warning): wording ≥ threshold similar, or those numbers in one piece in another order;
+ *  - clear otherwise. Pieces are 1–6 consecutive lines of a book page, or a local book item.
+ */
+export function checkText(text: string, c: Corpus, threshold: number, nearCopy = NEAR_COPY_DEFAULT): OriginalityResult {
   if (!c.items.length) return { result: 'no_sources', similarity: null, same_numbers: false, closest_ref: null };
-  const qn = nums(text);
+  const qn = nums(text), qo = orderedNums(text);
   const strong = distinctive(qn);
-  let best = { sim: -1, cite: '' }, numHit: string | null = null;
+  let best = { sim: -1, cite: '' }, sameSet: string | null = null, samePattern: string | null = null;
   for (const w of c.items) {
     const sim = similarity(text, w.text);
     if (sim > best.sim) best = { sim, cite: w.cite };
-    if (strong && !numHit && containsAll(w.numbers, qn)) numHit = w.cite;
+    if (strong && !samePattern && containsAll(w.numbers, qn)) {
+      if (inOrder(w.ordered, qo)) samePattern = w.cite;
+      else sameSet ??= w.cite;
+    }
   }
   const sim = Math.round(best.sim * 100) / 100;
-  const flagged = sim >= threshold || numHit !== null;
-  return { result: flagged ? 'flagged' : 'clear', similarity: sim, same_numbers: numHit !== null,
-    closest_ref: numHit && sim < threshold ? numHit : best.cite };
+  const result = sim >= nearCopy || samePattern ? 'near_copy' : sim >= threshold || sameSet ? 'flagged' : 'clear';
+  // cite the piece that decided the result: the wording match, unless the numbers decided it
+  const cite = result === 'near_copy' && sim < nearCopy ? samePattern : result === 'flagged' && sim < threshold ? sameSet : best.cite;
+  return { result, similarity: sim, same_numbers: (samePattern ?? sameSet) !== null, closest_ref: cite };
 }
 
 /** The local report written next to a chapter file and read by import:chapter. No book text. */
@@ -74,6 +98,7 @@ export interface OriginalityReport {
   chapter_id: string;
   checked_at: string;
   threshold: number;
+  near_copy_threshold: number;
   checked: { source_id: string; pages: string }[];
   missing: string[];
   questions: ({ key: string } & OriginalityResult)[];

@@ -239,9 +239,9 @@ describe('chapter importer', () => {
     const body = JSON.stringify(f, null, 2);
     writeFileSync(p, body);
     const rep: Record<string, unknown> = {
-      file_schema: 'cms-originality/1.0', tool: 'check-originality 1', chapter_file_sha256: createHash('sha256').update(body).digest('hex'),
-      chapter_id: 'MC98', checked_at: '2026-11-10T06:00:00.000Z', threshold: 0.6, checked: [{ source_id: 'NCERT-fegp101', pages: 'pdf 1–12' }], missing: [],
-      questions: f.questions.map((q) => ({ key: q.key, result: 'flagged', similarity: 0.82, same_numbers: true, closest_ref: 'NCERT-fegp101 p5' })),
+      file_schema: 'cms-originality/1.1', tool: 'check-originality 2', chapter_file_sha256: createHash('sha256').update(body).digest('hex'),
+      chapter_id: 'MC98', checked_at: '2026-11-10T06:00:00.000Z', threshold: 0.6, near_copy_threshold: 0.85, checked: [{ source_id: 'NCERT-fegp101', pages: 'pdf 1–12' }], missing: [],
+      questions: f.questions.map((q) => ({ key: q.key, result: 'flagged', similarity: 0.72, same_numbers: false, closest_ref: 'NCERT-fegp101 p5' })),
     };
     edit(rep);
     writeFileSync(p.replace(/\.json$/, '.originality.json'), JSON.stringify(rep));
@@ -252,11 +252,25 @@ describe('chapter importer', () => {
     const f = baseFile(); q1(f).text = `${q1(f).text} (originality probe)`;
     const r = await runChapter(sql, withReport(f), 'import');
     expect(outcome(r).result).not.toBe('blocked');
-    expect(r.problems).toContainEqual({ level: 'warning', key: 'MC98-0001', message: 'close to a book: NCERT-fegp101 p5 (similarity 0.82, same numbers); check it is original before approving' });
-    const [c] = await sql`select c.result, c.similarity::float as similarity, c.same_numbers, c.closest_ref, c.checked, c.import_id from cms.cms_originality_checks c
+    expect(r.problems).toContainEqual({ level: 'warning', key: 'MC98-0001', message: 'close to a book: NCERT-fegp101 p5 (similarity 0.72); check it is original before approving' });
+    const [c] = await sql`select c.result, c.similarity::float as similarity, c.same_numbers, c.closest_ref, c.checked, c.import_id, c.near_copy_threshold::float as near from cms.cms_originality_checks c
       join cms.cms_question_versions v on v.version_id = c.version_id where v.question_id = ${outcome(r).question_id!} and v.version_no = ${outcome(r).version!}`;
-    expect(c).toMatchObject({ result: 'flagged', similarity: 0.82, same_numbers: true, closest_ref: 'NCERT-fegp101 p5', checked: [{ source_id: 'NCERT-fegp101', pages: 'pdf 1–12' }] });
+    expect(c).toMatchObject({ result: 'flagged', similarity: 0.72, same_numbers: false, closest_ref: 'NCERT-fegp101 p5', near: 0.85, checked: [{ source_id: 'NCERT-fegp101', pages: 'pdf 1–12' }] });
     expect(Number(c!.import_id)).toBe(r.importId);
+  });
+
+  it('a near-copy blocks that question (nothing recorded for it); the rest of the file imports', async () => {
+    const f = baseFile(); q1(f).text = `${q1(f).text} (near-copy probe)`;
+    const r = await runChapter(sql, withReport(f, (rep) => {
+      (rep.questions as Record<string, unknown>[])[0] = { key: 'MC98-0001', result: 'near_copy', similarity: 0.93, same_numbers: true, closest_ref: 'N6-01-004' };
+    }), 'import');
+    expect(outcome(r).result).toBe('blocked');
+    expect(r.problems).toContainEqual({ level: 'error', key: 'MC98-0001', message: 'near-copy of a book: N6-01-004 (similarity 0.93, same numbers in the same order); rewrite it with new wording and numbers' });
+  });
+
+  it('an old 1.0 report is refused (re-run the check)', async () => {
+    const r = await runChapter(sql, withReport(baseFile(), (rep) => { rep.file_schema = 'cms-originality/1.0'; }), 'validate');
+    expect(r.result).toBe('failed');
   });
 
   it('no report → a warning; a report for another version of the file → the import fails', async () => {

@@ -229,6 +229,7 @@ function BookCheck({ versionId, bank }: { versionId: number; bank: string }) {
     <div className={`small book-check ${c?.result ?? 'none'}`}>
       Book check: {!c ? <span className="muted">not run yet · on your Mac: <span className="mono">npm run check:originality -- --unchecked</span></span>
         : c.result === 'clear' ? <>clear ({when}; closest {c.closest_ref}, {c.similarity})</>
+        : c.result === 'near_copy' ? <strong>near-copy of {c.closest_ref} (similarity {c.similarity}{c.same_numbers ? ', same numbers in the same order' : ''}; {when}) · rewrite it before approving</strong>
         : c.result === 'flagged' ? <strong>close to {c.closest_ref} (similarity {c.similarity}{c.same_numbers ? ', same numbers' : ''}; {when}) · make sure it is original</strong>
         : <span className="muted">no book for this chapter on your Mac ({when})</span>}
     </div>
