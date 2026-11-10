@@ -90,3 +90,8 @@ Guesses for these updates:
 - Fact to note: there are **42** test-only gold questions locally and on the real project, not 43.
 
 H5 (pack), H7 (effort is the API default), H8 (fallback) and H9 (estimate: now ≈ 3 characters per token) are replaced by the above.
+
+## 6. Book material stays on the Mac (Sambit, 10 Nov 2026)
+
+The copy-from-source check no longer runs in the browser: book item text isn't in the CMS any more. Drafts are still checked there against our own questions (topic and pattern). The check against books runs on the Mac: `npm run check:originality -- --unchecked`. It reads the chapter's PDFs and local book files and records only a result and a citation per version (`cms_originality_checks`). The question page then shows "Book check: …", and the run page says how to run it. Generation prompts never contained book text.
+

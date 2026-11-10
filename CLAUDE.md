@@ -10,10 +10,12 @@ Design source of truth: `docs/phase1-design.md` (approved 8 Nov 2026). Question 
 - The `scripts/check-migrations` check must pass; it rejects any migration that names another schema.
 - Migrations and server functions connect as role `cms_owner` (rights on `cms` only), never with `service_role`.
 - RLS is enabled on every table and allows only the admin user ID stored in `cms_config`.
-- Files (PDFs, scans, screenshots, figure images): only the private **Cloudflare R2** bucket `cms-sources`. Supabase keeps only text and metadata, with each file's R2 key. Files are reached only through the `/api/files` Pages Function, which validates the Cloudflare Access JWT and issues short-lived signed URLs. No Supabase Storage.
+- Files: only our own figure images, in the private **Cloudflare R2** bucket `cms-sources` under `figures/`. Supabase keeps only text and metadata, with each file's R2 key. Files are reached only through the `/api/files` Pages Function, which validates the Cloudflare Access JWT, issues short-lived signed URLs and refuses PDFs and any key outside `figures/`. No Supabase Storage.
 - Publishing to the app (Phase 8) is designed separately and needs Sambit's explicit approval.
 
 ## Content rules
+- **Only our own content leaves Sambit's Mac.** Third-party book material (NCERT/DAV/IXL/SOF PDFs, scans, screenshots, extracted item text, their numbers) is never stored in Supabase, R2 or any cloud, and never sent to a cloud service. The cloud may hold only our original content and bare citations (book, class, chapter, page, section, exercise/item number) plus official public links (e.g. ncert.nic.in). Book files and anything read from them stay on the Mac; `db:verify` checks the citation-only shape.
+- The originality (copy-from-book) check runs only on the Mac (`npm run check:originality`); the CMS records only its result and citations.
 - Book questions (NCERT, DAV, IXL, SOF) are internal references only; they never reach the app.
 - Gold questions (`bank = 'gold'`) are never publishable.
 - IDs are permanent and never reused. Class is a field, never derived from an ID.
@@ -36,8 +38,8 @@ React + TypeScript + Vite · Supabase (Postgres, Auth) · AI via a Cloudflare Pa
 1. Data model + JSON schema — **done**
 2. Repo setup, migrations, login, import of topic master lists and the v10 seed, JSON chapter importer with validation and error report
 3. Browse: Home, Topic workspace, question detail
-4. Chapter Sources tab
+4. Chapter Sources tab (citations and official links only)
 5. Edit + review + versions
 6. Generate similar / fill a typical set (Claude API)
-7. Upload a new source → extract → tag → match
+7. New source → extract → tag → match, **local-only** (`docs/phase7-plan.md`; no book text in the cloud)
 8. Publish to the app as numbered releases, with rollback
