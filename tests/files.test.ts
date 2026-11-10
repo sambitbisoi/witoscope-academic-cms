@@ -66,6 +66,7 @@ describe('Cloudflare Access JWT', () => {
 
 describe('file service (R2)', () => {
   const PDF = new TextEncoder().encode('%PDF-1.4 test');
+  const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 1, 2, 3]);
   const run = (r: Request, bucket: Bucket, t = NOW) => handleFiles(r, env, bucket, t);
 
   it('a request without Access is refused (sign and put)', async () => {
@@ -76,18 +77,27 @@ describe('file service (R2)', () => {
     expect(b.m.size).toBe(0);
   });
 
-  it('with Access: upload, sign, then download through the signed URL', async () => {
+  it('with Access: upload a figure, sign, then download through the signed URL', async () => {
     const b = new MemoryBucket(); const jwt = await token(good());
-    const put = await run(req('/api/files/put?key=NCERT-fegp101/fegp101.pdf', { method: 'PUT', jwt, body: PDF, headers: { 'content-type': 'application/pdf', 'content-length': String(PDF.byteLength) } }), b);
+    const put = await run(req('/api/files/put?key=figures/MQ000001-v1.png', { method: 'PUT', jwt, body: PNG, headers: { 'content-type': 'image/png', 'content-length': String(PNG.byteLength) } }), b);
     expect(put.status).toBe(200);
-    const s = await run(req('/api/files/sign?key=NCERT-fegp101/fegp101.pdf', { jwt }), b);
+    const s = await run(req('/api/files/sign?key=figures/MQ000001-v1.png', { jwt }), b);
     const { url, expires } = await s.json() as { url: string; expires: number };
     expect(expires).toBe(NOW / 1000 + TTL_SECONDS);
     const g = await run(req(url), b); // a signed URL works without the JWT (the browser opens it in a new tab)
     expect(g.status).toBe(200);
-    expect(g.headers.get('content-type')).toBe('application/pdf');
+    expect(g.headers.get('content-type')).toBe('image/png');
     expect(g.headers.get('cache-control')).toBe('private, no-store');
-    expect(new Uint8Array(await g.arrayBuffer())).toEqual(PDF);
+    expect(new Uint8Array(await g.arrayBuffer())).toEqual(PNG);
+  });
+
+  it('book material is never stored: PDFs and keys outside figures/ are refused, even with Access', async () => {
+    const b = new MemoryBucket(); const jwt = await token(good());
+    const pdf = await run(req('/api/files/put?key=figures/fegp101.pdf', { method: 'PUT', jwt, body: PDF, headers: { 'content-type': 'application/pdf', 'content-length': String(PDF.byteLength) } }), b);
+    expect(pdf.status).toBe(415);
+    const shot = await run(req('/api/files/put?key=IXL-X/screenshots/a.png', { method: 'PUT', jwt, body: PNG, headers: { 'content-type': 'image/png', 'content-length': String(PNG.byteLength) } }), b);
+    expect(shot.status).toBe(403);
+    expect(b.m.size).toBe(0);
   });
 
   it('signed URLs expire, and a tampered key or signature is refused', async () => {
@@ -106,9 +116,9 @@ describe('file service (R2)', () => {
     for (const k of ['../etc/passwd', '/abs.pdf', 'a/../b.pdf', 'a//b.pdf', 'sp ace.pdf']) {
       expect((await run(req(`/api/files/sign?key=${encodeURIComponent(k)}`, { jwt }), b)).status, k).toBe(400);
     }
-    const txt = await run(req('/api/files/put?key=a/x.txt', { method: 'PUT', jwt, body: 'hi', headers: { 'content-type': 'text/plain', 'content-length': '2' } }), b);
+    const txt = await run(req('/api/files/put?key=figures/x.txt', { method: 'PUT', jwt, body: 'hi', headers: { 'content-type': 'text/plain', 'content-length': '2' } }), b);
     expect(txt.status).toBe(415);
-    const big = await run(req('/api/files/put?key=a/big.pdf', { method: 'PUT', jwt, body: PDF, headers: { 'content-type': 'application/pdf', 'content-length': String(MAX_BYTES + 1) } }), b);
+    const big = await run(req('/api/files/put?key=figures/big.png', { method: 'PUT', jwt, body: PNG, headers: { 'content-type': 'image/png', 'content-length': String(MAX_BYTES + 1) } }), b);
     expect(big.status).toBe(413);
     expect(b.m.size).toBe(0);
   });
