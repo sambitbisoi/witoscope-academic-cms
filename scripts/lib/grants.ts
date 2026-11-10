@@ -4,7 +4,6 @@ export const WRITE_GRANTS: Record<string, string[]> = {
   cms_sources: ['INSERT', 'UPDATE'],          // Phase 4 (D2)
   cms_source_chapters: ['INSERT', 'UPDATE'],  // Phase 4 (D2)
   cms_source_jumps: ['INSERT', 'UPDATE'],     // Phase 4 (D2)
-  cms_source_assets: ['INSERT', 'UPDATE'],    // Phase 4 (D2)
   cms_reviews: ['INSERT'],                    // audit log of browser saves
 };
 
