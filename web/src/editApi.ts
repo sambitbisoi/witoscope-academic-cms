@@ -83,8 +83,9 @@ const rpc = async (fn: string, args: Record<string, unknown>) => {
   return data;
 };
 export const applySave = (payload: Record<string, unknown>) => rpc('cms_apply_save', { payload });
-export const setStatus = (questionId: string, versionNo: number, action: 'submit' | 'withdraw' | 'approve' | 'reject', reason: string | null) =>
-  rpc('cms_set_status', { p_question_id: questionId, p_version_no: versionNo, p_action: action, p_reason: reason });
+/** overrideNearCopy: "override: reviewed, not a copy" for a near-copy of a book (needs a reason; logged). */
+export const setStatus = (questionId: string, versionNo: number, action: 'submit' | 'withdraw' | 'approve' | 'reject', reason: string | null, overrideNearCopy = false) =>
+  rpc('cms_set_status', { p_question_id: questionId, p_version_no: versionNo, p_action: action, p_reason: reason, p_override_near_copy: overrideNearCopy });
 export const retire = (questionId: string, doRetire: boolean, reason: string) => rpc('cms_retire', { p_question_id: questionId, p_retire: doRetire, p_reason: reason });
 
 /** Drafts and in-review versions, oldest first (the review queue). */

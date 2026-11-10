@@ -49,7 +49,7 @@ async function cleanup() {
   await owner`delete from cms.cms_reviews where target_table = 'cms_generation_runs'`;
   if (qids.length) {
     const vids = (await owner`select version_id from cms.cms_question_versions where question_id in ${owner(qids)}`).map((r) => r.version_id);
-    for (const t of ['cms_version_parts', 'cms_version_options', 'cms_version_wrong_answers', 'cms_version_concepts', 'cms_version_solutions', 'cms_version_hints', 'cms_version_source_refs']) {
+    for (const t of ['cms_version_parts', 'cms_version_options', 'cms_version_wrong_answers', 'cms_version_concepts', 'cms_version_solutions', 'cms_version_hints', 'cms_version_source_refs', 'cms_originality_checks']) {
       if (vids.length) await owner`delete from ${owner(`cms.${t}`)} where version_id in ${owner(vids)}`;
     }
     await owner`delete from cms.cms_reviews where target_id like any (${qids.flatMap((q) => [q, `${q} v%`])})`;
@@ -259,6 +259,24 @@ describe('Phase 6: generated drafts, runs and jobs', () => {
     p.bank = 'gold'; p.question.bank = 'gold';
     const res = await as(adminId, async (tx) => (await tx`select cms.cms_apply_save(${tx.json(p as never)}) as r`)[0]!.r);
     expect((await owner`select bank from cms.cms_questions where question_id = ${res.question_id}`)[0]!.bank).toBe('production');
+  });
+
+  it('a near-copy draft is approved only with "override: reviewed, not a copy" and a reason, logged', async () => {
+    const res = await as(adminId, async (tx) => (await tx`select cms.cms_apply_save(${tx.json(await createPayload(runId, '13/14 − 1/7 = ? (near-copy probe)') as never)}) as r`)[0]!.r);
+    const id = res.question_id as string;
+    const [v] = await owner`select version_id from cms.cms_question_versions where question_id = ${id} and version_no = 1`;
+    await owner`insert into cms.cms_originality_checks (version_id, checked_at, result, similarity, same_numbers, closest_ref, threshold, near_copy_threshold, tool)
+                values (${v!.version_id}, now(), 'near_copy', 0.91, true, 'N6-01-004', 0.6, 0.85, 'test')`;
+    const approve = (override: boolean, reason: string | null) =>
+      as(adminId, async (tx) => (await tx`select cms.cms_set_status(${id}, 1, 'approve', ${reason}, ${override}) as r`)[0]!.r);
+    await expect(status(id, 1, 'approve')).rejects.toThrow(/near-copy of a book \(N6-01-004\)/);
+    await expect(approve(true, '  ')).rejects.toThrow(/needs a reason/);
+    expect((await current(id)).v.status).toBe('draft');
+    expect((await approve(true, 'Compared with p3: different context and numbers')).status).toBe('approved');
+    const log = await owner`select action, reason, field_diff from cms.cms_reviews where target_id = ${`${id} v1`} and action in ('override_near_copy', 'approve') order by review_id`;
+    expect(log.map((r) => r.action)).toEqual(['override_near_copy', 'approve']);
+    expect(log[0]).toMatchObject({ reason: 'Compared with p3: different context and numbers',
+      field_diff: { closest_ref: 'N6-01-004', similarity: 0.91, same_numbers: true, override: 'reviewed, not a copy' } });
   });
 
   it('jobs: a batch job is recorded, updated and finished', async () => {

@@ -110,6 +110,15 @@ export async function sourceItems(refIds: string[]) {
 
 /** The latest local originality check of a version (citations and scores only). */
 export interface OriginalityCheck { checked_at: string; result: 'clear' | 'flagged' | 'near_copy' | 'no_sources'; similarity: number | null; same_numbers: boolean; closest_ref: string | null; missing: string[] }
+/** Latest check per version, for several versions (e.g. a Generate run's drafts). */
+export async function latestOriginalityMany(versionIds: number[]): Promise<Map<number, OriginalityCheck>> {
+  if (!versionIds.length) return new Map();
+  const rows = must<(OriginalityCheck & { version_id: number })[]>(await supabase.from('cms_originality_checks')
+    .select('version_id, checked_at, result, similarity, same_numbers, closest_ref, missing').in('version_id', versionIds).order('check_id', { ascending: false }));
+  const m = new Map<number, OriginalityCheck>();
+  for (const r of rows) if (!m.has(r.version_id)) m.set(r.version_id, r);
+  return m;
+}
 export async function latestOriginality(versionId: number): Promise<OriginalityCheck | null> {
   const rows = must<OriginalityCheck[]>(await supabase.from('cms_originality_checks').select('checked_at, result, similarity, same_numbers, closest_ref, missing')
     .eq('version_id', versionId).order('check_id', { ascending: false }).limit(1));

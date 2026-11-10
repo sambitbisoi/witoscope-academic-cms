@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { buildPrompt, difficultiesFor, type GenerateSettings } from '../../shared/generation.ts';
 import { setStatus } from './editApi';
+import { latestOriginalityMany, type OriginalityCheck } from './sourcesApi';
 import { estimateUsd, loadContext, loadPromptParts, runBatch, runNow, runRecord, type DraftOutcome, type GenContext, type PromptParts, type RunParams } from './genApi';
 import { browseHash, STATUS_LABEL, subjectOfChapter } from './logic';
 import { supabase } from './supabase';
@@ -98,6 +99,7 @@ export function RunScreen({ runId }: { runId: number }) {
   const [reject, setReject] = useState<{ id: string; reason: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
+  const [nearCopies, setNearCopies] = useState<Map<string, OriginalityCheck>>(new Map());
   useEffect(() => {
     runRecord(runId).then(async (r) => {
       setRun(r);
@@ -105,6 +107,12 @@ export function RunScreen({ runId }: { runId: number }) {
       if (ids.length) {
         const { data } = await supabase.from('cms_question_list').select('question_id, status, topic_id, chapter_id, class').in('question_id', ids);
         setStatusMap(new Map((data ?? []).map((x) => [x.question_id, x])));
+        // near-copies (local book check) need an override on their own page; best-effort
+        try {
+          const { data: vs } = await supabase.from('cms_question_versions').select('version_id, question_id').in('question_id', ids).eq('version_no', 1);
+          const checks = await latestOriginalityMany((vs ?? []).map((x) => x.version_id));
+          setNearCopies(new Map((vs ?? []).flatMap((x) => { const c = checks.get(x.version_id); return c?.result === 'near_copy' ? [[x.question_id, c] as const] : []; })));
+        } catch { setNearCopies(new Map()); }
       }
     }).catch((e) => setError(e.message));
   }, [runId, tick]);
@@ -112,7 +120,7 @@ export function RunScreen({ runId }: { runId: number }) {
   if (!run) return <main><p className="muted">Loading run {runId}…</p></main>;
   const outcomes = run.params.outcomes ?? [];
   const act = async (f: () => Promise<unknown>) => { setError(null); try { await f(); setSel(new Set()); setReject(null); setTick((t) => t + 1); } catch (e) { setError((e as Error).message); } };
-  const drafts = outcomes.filter((o) => o.question_id && status.get(o.question_id)?.status === 'draft');
+  const drafts = outcomes.filter((o) => o.question_id && status.get(o.question_id)?.status === 'draft' && !nearCopies.has(o.question_id));
   return (
     <main className="wide gen">
       <h2>Run {run.run_id} · {run.kind === 'fill_set' ? 'fill a question type' : 'generate similar'}</h2>
@@ -134,7 +142,7 @@ export function RunScreen({ runId }: { runId: number }) {
         return (
           <div key={o.index} className={`draft-card ${o.errors.length ? 'blocked' : ''}`}>
             <div className="draft-head">
-              {st?.status === 'draft' && <input type="checkbox" checked={sel.has(o.question_id!)} onChange={(e) => { const s = new Set(sel); if (e.target.checked) s.add(o.question_id!); else s.delete(o.question_id!); setSel(s); }} />}
+              {st?.status === 'draft' && !nearCopies.has(o.question_id!) && <input type="checkbox" checked={sel.has(o.question_id!)} onChange={(e) => { const s = new Set(sel); if (e.target.checked) s.add(o.question_id!); else s.delete(o.question_id!); setSel(s); }} />}
               <strong>Draft {o.index}</strong> <span className={`lvl ${o.difficulty}`}>{o.difficulty}</span>
               {o.question_id ? <a className="mono" href={browseHash({ subject: subjectOfChapter(st?.chapter_id ?? 'MC'), cls: String(st?.class ?? 'all'), topic: st?.topic_id, q: o.question_id })}>{o.question_id}</a> : <span className="error small">not saved</span>}
               {st && <span className="muted small">{STATUS_LABEL[st.status] ?? st.status}</span>}
@@ -142,6 +150,7 @@ export function RunScreen({ runId }: { runId: number }) {
             <div className="stem">{o.text}</div>
             {o.errors.map((m, i) => <div key={i} className="error small">Error: {m}</div>)}
             {o.warnings.map((m, i) => <div key={i} className="warn small">Warning: {m}</div>)}
+            {o.question_id && nearCopies.has(o.question_id) && <div className="error small">Near-copy of a book ({nearCopies.get(o.question_id)!.closest_ref}, similarity {nearCopies.get(o.question_id)!.similarity}): not in "Approve selected". Rewrite it, or approve it on its page with "override: reviewed, not a copy".</div>}
             {o.hits.map((h) => <div key={h.id} className="warn small">Close to {h.id}: similarity {h.similarity}{h.sameNumbers ? ', same numbers' : ''}</div>)}
             {st?.status === 'draft' && (
               <div className="actions">
