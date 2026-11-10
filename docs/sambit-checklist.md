@@ -51,17 +51,17 @@ Already done by Claude on the real project (inside `cms` only): migration 0015 r
 
 | # | Where | Exact steps | Expected result |
 |---|---|---|---|
-| D0 | Cloudflare dashboard → **R2 Object Storage** | Only if you created `cms-sources` earlier: open it and check the object count | **0 objects** (you skipped D7, so no book PDF was uploaded). If anything is there, tell Claude before deleting |
+| D0 ✓ | Cloudflare dashboard → **R2 Object Storage** | Done 10 Nov 2026 | **0 objects** confirmed |
 | D1 | *(later, when figure images arrive)* Cloudflare dashboard → **R2 Object Storage** | **Create bucket** → name `cms-sources`, location *Automatic*, storage class *Standard*. Leave **public access off** (no r2.dev subdomain, no custom domain) | Bucket `cms-sources`, *Public access: Disabled* |
 | D2 | *(later)* Pages project → **Settings → Bindings** → Add → **R2 bucket** | Variable name `CMS_SOURCES`, bucket `cms-sources`, for **Production** and **Preview** | Binding listed |
-| D3 | Zero Trust → Access → **Applications** → `WitoScope CMS` (from C1) | Copy the **Application Audience (AUD) Tag**, and note your **team domain** (`<team>.cloudflareaccess.com`) under Zero Trust → Settings | Both copied |
-| D4 | Pages project → **Settings → Variables and secrets** (Production **and** Preview) | Plain-text variables `ACCESS_TEAM_DOMAIN`, `ACCESS_AUD` and `ACCESS_ALLOWED_EMAILS` (your email). These are also used by `/api/ai`, so **do D3–D4 now** for Phase 6. The **Secret** `FILES_SIGNING_KEY` (`openssl rand -base64 48`) can wait with D1. Then **Deployments → latest → Retry deployment** | The new deployment succeeds |
+| D3 ✓ | Zero Trust → Access → **Applications** → `WitoScope CMS` (from C1) | Copy the **Application Audience (AUD) Tag**, and note your **team domain** (`<team>.cloudflareaccess.com`) under Zero Trust → Settings | Both copied |
+| D4 ✓ | Pages project → **Settings → Variables and secrets** (Production **and** Preview) | Plain-text variables `ACCESS_TEAM_DOMAIN`, `ACCESS_AUD` and `ACCESS_ALLOWED_EMAILS` (your email). These are also used by `/api/ai`, so **do D3–D4 now** for Phase 6. The **Secret** `FILES_SIGNING_KEY` (`openssl rand -base64 48`) can wait with D1. Then **Deployments → latest → Retry deployment** | The new deployment succeeds |
 | D5 | Terminal | `curl -s -o /dev/null -w '%{http_code} %{redirect_url}\n' 'https://<project>.pages.dev/api/files/sign?key=x'` | `302` to `…cloudflareaccess.com…` |
 | ~~D6~~ | — | ~~`wrangler login`~~: removed (only the PDF upload needed it) | — |
 | ~~D7~~ | — | ~~Upload Class 6 Math PDFs to R2~~: **removed** (book files stay on the Mac) | — |
 | D8 | CMS (deployed) → Browse → Class 6 Math → a topic in MC27 → **Sources** | Check "Ganita Prakash … Ch 1": its sections show as text with page numbers; click **Official PDF ↗** and a section's page link | ncert.nic.in opens in a new tab at that page; there is no upload field anywhere |
 | D9 | Finder | DAV scans go under `~/WitoScope/ContentResearch/Math/DAV/` and **stay there** (no size limit now, nothing is uploaded). Tell Claude when they're there | Claude adds DAV citations (title, pages, sections) and the local originality check reads the scans |
-| D10 | Terminal, in the repo | Once: `brew install poppler` if `pdftotext -v` fails (it's already installed on this Mac). Before importing a chapter file: `npm run check:originality -- <chapter.json>`. After Generate runs: `npx tsx --env-file=.env.real scripts/check-originality.ts --unchecked` | A `.originality.json` next to the chapter file; each question page shows "Book check: clear / close to …" |
+| D10 | Terminal, in the repo | Once: `brew install poppler` if `pdftotext -v` fails (it's already installed on this Mac). Before **every** chapter import: `npm run check:originality -- <chapter.json>` (a near-copy blocks that question; see `claude/question-bank/generation-prompt.md`). After Generate runs: `npx tsx --env-file=.env.real scripts/check-originality.ts --unchecked` | A `.originality.json` next to the chapter file; each question page shows "Book check: clear / close to …" |
 
 ## E. Claude API for generation (Phase 6)
 

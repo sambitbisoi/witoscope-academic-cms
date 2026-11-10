@@ -321,7 +321,7 @@ export async function runChapter(sql: Sql, filePath: string, mode: 'validate' | 
           await tx`insert into cms.cms_originality_checks ${tx({
             version_id: v!.version_id, checked_at: orig.report.checked_at, result: r.result, similarity: r.similarity, same_numbers: r.same_numbers,
             closest_ref: r.closest_ref, checked: tx.json(orig.report.checked as never), missing: tx.json(orig.report.missing as never),
-            threshold: orig.report.threshold, tool: orig.report.tool, import_id: importId,
+            threshold: orig.report.threshold, near_copy_threshold: orig.report.near_copy_threshold, tool: orig.report.tool, import_id: importId,
           } as never)}`;
         }
       }

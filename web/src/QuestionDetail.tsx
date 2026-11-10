@@ -229,6 +229,7 @@ function BookCheck({ versionId, bank }: { versionId: number; bank: string }) {
     <div className={`small book-check ${c?.result ?? 'none'}`}>
       Book check: {!c ? <span className="muted">not run yet · on your Mac: <span className="mono">npm run check:originality -- --unchecked</span></span>
         : c.result === 'clear' ? <>clear ({when}; closest {c.closest_ref}, {c.similarity})</>
+        : c.result === 'near_copy' ? <strong>near-copy of {c.closest_ref} (similarity {c.similarity}{c.same_numbers ? ', same numbers in the same order' : ''}; {when}) · rewrite it before approving</strong>
         : c.result === 'flagged' ? <strong>close to {c.closest_ref} (similarity {c.similarity}{c.same_numbers ? ', same numbers' : ''}; {when}) · make sure it is original</strong>
         : <span className="muted">no book for this chapter on your Mac ({when})</span>}
     </div>
@@ -250,11 +251,15 @@ function Tag({ w, d }: { w: QuestionDetailData['wrong'][number]; d: QuestionDeta
 
 /** Review and retire actions for the current version (Phase 5). Reasons are typed inline. */
 function Actions({ d, onEdit, onChanged }: { d: QuestionDetailData; onEdit?: () => void; onChanged: () => void }) {
-  const [ask, setAsk] = useState<null | 'reject' | 'retire' | 'restore'>(null);
+  const [ask, setAsk] = useState<null | 'reject' | 'retire' | 'restore' | 'override'>(null);
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [override, setOverride] = useState(false);
+  const [check, setCheck] = useState<OriginalityCheck | null>(null);
   const q = d.question, v = d.version;
+  useEffect(() => { setCheck(null); setOverride(false); latestOriginality(v.version_id).then(setCheck).catch(() => setCheck(null)); }, [v.version_id]);
+  const nearCopy = check?.result === 'near_copy';
   const run = async (f: () => Promise<unknown>) => {
     setBusy(true); setErr(null);
     try { await f(); setAsk(null); setReason(''); onChanged(); } catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
@@ -275,12 +280,21 @@ function Actions({ d, onEdit, onChanged }: { d: QuestionDetailData; onEdit?: () 
       {v.status === 'draft' && <button className="secondary" disabled={busy} onClick={() => run(() => setStatus(q.question_id, v.version_no, 'submit', null))}>Submit for review</button>}
       {v.status === 'in_review' && <button className="secondary" disabled={busy} onClick={() => run(() => setStatus(q.question_id, v.version_no, 'withdraw', null))}>Back to draft</button>}
       {(v.status === 'draft' || v.status === 'in_review') && <>
-        <button className="approve" disabled={busy} onClick={() => run(() => setStatus(q.question_id, v.version_no, 'approve', null))}>Approve</button>
+        <button className="approve" disabled={busy} onClick={() => (nearCopy ? setAsk('override') : run(() => setStatus(q.question_id, v.version_no, 'approve', null)))}>Approve{nearCopy ? '…' : ''}</button>
         <button className="secondary" disabled={busy} onClick={() => setAsk('reject')}>Reject…</button>
       </>}
       {q.bank === 'production' && <a href={`#/generate?q=${encodeURIComponent(q.question_id)}`}>Generate similar</a>}
       <button className="link" onClick={() => setAsk('retire')}>Retire…</button>
       {ask === 'reject' && <Reason label="Why reject it? (kept with the version)" value={reason} set={setReason} busy={busy} go={() => run(() => setStatus(q.question_id, v.version_no, 'reject', reason))} cancel={() => setAsk(null)} />}
+      {ask === 'override' && (
+        <div className="reason override">
+          <div className="small error">Near-copy of {check?.closest_ref} (similarity {check?.similarity}{check?.same_numbers ? ', same numbers in the same order' : ''}). Approve only if you have compared it with the book yourself.</div>
+          <label className="check small"><input type="checkbox" checked={override} onChange={(e) => setOverride(e.target.checked)} /> override: reviewed, not a copy</label>
+          <label className="small">Why is it not a copy? (logged)<input value={reason} onChange={(e) => setReason(e.target.value)} /></label>
+          <button className="approve" disabled={busy || !override || !reason.trim()} onClick={() => run(() => setStatus(q.question_id, v.version_no, 'approve', reason, true))}>Approve with override</button>{' '}
+          <button className="link" onClick={() => { setAsk(null); setOverride(false); }}>Cancel</button>
+        </div>
+      )}
       {ask === 'retire' && <Reason label="Why retire it? (hidden from coverage and Publish; never deleted)" value={reason} set={setReason} busy={busy} go={() => run(() => retire(q.question_id, true, reason))} cancel={() => setAsk(null)} />}
       {err && <div className="error small">{err}</div>}
     </div>
