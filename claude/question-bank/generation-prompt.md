@@ -2,6 +2,8 @@
 
 This guidance is for the Claude chat threads that write chapter files of WitoScope questions. Paste it, or point the thread to it, at the start of every thread.
 
+**This repo copy is the source.** Sambit syncs it by hand to the Claude Project where generation threads run, so edit it here and then re-sync. The Mac-side worker brief (`~/WitoScope/ContentResearch/QuestionBank/_pipeline/BRIEF.md`) follows the same rule.
+
 ## The rule
 
 **Only our own content leaves Sambit's Mac.** A generation thread never receives book material:
@@ -48,4 +50,4 @@ The originality check compares every question with the chapter's book pages and 
 | Clear | Neither | — |
 | No book on this Mac | The chapter's PDF isn't on the Mac yet | A warning; the question is imported unchecked |
 
-The import refuses a report made for an older version of the file, so re-run the check after any edit. Drafts made in the CMS by *Generate* are checked afterwards with `npm run check:originality -- --unchecked`.
+The import refuses a report made for an older version of the file, so re-run the check after any edit. Drafts made in the CMS by *Generate* are checked afterwards with `npm run check:originality -- --unchecked`. A near-copy draft can't be approved unless Sambit ticks "override: reviewed, not a copy" and gives a reason; the override is logged.
