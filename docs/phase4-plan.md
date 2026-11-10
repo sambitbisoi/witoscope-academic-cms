@@ -1,5 +1,7 @@
 # Phase 4 plan: Chapter Sources tab
 
+> **Changed 10 Nov 2026 (Sambit):** book material stays on the Mac. The PDF upload, R2 storage of books, screenshots and stored item text are **removed** (migration 0015; `docs/data-log.md`). The Sources tab now shows citations, page numbers and sections as text, plus the official ncert.nic.in link. `import:book` imports citations only, and `upload:sources` is deleted. The rest of this page is the original plan, kept for history.
+
 Decisions (Sambit, 9 Nov): ~~D1 = a (Supabase Storage)~~ → **files in a private Cloudflare R2 bucket `cms-sources`**, served by a Pages Function that validates the Cloudflare Access JWT and issues short-lived signed URLs; Supabase keeps only text, metadata and each file's R2 key; a local stand-in in dev; first real upload Class 6 Math only. **D2 go ahead**. **D3 import the source and item rows now, without the v11 fields**. PDF sizes checked: no splitting needed (see §4).
 
 9 Nov 2026. Sources: design §2E (source tables, which already exist since migration 0006), `docs/wireframe/Sources.dc.html`, CLAUDE.md ("Storage: only the private bucket `cms-sources`"; "book questions are internal references only").

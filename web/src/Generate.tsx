@@ -121,6 +121,7 @@ export function RunScreen({ runId }: { runId: number }) {
       <FallbackNotice params={run.params} />
       {run.params.error && <p className="error">{run.params.error}</p>}
       {outcomes.length === 0 && !run.params.error && <p className="muted">No drafts yet{run.params.batch ? ': collect the batch from Jobs on Home.' : '.'}</p>}
+      {drafts.length > 0 && <p className="muted small">Drafts are checked against our own questions here. The check against books runs on your Mac (the books never leave it): <span className="mono">npm run check:originality -- --unchecked</span>; each draft's page then shows the result.</p>}
       {drafts.length > 0 && (
         <div className="actions">
           <label className="check"><input type="checkbox" checked={sel.size === drafts.length} onChange={(e) => setSel(e.target.checked ? new Set(drafts.map((d) => d.question_id!)) : new Set())} /> Select all drafts</label>
@@ -141,7 +142,7 @@ export function RunScreen({ runId }: { runId: number }) {
             <div className="stem">{o.text}</div>
             {o.errors.map((m, i) => <div key={i} className="error small">Error: {m}</div>)}
             {o.warnings.map((m, i) => <div key={i} className="warn small">Warning: {m}</div>)}
-            {o.hits.map((h) => <div key={h.id} className="warn small">{h.kind === 'source_item' ? 'Close to book item' : 'Close to'} {h.id}: similarity {h.similarity}{h.sameNumbers ? ', same numbers' : ''}</div>)}
+            {o.hits.map((h) => <div key={h.id} className="warn small">Close to {h.id}: similarity {h.similarity}{h.sameNumbers ? ', same numbers' : ''}</div>)}
             {st?.status === 'draft' && (
               <div className="actions">
                 <a href={browseHash({ subject: subjectOfChapter(st.chapter_id), cls: String(st.class), topic: st.topic_id, q: o.question_id!, edit: true })}>Edit</a>

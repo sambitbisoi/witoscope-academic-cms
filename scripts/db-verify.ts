@@ -65,6 +65,17 @@ try {
   const badFns = fns.filter((f) => f.proconfig?.[0] !== 'search_path=""' || f.anon_exec || (f.prosecdef && !DEFINER_ALLOWED.includes(f.proname)));
   check('every cms function: empty search_path, no anon access; only the listed functions run as owner', badFns.length === 0, badFns.map((f) => f.proname).join(', '));
 
+  // Book material stays on the Mac (Sambit, 10 Nov 2026): the cloud holds citations only.
+  const cols = await sql`select table_name, column_name from information_schema.columns where table_schema = 'cms'
+                         and table_name in ('cms_source_items', 'cms_sources')`;
+  const itemCols = cols.filter((c) => c.table_name === 'cms_source_items').map((c) => c.column_name as string).sort();
+  const CITATION = ['item_label', 'page', 'pattern_id', 'ref_id', 'section', 'source_id', 'topic_id'];
+  check('book items are citations only (no item text or numbers)', itemCols.join() === CITATION.join(), itemCols.join(', '));
+  check('sources hold no file key (book files stay on the Mac)', !cols.some((c) => c.table_name === 'cms_sources' && c.column_name === 'storage_path'));
+  check('no screenshot table', !tables.some((t) => t.relname === 'cms_source_assets'));
+  const [badUrl] = await sql`select count(*)::int as n from cms.cms_sources where publisher = 'NCERT' and url !~ '^https://ncert\\.nic\\.in/'`;
+  check('NCERT sources link only to ncert.nic.in', badUrl!.n === 0, `${badUrl!.n} other links`);
+
   const [admin] = await sql`select value #>> '{}' as id from cms.cms_config where key = 'admin_user_id'`;
   check('cms_config.admin_user_id is set to a UUID', /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(admin?.id ?? ''), admin?.id ?? 'not set');
 

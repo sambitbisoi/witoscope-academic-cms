@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseBook } from '../scripts/lib/book.ts';
+import { citationLabel, parseBook } from '../scripts/lib/book.ts';
 import { ncertSourceId, parseNcertSheet } from '../scripts/lib/sources.ts';
 import type { Row } from '../scripts/lib/xlsx.ts';
 
@@ -43,7 +43,7 @@ const book = () => ({
   chapter: { chapter_no: 1, chapter_name: 'Patterns in Mathematics', page_from: 1, page_to: 12, answer_key_pdf_pages: '13–17',
     sections: [{ section_no: '1.1', title: 'What is Mathematics?', page: 1 }, { section_no: '1.2', title: 'Patterns in Numbers', page: 2 }] },
   items: [
-    { ref_id: 'N6-01-004', page: 3, text: 'Rewrite each sequence…', numbers: ['1'], assessable: true, placement: { chapter_id: 'MC27', topic_id: 'MT0090' },
+    { ref_id: 'N6-01-004', page: 3, section_no: '1.2', item_label: 'Figure it out, Q1', text: 'Rewrite each sequence…', numbers: ['1'], assessable: true, placement: { chapter_id: 'MC27', topic_id: 'MT0090' },
       tags: { pattern_id: 'MP0037', signature: { math_difficulty: 'Simple' } } },
     { ref_id: 'N6-01-001', page: 2, text: 'Can you think of…', assessable: false, placement: { chapter_id: 'MC27', topic_id: 'MT0087' } },
     { ref_id: 'N6-01-050', page: 9, text: 'Unknown topic', placement: { chapter_id: 'MC99', topic_id: 'MT9999' } },
@@ -60,7 +60,9 @@ describe('book-chapter files (D3)', () => {
       { source_id: 'NCERT-fegp101', chapter_id: 'MC27', label: '1.2 Patterns in Numbers', pdf_page: 4 },
       { source_id: 'NCERT-fegp101', chapter_id: 'MC27', label: 'Answers', pdf_page: 13 },
     ]);
-    expect(p.items![0]).toEqual({ ref_id: 'N6-01-004', source_id: 'NCERT-fegp101', page: 3, item_text: 'Rewrite each sequence…', topic_id: 'MT0090', pattern_id: null, numbers: ['1'] });
+    // a citation only: the item's text and numbers stay in the file on the Mac
+    expect(p.items![0]).toEqual({ ref_id: 'N6-01-004', source_id: 'NCERT-fegp101', page: 3, section: '1.2', item_label: 'Figure it out Q1', topic_id: 'MT0090', pattern_id: null });
+    expect(JSON.stringify(p.items)).not.toContain('Rewrite each sequence');
     expect(p.items![2]).toMatchObject({ ref_id: 'N6-01-050', topic_id: null });
     expect(p.problems.map((x) => x.message)).toEqual(expect.arrayContaining([
       'attribute_version v11: item tags are not imported (D3); only source and item rows',
@@ -68,12 +70,29 @@ describe('book-chapter files (D3)', () => {
     ]));
   });
 
+  it('item labels become bare citations: no quoted wording or numbers', () => {
+    expect(citationLabel('In-text: is 682 divisible by 2?')).toBe('In-text');
+    expect(citationLabel('Big to Small 3 (containers 4)')).toBe('Big to Small 3');
+    expect(citationLabel('Let Us Solve 6(b): after Ratnagiri')).toBe('Let Us Solve 6(b)');
+    expect(citationLabel("Figure it Out Q2 — All 1's")).toBe('Figure it Out Q2');
+    expect(citationLabel('Let Us Do 2 (Thirty-six thousand one)')).toBe('Let Us Do 2');
+    expect(citationLabel('Let Us Do 1 (f)')).toBe('Let Us Do 1 (f)');
+    expect(citationLabel('Figure it Out Q1c')).toBe('Figure it Out Q1c');
+    expect(citationLabel("Let Us Solve 3 (a) Mili’s father’s method")).toBe('Let Us Solve 3 (a)');
+    expect(citationLabel('Order of numbers (g)')).toBe('Order of numbers (g)');
+    expect(citationLabel('Doubling and halving (b) 22')).toBe('Doubling and halving (b)');
+    expect(citationLabel('Bags for 97')).toBe('Bags for');
+    expect(citationLabel('Let Us Solve 10')).toBe('Let Us Solve 10');
+    expect(citationLabel('Let Us Solve 2(c)')).toBe('Let Us Solve 2(c)');
+    expect(citationLabel(undefined)).toBeNull();
+  });
+
   it('refuses files that are not marked internal, have the wrong schema, or repeat a ref_id', () => {
-    expect(parseBook({ ...book(), internal_only: false }, topics).problems.map((x) => x.message)).toContain('internal_only must be true: book text never leaves the CMS');
+    expect(parseBook({ ...book(), internal_only: false }, topics).problems.map((x) => x.message)).toContain('internal_only must be true: book text never leaves this Mac');
     expect(parseBook({ ...book(), file_schema: 'x' }, topics).problems[0]!.message).toBe('file_schema must be cms-book-chapter/0.1 or cms-book-chapter/0.2, got "x"');
     const v2 = { ...book(), file_schema: 'cms-book-chapter/0.2' }; (v2.items[0] as Record<string, unknown>).snapshot_image = 'images/N6-01-004.png';
     expect(parseBook(v2, topics).problems.filter((x) => x.level === 'error')).toEqual([]);
-    expect(parseBook(v2, topics).problems.map((x) => x.message)).toContain('1 item snapshot image not imported yet (they need the admin\'s Storage upload; follow-up)');
+    expect(parseBook(v2, topics).problems.map((x) => x.message)).toContain('1 item snapshot image not imported: book images stay on this Mac');
     const dup = book(); dup.items.push({ ...dup.items[0]! });
     expect(parseBook(dup, topics).problems.map((x) => x.message)).toContain('ref_id appears twice');
   });

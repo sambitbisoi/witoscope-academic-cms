@@ -1,8 +1,11 @@
 // The CMS file service (R2), as one Web-standard handler:
 //   GET  /api/files/sign?key=…   Access required → { url, expires } (a signed download URL, 5 minutes)
 //   GET  /api/files/get?key=…&exp=…&sig=…        → the file, only with a valid, unexpired signature
-//   PUT  /api/files/put?key=…    Access required → stores the body (PDF / PNG / JPEG / WebP, ≤ 50 MB)
+//   PUT  /api/files/put?key=figures/…  Access required → stores the body (PNG / JPEG / WebP, ≤ 50 MB)
 // The bucket is private; nothing is ever deleted or listed.
+// Only OUR OWN content (question figure images) may be stored (Sambit, 10 Nov 2026):
+// book PDFs, scans and screenshots stay on Sambit's Mac, so PDFs are refused and
+// every stored key must sit under figures/.
 // Production: Cloudflare Pages Function with an R2 binding. Dev: scripts/dev-files.ts
 // runs this same code against a local folder (the R2 stand-in).
 import { AccessError, verifyAccess, type AccessEnv } from './access.ts';
@@ -15,9 +18,10 @@ export interface Bucket {
 export interface FilesEnv extends AccessEnv { FILES_SIGNING_KEY: string }
 
 export const MAX_BYTES = 50 * 1024 * 1024;
-export const TYPES = ['application/pdf', 'image/png', 'image/jpeg', 'image/webp'];
+export const TYPES = ['image/png', 'image/jpeg', 'image/webp'];
+export const PUT_PREFIX = 'figures/';
 export const TTL_SECONDS = 300;
-/** Keys look like NCERT-fegp101/fegp101.pdf: no leading slash, no "..", no odd characters. */
+/** Keys look like figures/MQ000123-v2.png: no leading slash, no "..", no odd characters. */
 export const KEY_RE = /^[A-Za-z0-9][A-Za-z0-9._-]*(\/[A-Za-z0-9][A-Za-z0-9._-]*)*$/;
 
 const json = (status: number, body: unknown) => new Response(JSON.stringify(body), {
@@ -73,12 +77,13 @@ export async function handleFiles(req: Request, env: FilesEnv, bucket: Bucket, n
 
   if (action === 'put' && req.method === 'PUT') {
     const type = (req.headers.get('content-type') ?? '').split(';')[0]!.trim();
-    if (!TYPES.includes(type)) return json(415, { error: 'only PDF, PNG, JPEG or WebP' });
+    if (!key.startsWith(PUT_PREFIX)) return json(403, { error: 'only question figures (figures/…) can be stored; book files stay on the Mac' });
+    if (!TYPES.includes(type)) return json(415, { error: 'only PNG, JPEG or WebP figure images' });
     const len = Number(req.headers.get('content-length') ?? NaN);
     if (!Number.isFinite(len)) return json(411, { error: 'content-length required' });
-    if (len > MAX_BYTES) return json(413, { error: 'file over 50 MB; split it per chapter' });
+    if (len > MAX_BYTES) return json(413, { error: 'file over 50 MB' });
     const body = await req.arrayBuffer();
-    if (body.byteLength > MAX_BYTES) return json(413, { error: 'file over 50 MB; split it per chapter' });
+    if (body.byteLength > MAX_BYTES) return json(413, { error: 'file over 50 MB' });
     await bucket.put(key, body, { httpMetadata: { contentType: type } });
     return json(200, { key, size: body.byteLength });
   }

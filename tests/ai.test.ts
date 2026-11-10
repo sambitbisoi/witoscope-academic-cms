@@ -183,12 +183,12 @@ describe('shared generation logic', () => {
     expect(qs[0]!.tagging!.tagged_by).toBe('ai');
   });
 
-  it('duplicates and copies: same numbers, or wording ≥ threshold', () => {
+  it('duplicates of our own questions: same numbers, or wording ≥ threshold', () => {
     expect(similarity('5/6 − 1/4 = ?', '5/6 − 1/4 = ?')).toBe(1);
     expect(similarity('Riya ate 2/5 of a pizza', 'What is the capital of France')).toBeLessThan(0.3);
     const cands = [
       { id: 'MQ000010', kind: 'question' as const, text: '5/6 − 1/4 = ?' },
-      { id: 'N6-01-004', kind: 'source_item' as const, text: 'Find 5/6 minus 1/4 using equivalent fractions.' },
+      { id: 'MQ000012', kind: 'question' as const, text: 'Find 5/6 minus 1/4 using equivalent fractions.' },
       { id: 'MQ000011', kind: 'question' as const, text: 'Riya has 3 apples and eats 1.' },
     ];
     // a new variant (new numbers, short formula) is what generation is for: not flagged
@@ -199,7 +199,7 @@ describe('shared generation logic', () => {
     expect(near.map((h) => [h.id, h.sameNumbers])).toEqual([['G6-004', false]]);
     expect(near[0]!.similarity).toBeGreaterThanOrEqual(0.6);
     const copy = checkAgainst('Work out 5/6 − 1/4.', cands, 0.6);
-    expect(copy.some((h) => h.id === 'N6-01-004' && h.sameNumbers)).toBe(true); // same numbers as a book item
+    expect(copy.some((h) => h.id === 'MQ000012' && h.sameNumbers)).toBe(true); // same numbers as one of our questions
     expect(checkAgainst('Riya has 3 apples and eats 1.', cands, 0.99).map((h) => h.id)).toEqual(['MQ000011']);
   });
 

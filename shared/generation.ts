@@ -190,7 +190,9 @@ export function toQuestion(d: RawDraft, ctx: { key: string; topic_id: string; ty
   };
 }
 
-// ---------------------------------------------------------------- duplicate / copy checks (G2)
+// ---------------------------------------------------------------- duplicate checks (G2)
+// Against our own questions only. Copying from books is checked on Sambit's Mac
+// (shared/originality.ts via scripts/check-originality.ts): book text is never in the cloud.
 const norm = (s: string) => s.toLowerCase().normalize('NFKD').replace(/[^\p{L}\p{N}/.]+/gu, ' ').trim();
 function trigrams(s: string): Map<string, number> {
   const t = ` ${norm(s)} `, m = new Map<string, number>();
@@ -209,7 +211,7 @@ export function similarity(a: string, b: string): number {
 export const numberSet = (s: string) => numbersIn({ s });
 const sameNumbers = (a: string[], b: string[]) => a.length > 0 && a.length === b.length && a.every((x, i) => x === b[i]);
 
-export interface Candidate { id: string; kind: 'question' | 'source_item'; text: string }
+export interface Candidate { id: string; kind: 'question'; text: string }
 export interface Hit { id: string; kind: Candidate['kind']; similarity: number; sameNumbers: boolean }
 
 /** Flag a draft whose numbers match a candidate's, or whose wording is ≥ threshold similar. */

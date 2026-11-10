@@ -43,23 +43,25 @@ Do A1–A5 first: the deployed site only works once `cms` is exposed. Do **C rig
 
 Optional, later: a custom domain (Pages → Custom domains), then add it to the Access application as well.
 
-## D. Cloudflare R2 for files (Phase 4)
+## D. Cloudflare R2: only for our own figure images (changed 10 Nov 2026)
 
-Files (PDFs, scans, screenshots, figure images) live in a private R2 bucket; Supabase keeps only metadata and each file's R2 key. The CMS reaches files only through its Pages Function `/api/files`, which checks your Cloudflare Access login and hands out 5-minute signed links. Supabase Storage is **not** used, so there's no storage script to run in Supabase.
+**New rule:** book PDFs, scans and screenshots never go to the cloud; they stay on your Mac. R2 now holds only **our own figure images** (under `figures/`), and the file function refuses PDFs and anything outside `figures/`. No figure images are uploaded yet, so **D1–D5 can wait** until figures arrive. They are harmless if already done. D6 and D7 (the PDF upload) are **removed**.
 
-Already done by Claude on the real project (inside `cms` only): migration 0011, the NCERT source registry (180 chapter PDFs, 647 links) and the NCERT-C6-01 book file. Do B and C first: the function lives in the Pages project, behind the Access application.
+Already done by Claude on the real project (inside `cms` only): migration 0015 removed the 42 NCERT-C6-01 item texts and numbers (logged; the rows remain as citations), and the NCERT source registry is citations plus ncert.nic.in links.
 
 | # | Where | Exact steps | Expected result |
 |---|---|---|---|
-| D1 | Cloudflare dashboard → **R2 Object Storage** | If asked, enable R2 for the account (the free tier covers 10 GB; a payment method may be required). **Create bucket** → name `cms-sources`, location *Automatic*, storage class *Standard*. Leave **public access off**: no r2.dev subdomain and no custom domain | Bucket `cms-sources`, *Public access: Disabled* |
-| D2 | Pages project → **Settings → Bindings** → Add → **R2 bucket** | Variable name `CMS_SOURCES`, bucket `cms-sources`. Add it for **Production** and **Preview** | Binding listed |
-| D3 | Zero Trust → Access → **Applications** → `WitoScope CMS` (from C1) | Copy the **Application Audience (AUD) Tag**. Then Zero Trust → **Settings → Custom pages / General**: note your **team domain** (`<team>.cloudflareaccess.com`) | Both copied |
-| D4 | Pages project → **Settings → Variables and secrets** (Production **and** Preview) | Add the plain-text variables `ACCESS_TEAM_DOMAIN` = `<team>.cloudflareaccess.com`, `ACCESS_AUD` = the AUD tag and `ACCESS_ALLOWED_EMAILS` = your email. Add the **Secret** `FILES_SIGNING_KEY` = the output of `openssl rand -base64 48` (don't save it anywhere else). Then **Deployments → latest → Retry deployment** | The new deployment succeeds |
-| D5 | Terminal | `curl -s -o /dev/null -w '%{http_code} %{redirect_url}\n' 'https://<project>.pages.dev/api/files/sign?key=x'` | `302` to `…cloudflareaccess.com…`: without Access the request never reaches the function. (The function also refuses on its own; the tests cover this) |
-| D6 | Terminal, in the repo | `npx wrangler@4.151.2 login` (a browser window asks you to allow Wrangler) | "Successfully logged in" |
-| D7 | Terminal, in the repo | First real upload, **Class 6 Math only**: `npx tsx --env-file=.env.real scripts/upload-sources.ts --class 6 --subject math --dry-run` (lists 10 Ganita Prakash PDFs, 21.7 MB), then the same command without `--dry-run` | "uploaded 10/10"; each source's R2 key is recorded in the CMS |
-| D8 | CMS (deployed) → Browse → Class 6 Math → a topic in MC27 → **Sources** | Click *Open full screen* on "Ganita Prakash … Ch 1", then the jump "1.4 … p6" | The PDF opens in a new tab at that page |
-| D9 | Finder | When you have the DAV scans, put them under `~/WitoScope/ContentResearch/Math/DAV/` and tell Claude | Claude checks sizes, splits any book over 50 MB per chapter, and sets page offsets |
+| D0 | Cloudflare dashboard → **R2 Object Storage** | Only if you created `cms-sources` earlier: open it and check the object count | **0 objects** (you skipped D7, so no book PDF was uploaded). If anything is there, tell Claude before deleting |
+| D1 | *(later, when figure images arrive)* Cloudflare dashboard → **R2 Object Storage** | **Create bucket** → name `cms-sources`, location *Automatic*, storage class *Standard*. Leave **public access off** (no r2.dev subdomain, no custom domain) | Bucket `cms-sources`, *Public access: Disabled* |
+| D2 | *(later)* Pages project → **Settings → Bindings** → Add → **R2 bucket** | Variable name `CMS_SOURCES`, bucket `cms-sources`, for **Production** and **Preview** | Binding listed |
+| D3 | Zero Trust → Access → **Applications** → `WitoScope CMS` (from C1) | Copy the **Application Audience (AUD) Tag**, and note your **team domain** (`<team>.cloudflareaccess.com`) under Zero Trust → Settings | Both copied |
+| D4 | Pages project → **Settings → Variables and secrets** (Production **and** Preview) | Plain-text variables `ACCESS_TEAM_DOMAIN`, `ACCESS_AUD` and `ACCESS_ALLOWED_EMAILS` (your email). These are also used by `/api/ai`, so **do D3–D4 now** for Phase 6. The **Secret** `FILES_SIGNING_KEY` (`openssl rand -base64 48`) can wait with D1. Then **Deployments → latest → Retry deployment** | The new deployment succeeds |
+| D5 | Terminal | `curl -s -o /dev/null -w '%{http_code} %{redirect_url}\n' 'https://<project>.pages.dev/api/files/sign?key=x'` | `302` to `…cloudflareaccess.com…` |
+| ~~D6~~ | — | ~~`wrangler login`~~: removed (only the PDF upload needed it) | — |
+| ~~D7~~ | — | ~~Upload Class 6 Math PDFs to R2~~: **removed** (book files stay on the Mac) | — |
+| D8 | CMS (deployed) → Browse → Class 6 Math → a topic in MC27 → **Sources** | Check "Ganita Prakash … Ch 1": its sections show as text with page numbers; click **Official PDF ↗** and a section's page link | ncert.nic.in opens in a new tab at that page; there is no upload field anywhere |
+| D9 | Finder | DAV scans go under `~/WitoScope/ContentResearch/Math/DAV/` and **stay there** (no size limit now, nothing is uploaded). Tell Claude when they're there | Claude adds DAV citations (title, pages, sections) and the local originality check reads the scans |
+| D10 | Terminal, in the repo | Once: `brew install poppler` if `pdftotext -v` fails (it's already installed on this Mac). Before importing a chapter file: `npm run check:originality -- <chapter.json>`. After Generate runs: `npx tsx --env-file=.env.real scripts/check-originality.ts --unchecked` | A `.originality.json` next to the chapter file; each question page shows "Book check: clear / close to …" |
 
 ## E. Claude API for generation (Phase 6)
 

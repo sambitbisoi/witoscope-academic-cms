@@ -2,7 +2,8 @@
 //
 // Imports one cms-book-chapter file (D3): updates the source's page offset, sets
 // the page range on its chapter links, adds jump links per section, and loads the
-// extracted items (internal only; no v11 tags). NCERT sources must already be
+// item CITATIONS (ref_id, page, section, item label, topic). The item text and
+// numbers stay in the file on this Mac and are never sent to the database. NCERT sources must already be
 // registered (npm run import:sources). Audited; never deletes.
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
@@ -45,7 +46,7 @@ try {
       return;
     }
     const opts = { byLabel: 'book importer', importId, reason: `book file ${file}` };
-    // the source: only page_offset is this importer's (registry owns title/url; uploads own storage_path)
+    // the source: only page_offset is this importer's (the registry owns title/url)
     const rs = await upsertCatalogue(tx, 'cms_sources', ['source_id'], [{ source_id: p.source.source_id, page_offset: p.source.page_offset }], { ...opts, scope: { col: 'source_id', value: p.source.source_id } });
     counts.cms_sources = rs.counts;
     const rl = await upsertCatalogue(tx, 'cms_source_chapters', ['source_id', 'chapter_id'], p.links, { ...opts, scope: { col: 'source_id', value: p.source.source_id } });
@@ -60,7 +61,7 @@ try {
       else jc.unchanged++;
     }
     counts.cms_source_jumps = jc;
-    const ri = await upsertCatalogue(tx, 'cms_source_items', ['ref_id'], p.items, { ...opts, jsonCols: ['numbers'], scope: { col: 'source_id', value: p.source.source_id } });
+    const ri = await upsertCatalogue(tx, 'cms_source_items', ['ref_id'], p.items, { ...opts, scope: { col: 'source_id', value: p.source.source_id } });
     counts.cms_source_items = ri.counts;
     problems.push(...rs.notes, ...rl.notes, ...ri.notes);
     result = problems.some((x) => x.level === 'error') ? 'partial' : 'ok';

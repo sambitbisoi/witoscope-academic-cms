@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { questionDetail, type QuestionDetailData } from './api';
 import { derivedRows, signatureRows, STATUS_LABEL, TAG_LABEL } from './logic';
-import { openSource, sourceItems } from './sourcesApi';
+import { latestOriginality, officialLink, sourceItems, type OriginalityCheck } from './sourcesApi';
 import { questionFromDb } from '../../shared/fromDb.ts';
 import { structureDiff } from '../../shared/save.ts';
 import { textsOf } from '../../shared/version.ts';
@@ -156,6 +156,7 @@ export function QuestionDetail({ id, versionNo, onVersion, onEdit, reloadKey = 0
           )}
           <Section title="Source refs (internal, never published)">
             {d.refs.length === 0 ? <div className="muted small">None.</div> : <Refs refs={d.refs} />}
+            <BookCheck versionId={d.version.version_id} bank={d.question.bank} />
           </Section>
           <Section title="Versions">
             <ul className="plain small">
@@ -183,16 +184,16 @@ export function QuestionDetail({ id, versionNo, onVersion, onEdit, reloadKey = 0
   );
 }
 
-/** Source refs resolved to their book items (internal only), with a link to open the source at the item's page. */
+/** Source refs resolved to their citations (book, page, section, item; never the item's text). */
 function Refs({ refs }: { refs: QuestionDetailData['refs'] }) {
   const [items, setItems] = useState<Awaited<ReturnType<typeof sourceItems>> | null>(null);
-  const [sources, setSources] = useState<Map<string, { source_id: string; title: string; storage_path: string | null; url: string | null; page_offset: number }>>(new Map());
+  const [sources, setSources] = useState<Map<string, { source_id: string; title: string; kind: 'pdf' | 'scanned_pdf' | 'web'; url: string | null; page_offset: number }>>(new Map());
   useEffect(() => {
     sourceItems(refs.map((r) => r.ref_id)).then(async (it) => {
       setItems(it);
       const ids = [...new Set(it.map((x) => x.source_id))];
       if (!ids.length) return;
-      const { data } = await supabase.from('cms_sources').select('source_id, title, storage_path, url, page_offset').in('source_id', ids);
+      const { data } = await supabase.from('cms_sources').select('source_id, title, kind, url, page_offset').in('source_id', ids);
       setSources(new Map((data ?? []).map((x) => [x.source_id, x])));
     }).catch(() => setItems([]));
   }, [refs.map((r) => r.ref_id).join()]);
@@ -201,19 +202,36 @@ function Refs({ refs }: { refs: QuestionDetailData['refs'] }) {
       {refs.map((r) => {
         const it = items?.find((x) => x.ref_id === r.ref_id);
         const src = it ? sources.get(it.source_id) : undefined;
+        const link = src && it?.page ? officialLink(src, it.page + src.page_offset) : null;
         return (
           <li key={r.ref_id + r.relation} className="ref">
             <span className="mono">{r.ref_id}</span> · {r.relation.replace('_', ' ')}
             {items === null ? null : !it ? <span className="muted"> · not in the CMS yet</span> : (
               <>
-                {src && <> · {src.title}{it.page ? `, p${it.page}` : ''} {(src.storage_path || src.url) && <button className="link" onClick={() => openSource(src, it.page ? it.page + src.page_offset : null)}>open ↗</button>}</>}
-                <div className="muted ref-text">{it.item_text}</div>
+                {src && <> · {src.title}</>}{it.page ? `, p${it.page}` : ''}{it.section ? ` · §${it.section}` : ''}{it.item_label ? ` · ${it.item_label}` : ''}
+                {link && <> <a href={link} target="_blank" rel="noopener noreferrer">official ↗</a></>}
               </>
             )}
           </li>
         );
       })}
     </ul>
+  );
+}
+
+/** The local originality check of this version (run on Sambit's Mac; citations and scores only). */
+function BookCheck({ versionId, bank }: { versionId: number; bank: string }) {
+  const [c, setC] = useState<OriginalityCheck | null | undefined>(undefined);
+  useEffect(() => { latestOriginality(versionId).then(setC).catch(() => setC(undefined)); }, [versionId]);
+  if (bank === 'gold' || c === undefined) return null; // best-effort; gold is never published
+  const when = c ? new Date(c.checked_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '';
+  return (
+    <div className={`small book-check ${c?.result ?? 'none'}`}>
+      Book check: {!c ? <span className="muted">not run yet · on your Mac: <span className="mono">npm run check:originality -- --unchecked</span></span>
+        : c.result === 'clear' ? <>clear ({when}; closest {c.closest_ref}, {c.similarity})</>
+        : c.result === 'flagged' ? <strong>close to {c.closest_ref} (similarity {c.similarity}{c.same_numbers ? ', same numbers' : ''}; {when}) · make sure it is original</strong>
+        : <span className="muted">no book for this chapter on your Mac ({when})</span>}
+    </div>
   );
 }
 

@@ -20,8 +20,8 @@
     "chapter": "tsx scripts/import-chapter.ts",
     "db:verify": "tsx scripts/db-verify.ts",
     "import:sources": "tsx scripts/import-sources.ts",
+    "check:originality": "tsx scripts/check-originality.ts",
     "import:book": "tsx scripts/import-book.ts",
-    "upload:sources": "tsx scripts/upload-sources.ts",
     "dev:files": "tsx scripts/dev-files.ts",
     "rehash": "tsx scripts/rehash.ts"
   },

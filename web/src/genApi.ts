@@ -61,17 +61,16 @@ export async function loadContext(args: { questionId?: string; setId?: string; t
   const misconceptions = edit.lists.misconceptions.filter((m) => m.concept_id && conceptIds.includes(m.concept_id)).map((m) => ({ misconception_id: m.misconception_id, description: m.description }));
   const stats = must<{ math_difficulty: string | null }[]>(await supabase.from('cms_question_list').select('math_difficulty').eq('typical_set_id', setId).eq('counted', true));
   const missing = (['Simple', 'Medium', 'Complex'] as const).filter((lvl) => !stats.some((x) => x.math_difficulty === lvl));
-  // duplicate / copy candidates (G2): the topic's and the pattern's questions, and the topic's book items
+  // duplicate candidates (G2): the topic's and the pattern's questions. Copying from books is checked
+  // only on Sambit's Mac (npm run check:originality -- --unchecked), since book text is never in the cloud.
   const sourcePattern = source?.pattern_id ?? null;
-  const [qs, pqs, items] = await Promise.all([
+  const [qs, pqs] = await Promise.all([
     supabase.from('cms_question_list').select('question_id, text').eq('topic_id', topicId).limit(1000),
     sourcePattern ? supabase.from('cms_question_list').select('question_id, text').eq('pattern_id', sourcePattern).limit(1000) : Promise.resolve({ data: [], error: null }),
-    supabase.from('cms_source_items').select('ref_id, item_text').eq('topic_id', topicId).limit(1000),
   ]);
   const seen = new Set<string>();
   const candidates: Candidate[] = [];
   for (const x of [...must<{ question_id: string; text: string }[]>(qs), ...must<{ question_id: string; text: string }[]>(pqs)]) if (!seen.has(x.question_id)) { seen.add(x.question_id); candidates.push({ id: x.question_id, kind: 'question', text: x.text }); }
-  for (const x of must<{ ref_id: string; item_text: string }[]>(items)) candidates.push({ id: x.ref_id, kind: 'source_item', text: x.item_text });
   const spentToday = await spentTodayUsd();
   return {
     mode: args.questionId ? 'similar' : 'fill', subject: edit.detail.question.subject, chapterId: topic.chapter_id, classLevel: topic.class, topicId, topicName: topic.name,

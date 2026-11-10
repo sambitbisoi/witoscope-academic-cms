@@ -4,7 +4,7 @@
 // sheets as a cms_sources row (ID = NCERT-<pdf file stem>, url = the public NCERT
 // link) and links it to the CMS chapters its mapped topics belong to.
 // Owns only: title, kind, publisher, class, url, and the source→chapter links.
-// Never touches storage_path / page_offset (set by upload:sources and import:book)
+// Never touches page_offset (set by import:book)
 // or page ranges and jumps (set by import:book). Audited; never deletes.
 import { createHash } from 'node:crypto';
 import { homedir } from 'node:os';

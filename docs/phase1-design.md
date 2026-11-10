@@ -17,9 +17,10 @@ Items marked **[guess]** are inferred and need your check.
 | One exception, read-only | RLS policies call Supabase's built-in `auth.uid()` to recognise your login. It reads nothing from app tables. |
 | Dedicated DB role | `cms_owner` owns `cms`, with no rights elsewhere. Migrations and server functions use it, never `service_role`. |
 | Locked by default | RLS on every table; only your user ID (stored in `cms_config`) may read or write. App users get nothing. |
-| Shared items (approved) | Login = your existing Supabase account · files in the private **Cloudflare R2** bucket `cms-sources` (changed 9 Nov 2026 from Supabase Storage; see §9) · `cms` added to exposed schemas **[default, not yet confirmed]** · pgvector later, installed into `cms`. |
+| Shared items (approved) | Login = your existing Supabase account · our own figure images in the private **Cloudflare R2** bucket `cms-sources` (changed 9 Nov 2026 from Supabase Storage; book files removed 10 Nov 2026; see §9) · `cms` added to exposed schemas **[default, not yet confirmed]** · pgvector later, installed into `cms`. |
 | Explicit Save | No auto-save anywhere. |
-| Book content is internal | Source refs, PDFs and screenshots never leave the CMS. The Publish step (Phase 8) can't read them. |
+| Book content is internal | Source refs never leave the CMS; the Publish step (Phase 8) can't read them. |
+| Book material stays on the Mac (10 Nov 2026) | Only our own content leaves Sambit's Mac. Third-party book material (NCERT/DAV/IXL/SOF PDFs, scans, screenshots, extracted item text, their numbers) is never stored in Supabase, R2 or any cloud. The cloud holds only our original content, bare citations (book, class, chapter, page, section, exercise/item number) and official public links. The originality check runs on the Mac. |
 
 ---
 
@@ -102,15 +103,16 @@ Catalogue rows are edited in place with an audit row in `cms_reviews` (they're v
 | `cms_calibration_cases` | Contested judgements | case_id, rule_version, question_id, attribute, first_value, final_value, why_wrong, rule |
 | `cms_tagging_packs` | The cached AI prompt pack built from the above | pack_version, rule_version, content_hash, built_at (Phase 6) |
 
-### E. Sources (internal only)
+### E. Sources (internal only; citations only since 10 Nov 2026)
 
 | Table | Purpose | Key columns |
 |---|---|---|
-| `cms_sources` | Books, links, screenshot sets | source_id, kind (pdf / scanned_pdf / web / screenshots), title, publisher (NCERT / DAV / IXL / SOF / other), class, storage_path (the file's **R2 key**, e.g. `NCERT-fegp101/fegp101.pdf`) or url, page_offset (printed page = pdf page − offset), captured_at |
+| `cms_sources` | Book and web citations | source_id, kind (pdf / scanned_pdf / web), title, publisher (NCERT / DAV / IXL / SOF / other), class, url (the **official public link** only; NCERT must be `https://ncert.nic.in/…`, enforced), page_offset (printed page = pdf page − offset), captured_at (date checked). ~~storage_path~~ dropped: book files stay on the Mac |
 | `cms_source_chapters` | Which part of a source covers a chapter | source_id, chapter_id, page_from, page_to |
-| `cms_source_jumps` | "Open at" buttons | source_id, chapter_id, label, pdf_page |
-| `cms_source_assets` | Screenshots | source_id, storage_path (R2 key), caption, captured_at |
-| `cms_source_items` | Extracted book items (N7-031…) | ref_id, source_id, page, item_text, topic_id, pattern_id, numbers (json) for the originality check |
+| `cms_source_jumps` | Section citations ("1.2 Patterns in Numbers · p2"), shown as text with a link to the official PDF at that page | source_id, chapter_id, label, pdf_page |
+| ~~`cms_source_assets`~~ | ~~Screenshots~~ — dropped 10 Nov 2026 | |
+| `cms_source_items` | Book item **citations** (N6-01-004…) | ref_id, source_id, page, section, item_label (the exercise/item number only, e.g. "Figure it Out Q2"), topic_id, pattern_id. ~~item_text, numbers~~ dropped: they stay in the local book files |
+| `cms_originality_checks` | Results of the local originality check | version_id, checked_at, result (clear / flagged / no_sources), similarity, same_numbers, closest_ref (a citation), checked / missing sources, threshold, tool, import_id |
 
 ### F. Workflow
 
@@ -235,6 +237,7 @@ Errors are listed per question key, in plain words.
 | 6 | Formats | Typed split into Typed-number / Typed-decimal / Typed-fraction / Typed-text |
 | — | Login | Sambit's existing Supabase account |
 | — | Storage | ~~Supabase Storage bucket~~ → **Cloudflare R2** private bucket `cms-sources` (Sambit, 9 Nov 2026) |
-| — | Files (9 Nov 2026) | All files (PDFs, scans, screenshots, figure images) live in R2; Supabase keeps text, metadata and each file's R2 key (`storage_path`, `image_path`). Files are served only by the Pages Function `/api/files`: `sign` and `put` require a valid Cloudflare Access JWT (team keys, AUD, issuer, expiry, allowed email); `get` serves a file only with a 5-minute HMAC-signed link. The bucket is private and reached through an R2 binding (no R2 API keys); no list, no delete. Dev uses a local stand-in running the same code |
-| — | pgvector | ~~Phase 6, installed into `cms`~~ → **not used** (Sambit, 9 Nov 2026): duplicate and copy checks are shared TypeScript (number sets + text similarity, threshold in `cms_config`) |
+| — | Book material (10 Nov 2026) | Only our own content leaves the Mac. No book PDFs, scans, screenshots, item text or item numbers in Supabase, R2 or any cloud; citations and official links only (migration 0015, logged in `cms_reviews` as `remove_book_material`). The originality check runs locally (`npm run check:originality`, PDFs read with `pdftotext`); `import:chapter` records its result. Phase 7 is re-planned local-only (`docs/phase7-plan.md`) |
+| — | Files (9 Nov 2026; narrowed 10 Nov) | ~~All files (PDFs, scans, screenshots, figure images)~~ Only our own figure images (`figures/…`, PNG/JPEG/WebP) live in R2; Supabase keeps text, metadata and each file's R2 key (`storage_path`, `image_path`). Files are served only by the Pages Function `/api/files`: `sign` and `put` require a valid Cloudflare Access JWT (team keys, AUD, issuer, expiry, allowed email); `get` serves a file only with a 5-minute HMAC-signed link. The bucket is private and reached through an R2 binding (no R2 API keys); no list, no delete. Dev uses a local stand-in running the same code |
+| — | pgvector | ~~Phase 6, installed into `cms`~~ → **not used** (Sambit, 9 Nov 2026): duplicate and copy checks are shared TypeScript (number sets + text similarity, threshold in `cms_config`); the copy-from-book check runs only on the Mac (10 Nov 2026) |
 | — | AI calls (9 Nov 2026) | A Cloudflare Pages Function (`/api/ai/*`) behind Access, holding only the Claude API key; it returns drafts and the browser saves them through `cms_apply_save`. Bulk runs use the Batch API, tracked in `cms_jobs`. No Supabase Edge Function and no database credentials in the cloud. A model per task (generate, tag, extract; default `claude-haiku-5-5`), the refusal-fallback model, per-run limit (20), daily cap ($5), similarity threshold and prices live in `cms_config`; every request stays under 100K tokens (cached fixed rules + the topic's concept cards and relevant calibration cases); tokens and cost are logged per run in `cms_generation_runs` |
