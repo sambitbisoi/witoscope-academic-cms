@@ -101,7 +101,7 @@ export function QuestionDetail({ id, versionNo, onVersion, onEdit, reloadKey = 0
         </Section>
       )}
 
-      <Section title="Signature (v10)">
+      <Section title="Signature">
         <KV rows={signatureRows(v, d.insightName)} />
       </Section>
       <Section title="Derived">

@@ -336,3 +336,12 @@ export function agreement(perQuestion: AttrScore[][]): Agreement[] {
   }
   return [...m.values()].map((a) => ({ ...a, pct: a.n ? Math.round((a.hits / a.n) * 1000) / 10 : 0 }));
 }
+
+/** A model check's agreement counted only over questions that are test-only gold now: a question that
+ *  later became a prompt example (e.g. 13 in v11) is shown to the model as an example, so it no longer
+ *  measures it and is left out of every run's score, earlier runs included (Sambit, 10 Nov 2026). */
+export function scoreModelCheck<T extends { qid: string; scores: AttrScore[]; error?: string }>(results: T[], testOnly: Set<string>) {
+  const kept = results.filter((r) => testOnly.has(r.qid));
+  const excluded = results.filter((r) => !testOnly.has(r.qid)).map((r) => r.qid);
+  return { agreement: agreement(kept.map((r) => r.scores)), kept, excluded };
+}

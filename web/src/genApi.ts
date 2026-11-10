@@ -9,7 +9,7 @@ import { rowsFor } from '../../shared/save.ts';
 import type { DerivedConfig, Question } from '../../shared/types.ts';
 import { structureHash } from '../../shared/version.ts';
 import { questionDetail } from './api';
-import { bundleOf, loadForEdit } from './editApi';
+import { bundleOf, loadCurrentRuleVersion, loadForEdit } from './editApi';
 import { supabase } from './supabase';
 
 const must = <T>(r: { data: T | null; error: { message: string } | null }): T => { if (r.error) throw new Error(r.error.message); return r.data as T; };
@@ -25,7 +25,7 @@ export interface GenContext {
   missing: ('Simple' | 'Medium' | 'Complex')[];
   concepts: { concept_id: string; name: string }[]; misconceptions: { misconception_id: string; description: string }[];
   conceptIds: string[];
-  config: AiConfig; derived: DerivedConfig; catalog: Catalog; conceptClass: (id: string) => number | undefined;
+  config: AiConfig; derived: DerivedConfig; catalog: Catalog; ruleVersion: string; conceptClass: (id: string) => number | undefined;
   candidates: Candidate[]; spentToday: number;
 }
 export interface DraftOutcome { index: number; question_id: string | null; text: string; difficulty: string; errors: string[]; warnings: string[]; hits: Hit[] }
@@ -75,7 +75,7 @@ export async function loadContext(args: { questionId?: string; setId?: string; t
   return {
     mode: args.questionId ? 'similar' : 'fill', subject: edit.detail.question.subject, chapterId: topic.chapter_id, classLevel: topic.class, topicId, topicName: topic.name,
     setId, setName: set.name, patternId: sourcePattern, patternName: edit.lists.patterns.find((p) => p.pattern_id === sourcePattern)?.name ?? null,
-    source, sourceId, missing, concepts, misconceptions, conceptIds, config, derived: edit.cfg, catalog: edit.catalog, conceptClass: edit.conceptClass,
+    source, sourceId, missing, concepts, misconceptions, conceptIds, config, derived: edit.cfg, catalog: edit.catalog, ruleVersion: edit.ruleVersion, conceptClass: edit.conceptClass,
     candidates, spentToday,
   };
 }
@@ -100,10 +100,7 @@ export async function spentTodayUsd() {
   return runs.reduce((n, r) => n + Number(r.cost ?? 0), 0);
 }
 
-async function latestRuleVersion() {
-  const [rv] = must<{ rule_version: string }[]>(await supabase.from('cms_rule_versions').select('rule_version').order('created_at', { ascending: false }).limit(1));
-  return rv?.rule_version ?? 'v10';
-}
+const latestRuleVersion = loadCurrentRuleVersion;
 
 export type Rules = ReturnType<typeof buildRules> & { ruleVersion: string; task: AiTask };
 /** The fixed, cached system prompt for a task: attributes, rubric, strategy types, task rules. */
@@ -193,7 +190,7 @@ export async function processDrafts(ctx: GenContext, drafts: RawDraft[], runId: 
   const out: DraftOutcome[] = [];
   for (const [i, d] of drafts.entries()) {
     const q = toQuestion(d, { key: `${ctx.chapterId}-5000`, topic_id: ctx.topicId, typical_set_id: ctx.setId, pattern_id: ctx.patternId, clone_batch_id: ctx.source?.clone_batch_id || `gen-${runId}` });
-    const file = { file_schema: 'cms-chapter/1.0' as const, attribute_version: 'v10', subject: ctx.subject as 'math', class: ctx.classLevel, chapter_id: ctx.chapterId,
+    const file = { file_schema: 'cms-chapter/1.0' as const, attribute_version: ctx.ruleVersion, subject: ctx.subject as 'math', class: ctx.classLevel, chapter_id: ctx.chapterId,
       generated: { by: 'CMS generation', date: new Date().toISOString().slice(0, 10) }, questions: [q] };
     const problems = checkFile(file, ctx.catalog, { gold: true });
     const errors = problems.filter((p) => p.level === 'error').map((p) => p.message);
@@ -286,7 +283,7 @@ export interface RunParams {
 }
 export async function runRecord(runId: number) {
   return must<{ run_id: number; kind: string; model: string; status: string; tokens_in: number | null; tokens_out: number | null; cost: number | null; created_at: string;
-    params: RunParams }>(
+    pack_version: string | null; params: RunParams }>(
     await supabase.from('cms_generation_runs').select('*').eq('run_id', runId).single());
 }
 
@@ -348,6 +345,6 @@ export async function runModelCheck(model: string, onProgress: (done: number, to
 }
 
 export async function modelCheckRuns() {
-  return must<{ run_id: number; model: string; status: string; cost: number | null; created_at: string; params: RunParams }[]>(
-    await supabase.from('cms_generation_runs').select('run_id, model, status, cost, created_at, params').eq('kind', 'tag').eq('params->>purpose', 'model_check').order('run_id', { ascending: false }).limit(20));
+  return must<{ run_id: number; model: string; status: string; cost: number | null; created_at: string; pack_version: string | null; params: RunParams }[]>(
+    await supabase.from('cms_generation_runs').select('run_id, model, status, cost, created_at, pack_version, params').eq('kind', 'tag').eq('params->>purpose', 'model_check').order('run_id', { ascending: false }).limit(20));
 }

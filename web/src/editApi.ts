@@ -2,6 +2,7 @@
 // functions (cms_apply_save, cms_set_status, cms_retire). No table is written directly.
 import type { Catalog } from '../../shared/checks.ts';
 import { questionFromDb, type DbBundle } from '../../shared/fromDb.ts';
+import { currentRuleVersion } from '../../shared/rules.ts';
 import type { DerivedConfig } from '../../shared/types.ts';
 import { questionDetail, type QuestionDetailData } from './api';
 import { supabase } from './supabase';
@@ -21,6 +22,7 @@ export interface EditContext {
   question: ReturnType<typeof questionFromDb>;
   cfg: DerivedConfig;
   catalog: Catalog;
+  ruleVersion: string;             // the current rule version (cms_config current_rule_version)
   lists: {
     topics: { topic_id: string; name: string; class: number; topic_kind: string }[];
     sets: { typical_set_id: string; name: string; class: number }[];
@@ -45,7 +47,7 @@ export async function loadForEdit(questionId: string): Promise<EditContext> {
     supabase.from('cms_misconceptions').select('misconception_id, description, concept_id').order('misconception_id'),
     supabase.from('cms_insights').select('insight_id, name, status').order('insight_id'),
     supabase.from('cms_strategy_types').select('value, active, sort').order('sort'),
-    supabase.from('cms_config').select('key, value').in('key', ['multistep_bands', 'difficulty_points', 'load_thresholds']),
+    supabase.from('cms_config').select('key, value').in('key', ['multistep_bands', 'difficulty_points', 'load_thresholds', 'current_rule_version']),
     supabase.from('cms_rule_versions').select('rule_version'),
   ]);
   const T = must<{ topic_id: string; name: string; class: number; topic_kind: string; chapter_id: string; taught_in_school: boolean; status: string }[]>(topics);
@@ -55,10 +57,13 @@ export async function loadForEdit(questionId: string): Promise<EditContext> {
   const M = must<{ misconception_id: string; description: string; concept_id: string | null }[]>(miscs);
   const I = must<{ insight_id: string; name: string; status: string }[]>(insights);
   const cfg = Object.fromEntries(must<{ key: string; value: unknown }[]>(cfgRows).map((r) => [r.key, r.value])) as unknown as DerivedConfig;
-  if (!cfg.multistep_bands || !cfg.difficulty_points) throw new Error('The derived-field config is missing (run the v10 seed).');
+  if (!cfg.multistep_bands || !cfg.difficulty_points) throw new Error('The derived-field config is missing (run the seed).');
+  const loadedRules = must<{ rule_version: string }[]>(rules).map((r) => r.rule_version);
+  const ruleVersion = currentRuleVersion(loadedRules, (cfg as unknown as Record<string, unknown>).current_rule_version);
+  if (!ruleVersion) throw new Error('No rule version is loaded (run the seed).');
   const conceptClasses = new Map(C.map((c) => [c.concept_id, c.class]));
   const catalog: Catalog = {
-    ruleVersions: new Set(must<{ rule_version: string }[]>(rules).map((r) => r.rule_version)),
+    ruleVersions: new Set(loadedRules),
     chapter: { chapter_id: chapter, subject: detail.question.subject },
     topics: new Map(T.map((t) => [t.topic_id, { chapter_id: t.chapter_id, class: t.class, topic_kind: t.topic_kind as 'normal', taught_in_school: t.taught_in_school, status: t.status }])),
     typicalSets: new Map(S.map((s) => [s.typical_set_id, { class: s.class, status: s.status }])),
@@ -71,7 +76,7 @@ export async function loadForEdit(questionId: string): Promise<EditContext> {
     sourceItems: new Set(detail.refs.map((r) => r.ref_id)), // existing refs are not re-flagged here
   };
   return {
-    detail, question: questionFromDb(bundleOf(detail)), cfg, catalog, conceptClass: (id) => conceptClasses.get(id),
+    detail, question: questionFromDb(bundleOf(detail)), cfg, catalog, ruleVersion, conceptClass: (id) => conceptClasses.get(id),
     lists: { topics: T, sets: S, patterns: P, concepts: C, misconceptions: M, insights: I,
       strategyTypes: must<{ value: string; active: boolean }[]>(strategies).filter((s) => s.active).map((s) => s.value) },
   };
@@ -94,4 +99,16 @@ export async function reviewQueue() {
     current_version: number; approved_version: number | null; version_created_at: string; math_difficulty: string | null }[]>(
     await supabase.from('cms_question_list').select('question_id, bank, subject, chapter_id, topic_id, class, status, text, current_version, approved_version, version_created_at, math_difficulty')
       .in('status', ['draft', 'in_review']).is('retired_at', null).order('version_created_at').limit(500));
+}
+
+/** The current rule version (cms_config current_rule_version, else the newest loaded): what Generate,
+ *  tagging, the model check and the editor use. */
+export async function loadCurrentRuleVersion(): Promise<string> {
+  const [rv, cfg] = await Promise.all([
+    supabase.from('cms_rule_versions').select('rule_version'),
+    supabase.from('cms_config').select('value').eq('key', 'current_rule_version'),
+  ]);
+  const v = currentRuleVersion(must<{ rule_version: string }[]>(rv).map((r) => r.rule_version), must<{ value: unknown }[]>(cfg)[0]?.value);
+  if (!v) throw new Error('No rule version is loaded (run the seed).');
+  return v;
 }
