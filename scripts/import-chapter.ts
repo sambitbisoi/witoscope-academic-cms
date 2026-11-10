@@ -27,6 +27,7 @@ import { classify, structureHash, textsOf, type Texts } from '../shared/version.
 import type { DerivedConfig } from './lib/v10-config.ts';
 import { questionFromDb } from '../shared/fromDb.ts';
 import { loadBundle } from './lib/bundle.ts';
+import { readOriginality } from './lib/originality-report.ts';
 
 type Sql = ReturnType<typeof connect>;
 type Tx = postgres.TransactionSql;
@@ -176,6 +177,8 @@ export async function runChapter(sql: Sql, filePath: string, mode: 'validate' | 
   // inside the repo: repo-relative; elsewhere: absolute, with ~ for the home folder
   const shown = rel.startsWith('..') ? abs.replace(homedir(), '~') : rel;
   const report: ChapterReport = { file: shown, mode, importId: null, result: 'failed', problems: [], outcomes: [], counts: {} };
+  // the local originality check's report (citations and scores only), if it was run
+  const orig = readOriginality(abs, fileHash);
 
   let data: unknown;
   try { data = JSON.parse(raw.toString('utf8')); } catch (e) {
@@ -210,7 +213,7 @@ export async function runChapter(sql: Sql, filePath: string, mode: 'validate' | 
       report.importId = importId;
 
       const cat = await loadCatalog(tx, valid);
-      const problems = checkFile(valid, cat);
+      const problems = [...checkFile(valid, cat), ...orig.problems];
       report.problems.push(...problems);
       const fileErrors = problems.filter((p) => p.level === 'error' && (p.key === 'file' || p.key.startsWith('pattern ')));
       const blocked = new Set([...schemaBlocked, ...problems.filter((p) => p.level === 'error').map((p) => p.key)]);
@@ -307,6 +310,20 @@ export async function runChapter(sql: Sql, filePath: string, mode: 'validate' | 
       function blockWith(key: string, qid: string, message: string) {
         report.problems.push({ level: 'error', key, message });
         report.outcomes.push({ key, question_id: qid, result: 'blocked' });
+      }
+
+      // record the local originality check for every version this import wrote
+      if (orig.report) {
+        for (const o of report.outcomes) {
+          const r = orig.report.questions.find((x) => x.key === o.key);
+          if (!r || !o.question_id || !o.version || o.result === 'unchanged' || o.result === 'blocked') continue;
+          const [v] = await tx`select version_id from cms.cms_question_versions where question_id = ${o.question_id} and version_no = ${o.version}`;
+          await tx`insert into cms.cms_originality_checks ${tx({
+            version_id: v!.version_id, checked_at: orig.report.checked_at, result: r.result, similarity: r.similarity, same_numbers: r.same_numbers,
+            closest_ref: r.closest_ref, checked: tx.json(orig.report.checked as never), missing: tx.json(orig.report.missing as never),
+            threshold: orig.report.threshold, tool: orig.report.tool, import_id: importId,
+          } as never)}`;
+        }
       }
 
       for (const o of report.outcomes) report.counts[o.result] = (report.counts[o.result] ?? 0) + 1;

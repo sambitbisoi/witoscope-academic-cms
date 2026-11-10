@@ -4,6 +4,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { createHash } from 'node:crypto';
 import { runChapter } from '../scripts/import-chapter.ts';
 import { connect } from '../scripts/lib/db.ts';
 import { LOCAL_CMS_OWNER_URL } from '../scripts/local-bootstrap.ts';
@@ -41,7 +42,7 @@ async function cleanup() {
   const qids = (await sql`select question_id from cms.cms_questions where file_key like 'MC98-%'`).map((r) => r.question_id as string);
   const vids = qids.length ? (await sql`select version_id from cms.cms_question_versions where question_id in ${sql(qids)}`).map((r) => r.version_id) : [];
   if (vids.length) {
-    for (const t of ['cms_version_parts', 'cms_version_options', 'cms_version_wrong_answers', 'cms_version_concepts', 'cms_version_solutions', 'cms_version_hints', 'cms_version_source_refs']) {
+    for (const t of ['cms_version_parts', 'cms_version_options', 'cms_version_wrong_answers', 'cms_version_concepts', 'cms_version_solutions', 'cms_version_hints', 'cms_version_source_refs', 'cms_originality_checks']) {
       await sql`delete from ${sql(`cms.${t}`)} where version_id in ${sql(vids)}`;
     }
   }
@@ -230,5 +231,39 @@ describe('chapter importer', () => {
     const r = await run(f, 'validate');
     expect(outcome(r).result).toBe('blocked');
     expect(r.problems).toContainEqual({ level: 'error', key: 'MC98-0001', message: 'signature.reading must be <= 5' });
+  });
+
+  // The local originality check (10 Nov 2026): the importer records only its result.
+  function withReport(f: ChapterFile, edit: (r: Record<string, unknown>) => void = () => {}) {
+    const p = join(dir, `f${++n}.json`);
+    const body = JSON.stringify(f, null, 2);
+    writeFileSync(p, body);
+    const rep: Record<string, unknown> = {
+      file_schema: 'cms-originality/1.0', tool: 'check-originality 1', chapter_file_sha256: createHash('sha256').update(body).digest('hex'),
+      chapter_id: 'MC98', checked_at: '2026-11-10T06:00:00.000Z', threshold: 0.6, checked: [{ source_id: 'NCERT-fegp101', pages: 'pdf 1–12' }], missing: [],
+      questions: f.questions.map((q) => ({ key: q.key, result: 'flagged', similarity: 0.82, same_numbers: true, closest_ref: 'NCERT-fegp101 p5' })),
+    };
+    edit(rep);
+    writeFileSync(p.replace(/\.json$/, '.originality.json'), JSON.stringify(rep));
+    return p;
+  }
+
+  it('records the local originality result (a citation and scores, no book text) for each version it writes', async () => {
+    const f = baseFile(); q1(f).text = `${q1(f).text} (originality probe)`;
+    const r = await runChapter(sql, withReport(f), 'import');
+    expect(outcome(r).result).not.toBe('blocked');
+    expect(r.problems).toContainEqual({ level: 'warning', key: 'MC98-0001', message: 'close to a book: NCERT-fegp101 p5 (similarity 0.82, same numbers); check it is original before approving' });
+    const [c] = await sql`select c.result, c.similarity::float as similarity, c.same_numbers, c.closest_ref, c.checked, c.import_id from cms.cms_originality_checks c
+      join cms.cms_question_versions v on v.version_id = c.version_id where v.question_id = ${outcome(r).question_id!} and v.version_no = ${outcome(r).version!}`;
+    expect(c).toMatchObject({ result: 'flagged', similarity: 0.82, same_numbers: true, closest_ref: 'NCERT-fegp101 p5', checked: [{ source_id: 'NCERT-fegp101', pages: 'pdf 1–12' }] });
+    expect(Number(c!.import_id)).toBe(r.importId);
+  });
+
+  it('no report → a warning; a report for another version of the file → the import fails', async () => {
+    const plain = await run(baseFile(), 'validate');
+    expect(plain.problems).toContainEqual({ level: 'warning', key: 'file', message: 'not checked for copying from books: run npm run check:originality -- <this file> on this Mac first' });
+    const stale = await runChapter(sql, withReport(baseFile(), (rep) => { rep.chapter_file_sha256 = 'x'; }), 'validate');
+    expect(stale.result).toBe('failed');
+    expect(stale.problems).toContainEqual({ level: 'error', key: 'file', message: 'the originality report was made for a different version of this file; re-run npm run check:originality' });
   });
 });
