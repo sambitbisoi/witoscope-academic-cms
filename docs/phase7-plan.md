@@ -2,11 +2,11 @@
 
 **Status: plan only. Not built.** Phase 7 waits until Sambit has used the CMS for real.
 
-**Decided (Sambit, 10 Nov 2026):** Q1: no AI reads book pages; local text extraction for NCERT and local OCR for DAV. Q4: "Generate from this book item" is dropped. The other questions keep my proposals until Sambit says otherwise.
+**Decided (Sambit, 10 Nov 2026):** Q4: "Generate from this book item" is dropped. **Q1 is reopened:** the rule was restated later on 10 Nov (CLAUDE.md, "Book material rule"): AI threads *may* read the book PDFs on the Mac, as long as nothing book-derived is stored or uploaded outside it. The other questions keep my proposals until Sambit says otherwise.
 
 This replaces the 9 Nov draft (branch `phase-7-extract`, never pushed). That draft uploaded PDFs to R2 and had the cloud AI function read them, which the new rule forbids.
 
-**The rule (CLAUDE.md, 10 Nov 2026):** only our own content leaves Sambit's Mac. Book PDFs, scans, screenshots, extracted item text and their numbers are never stored in Supabase, R2 or any cloud. The cloud holds only:
+**The rule:** CLAUDE.md, "Book material rule" (the single source). In short: book material stays on Sambit's Mac; AI threads may read it there, but it is never stored in or uploaded to Supabase, R2 or any cloud. The cloud holds only:
 - our original content;
 - bare citations (book, class, chapter, page, section, exercise/item number);
 - official public links.
@@ -29,7 +29,7 @@ Every step that touches book material runs on the Mac. Only the last column ever
 
 | # | Question | Proposal |
 |---|---|---|
-| **Q1 ✓** | **May any AI read book pages?** *Decided: no.* Sending a page to the Claude API means the book leaves the Mac. Nothing would be *stored* by us, but it does leave | **No.** Extraction is local: `pdftotext` for NCERT (text PDFs; tested on Ganita Prakash), and **Tesseract OCR** (`brew install tesseract`) for DAV scans. The `ai_model_extract` key stays unused. If you'd rather have Claude extract, that needs your explicit approval as an exception to the rule |
+| **Q1 (reopened)** | **May an AI read book pages?** *First decided "no"; the rule now allows an AI thread on the Mac to read them, with nothing stored or uploaded outside the Mac.* | **My proposal: keep local, non-AI extraction as the default** (deterministic and free), with an AI thread on the Mac allowed for pages where it does clearly better (e.g. poor OCR on DAV scans). The CMS's cloud AI function (`/api/ai`) still never receives book text. Extraction is local: `pdftotext` for NCERT (text PDFs; tested on Ganita Prakash), and **Tesseract OCR** (`brew install tesseract`) for DAV scans. The `ai_model_extract` key (a cloud-function setting) stays unused |
 | Q1b | **The 20 existing book files** (`QuestionBank/NCERT-C5-*`, `NCERT-C6-*`) | They stay on the Mac and are used as they are (citations, the originality check). **[I don't know how they were made.** If book pages were sent to an AI service to make them, that already happened under the old rules; nothing in the CMS depends on it.**]** |
 | **Q2** | **Where the review page runs** | Inside the local dev app only (`npm run dev`). A route plus a `127.0.0.1` file endpoint in `scripts/dev-files.ts` read and write the local book files. The route is left out of production builds, and a test fails the build if the deployed bundle contains it. Nothing goes through Supabase, R2 or a Pages Function |
 | Q3 | Topic, set and pattern suggestions | Local and rule-based: keywords from the topic master lists, the item's section, and the nearest existing bank question (by similarity). Sambit confirms every one. No AI (follows Q1) |
@@ -45,7 +45,7 @@ Every step that touches book material runs on the Mac. Only the last column ever
 | 2 | Local-only review page (dev app route + `dev-files` endpoint on 127.0.0.1) with a build guard so it never ships | L |
 | 3 | Local topic, set and pattern suggestions | M |
 | 4 | `match:book`: local matching → `cms_version_source_refs` + coverage counts (citations only); coverage on the Sources tab | M |
-| 5 | Building it: Claude (the coding agent) never reads book pages either. Extraction is developed and tested on synthetic fixture pages; real chapters are run by Sambit, and only counts and citations are reported back | — |
+| 5 | Building it: extraction is developed and tested on synthetic fixture pages, so the tests and the repo hold no book text. Real chapters run on the Mac; only counts and citations go into the repo, PRs or the CMS | — |
 | 6 | Tests: no book text in any cloud write (fixtures with marker text, asserted absent from DB rows and requests), plus build-guard, extraction and matching tests | M |
 
 ## 4. Already in place (10 Nov 2026)

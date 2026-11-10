@@ -1,6 +1,7 @@
 // Model check (Phase 6 update): run a model on the test-only gold questions with their values
 // hidden, and report agreement with the gold values per attribute, to choose the tagging model.
 import { useEffect, useState } from 'react';
+import { scoreModelCheck } from '../../shared/generation';
 import { FallbackNotice } from './Generate';
 import { estimateUsd, loadAiConfig, loadRules, modelCheckRuns, runModelCheck, runRecord, spentTodayUsd, testOnlyGold, type AiConfig } from './genApi';
 
@@ -18,11 +19,12 @@ function ModelCheckStart() {
   const [spent, setSpent] = useState(0);
   const [model, setModel] = useState('');
   const [runs, setRuns] = useState<Awaited<ReturnType<typeof modelCheckRuns>>>([]);
+  const [testOnly, setTestOnly] = useState<Set<string>>(new Set());
   const [progress, setProgress] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     Promise.all([loadAiConfig(), testOnlyGold(), loadRules('tag'), spentTodayUsd()]).then(([c, g, r, s]) => {
-      setCfg(c); setN(g.length); setRulesChars(r.text.length); setSpent(s); setModel(c.models.tag);
+      setCfg(c); setN(g.length); setTestOnly(new Set(g.map((x) => x.question_id))); setRulesChars(r.text.length); setSpent(s); setModel(c.models.tag);
     }).catch((e) => setError(e.message));
     modelCheckRuns().then(setRuns).catch(() => setRuns([])); // best-effort list
   }, []);
@@ -40,7 +42,8 @@ function ModelCheckStart() {
     <main className="wide gen">
       <h2>Model check</h2>
       <p className="muted small">Tags the {n} test-only gold questions with their values hidden (no concepts, signature, duration, wrong-answer tags, solutions or hints)
-        and reports how often the model agrees with the gold values, per attribute. Nothing is saved to the question bank.</p>
+        and reports how often the model agrees with the gold values, per attribute. Nothing is saved to the question bank.
+        Scores count only questions that are test-only now; a question that has since become a prompt example is left out, in earlier runs too.</p>
       <div className="save-preview">
         <label className="small">Model <select value={model} onChange={(e) => setModel(e.target.value)}>
           {models.map((m) => <option key={m} value={m}>{m}{m === cfg.models.tag ? ' (current tagging model)' : ''}</option>)}
@@ -56,12 +59,13 @@ function ModelCheckStart() {
       {runs.length > 0 && (
         <section>
           <h3>Earlier checks</h3>
-          <table className="report"><thead><tr><th>Run</th><th>Model</th><th>When</th><th>Overall</th><th>Cost</th></tr></thead>
+          <table className="report"><thead><tr><th>Run</th><th>Model</th><th>Rules</th><th>When</th><th>Overall</th><th>Scored on</th><th>Cost</th></tr></thead>
             <tbody>{runs.map((r) => {
-              const a = r.params.agreement ?? [];
-              const hits = a.reduce((x, y) => x + y.hits, 0), tot = a.reduce((x, y) => x + y.n, 0);
+              const s = scoreModelCheck(r.params.check ?? [], testOnly);
+              const hits = s.agreement.reduce((x, y) => x + y.hits, 0), tot = s.agreement.reduce((x, y) => x + y.n, 0);
               return <tr key={r.run_id}><td><a href={`#/model-check/${r.run_id}`}>{r.run_id}</a></td><td>{r.model}{r.params.fallback ? ' ⚠ fallback' : ''}</td>
-                <td>{new Date(r.created_at).toLocaleString()}</td><td>{tot ? `${Math.round((hits / tot) * 100)}%` : r.status}</td><td>{usd(Number(r.cost ?? 0))}</td></tr>;
+                <td>{ruleOf(r.pack_version)}</td><td>{new Date(r.created_at).toLocaleString()}</td><td>{tot ? `${Math.round((hits / tot) * 100)}%` : r.status}</td>
+                <td>{s.kept.length} questions{s.excluded.length ? <span className="muted small"> ({s.excluded.length} left out)</span> : null}</td><td>{usd(Number(r.cost ?? 0))}</td></tr>;
             })}</tbody></table>
         </section>
       )}
@@ -69,32 +73,39 @@ function ModelCheckStart() {
   );
 }
 
+const ruleOf = (pack: string | null) => /^(v\d+)-/.exec(pack ?? '')?.[1] ?? '—';
+
 function ModelCheckReport({ runId }: { runId: number }) {
   const [run, setRun] = useState<Awaited<ReturnType<typeof runRecord>> | null>(null);
+  const [testOnly, setTestOnly] = useState<Set<string> | null>(null);
   const [error, setError] = useState<string | null>(null);
-  useEffect(() => { runRecord(runId).then(setRun).catch((e) => setError(e.message)); }, [runId]);
+  useEffect(() => {
+    Promise.all([runRecord(runId), testOnlyGold()]).then(([r, g]) => { setRun(r); setTestOnly(new Set(g.map((x) => x.question_id))); }).catch((e) => setError(e.message));
+  }, [runId]);
   if (error) return <main><p className="error">{error}</p></main>;
-  if (!run) return <main><p className="muted">Loading check {runId}…</p></main>;
+  if (!run || !testOnly) return <main><p className="muted">Loading check {runId}…</p></main>;
   const p = run.params;
-  const results = p.check ?? [];
+  const scored = scoreModelCheck(p.check ?? [], testOnly);
+  const results = scored.kept;
   const failed = results.filter((r) => r.error);
   return (
     <main className="wide gen">
       <h2>Model check {run.run_id} · {run.model}</h2>
-      <div className="muted small">{new Date(run.created_at).toLocaleString()} · {results.length - failed.length} of {p.questions ?? results.length} questions tagged · {run.tokens_in ?? 0} in / {run.tokens_out ?? 0} out tokens · cost {usd(Number(run.cost ?? 0))}
+      <div className="muted small">{new Date(run.created_at).toLocaleString()} · rules {ruleOf(run.pack_version)} · {results.length - failed.length} of {results.length} test-only questions tagged · {run.tokens_in ?? 0} in / {run.tokens_out ?? 0} out tokens · cost {usd(Number(run.cost ?? 0))}
         {p.usage?.cache_read_input_tokens ? ` · ${p.usage.cache_read_input_tokens} cached` : ''}</div>
+      {scored.excluded.length > 0 && <div className="warn small">Left out of the score: {scored.excluded.join(', ')}, which have become prompt examples since this run (they are shown to the model as examples, so they no longer test it).</div>}
       <FallbackNotice params={p} />
       {results.some((r) => r.fallback) && <div className="warn small">Answered after a fallback: {results.filter((r) => r.fallback).map((r) => `${r.qid} (${r.models.join(' → ')})`).join(', ')}</div>}
       {p.stopped && <div className="warn small">The check {p.stopped}.</div>}
       {failed.length > 0 && <div className="error small">Not tagged: {failed.map((r) => `${r.qid} (${r.error})`).join('; ')}</div>}
       <table className="report">
         <thead><tr><th>Attribute</th><th>Agreement</th><th>Off by one</th><th>Compared</th></tr></thead>
-        <tbody>{(p.agreement ?? []).map((a) => (
+        <tbody>{scored.agreement.map((a) => (
           <tr key={a.attribute}><td>{a.attribute}</td><td><strong>{a.pct}%</strong> <span className="muted small">({a.hits})</span></td><td>{a.near || ''}</td><td>{a.n}{a.attribute === 'Wrong-answer tags' ? ' wrong answers' : ''}</td></tr>
         ))}</tbody>
       </table>
       <h3>Disagreements</h3>
-      {(p.agreement ?? []).map((a) => {
+      {scored.agreement.map((a) => {
         const rows = results.flatMap((r) => r.scores.filter((s) => s.attribute === a.attribute && s.hits < s.n).map((s) => ({ qid: r.qid, s })));
         if (!rows.length) return null;
         return (

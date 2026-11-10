@@ -2,7 +2,7 @@
 
 Internal, single-user tool for managing the question bank (Class 1–6 Math, Science, English Grammar) of the WitoScope kids app. Not public, not indexed.
 
-Design source of truth: `docs/phase1-design.md` (approved 8 Nov 2026). Question attribute rules: WitoScope Question Attributes **v10**. Chapter file format: `schema/chapter.schema.json`.
+Design source of truth: `docs/phase1-design.md` (approved 8 Nov 2026). Question attribute rules: WitoScope Question Attributes **v11** (current since 10 Nov 2026; v10 stays loaded alongside; the current version is `cms_config.current_rule_version`). Chapter file format: `schema/chapter.schema.json`.
 
 ## Database isolation (hard rules — never break)
 - Everything lives in schema `cms`; every table is prefixed `cms_` (e.g. `cms.cms_questions`).
@@ -13,11 +13,17 @@ Design source of truth: `docs/phase1-design.md` (approved 8 Nov 2026). Question 
 - Files: only our own figure images, in the private **Cloudflare R2** bucket `cms-sources` under `figures/`. Supabase keeps only text and metadata, with each file's R2 key. Files are reached only through the `/api/files` Pages Function, which validates the Cloudflare Access JWT, issues short-lived signed URLs and refuses PDFs and any key outside `figures/`. No Supabase Storage.
 - Publishing to the app (Phase 8) is designed separately and needs Sambit's explicit approval.
 
-## Content rules
-- **Only our own content leaves Sambit's Mac.** Third-party book material (NCERT/DAV/IXL/SOF PDFs, scans, screenshots, extracted item text, their numbers) is never stored in Supabase, R2 or any cloud, and never sent to a cloud service. The cloud may hold only our original content and bare citations (book, class, chapter, page, section, exercise/item number) plus official public links (e.g. ncert.nic.in). Book files and anything read from them stay on the Mac; `db:verify` checks the citation-only shape.
-- The originality (copy-from-book) check runs only on the Mac (`npm run check:originality`) before every import; the CMS records only its result and citations. A near-copy blocks the import; moderate similarity is a warning.
-- Question-generation threads never get book pages: they work from citations, topic names, patterns and the v10 rules (`claude/question-bank/generation-prompt.md`). No AI reads book pages (Phase 7 extraction is local text extraction / OCR).
+## Book material rule (Sambit, 10 Nov 2026)
+**This section is the single source for this rule.** The pipeline brief (`~/WitoScope/ContentResearch/QuestionBank/_pipeline/BRIEF.md`), `claude/question-bank/generation-prompt.md`, the design doc and the Phase 7 plan point here; if any of them disagrees, this section wins.
+- **Book material** means third-party book content: NCERT/DAV/IXL/SOF PDFs, scans, page images and renders, screenshots, extracted or OCR item text, the book's numbers, book snapshots, `*.book.json` files, and review packs or workbooks that contain source questions.
+- **It stays on Sambit's Mac.** It is never stored in or uploaded to anything outside the Mac: Supabase, R2, GitHub, a claude.ai chat or Project, memory, artifacts or any other cloud service. Never attach or paste it into a chat; give its path on the Mac instead.
+- **AI threads may read the book PDFs on the Mac** (`pdftotext`, page renders, local OCR) to extract items, solve them and write twins, as the pipeline workers do. The text passes through the model only to be processed; nothing book-derived is written or uploaded outside the Mac.
+- **Only our own content leaves the Mac:** questions in our own wording, names and numbers, and images we drew. Besides that, the cloud holds only bare citations (book, class, chapter, page, section, exercise/item number) and official public links (e.g. ncert.nic.in). `db:verify` checks the citation-only shape.
+- Chat threads outside the Mac (the Claude Project's question-generation threads) therefore get no book material. They work from citations, topic names, patterns and the current rules (`claude/question-bank/generation-prompt.md`).
+- The originality (copy-from-book) check runs only on the Mac (`npm run check:originality`) before every import; the CMS records only its result and citations. A near-copy blocks the import; moderate similarity is a warning. A near-copy draft is approved only with the logged "override: reviewed, not a copy".
 - Book questions (NCERT, DAV, IXL, SOF) are internal references only; they never reach the app.
+
+## Content rules
 - Gold questions (`bank = 'gold'`) are never publishable.
 - IDs are permanent and never reused. Class is a field, never derived from an ID.
 - Versioning: typo fix = same version (logged); any change to numbers, options, answers, format, parts, concepts, tags, signature, topic/set/pattern or image = new version.

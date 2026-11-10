@@ -11,7 +11,10 @@ interface ImportRow {
 interface Problem { level: 'error' | 'warning'; key?: string; where?: string; message: string }
 interface Outcome { key: string; question_id?: string; result: string; version?: number; note?: string }
 
-const KIND: Record<ImportRow['kind'], string> = { chapter: 'Chapter file', topics: 'Topic lists', seed: 'v10 seed' };
+const KIND: Record<ImportRow['kind'], string> = { chapter: 'Chapter file', topics: 'Topic lists', seed: 'Rules seed' };
+/** "v11 seed" from the workbook's file name (…_v11.xlsx). */
+export const seedLabel = (path: string) => `${/_v(\d+)\.xlsx$/.exec(path)?.[0].slice(1, -5) ?? 'rules'} seed`;
+const kindOf = (r: { kind: ImportRow['kind']; file_path: string }) => (r.kind === 'seed' ? seedLabel(r.file_path) : KIND[r.kind]);
 const OUTCOME: Record<string, string> = {
   created: 'New question', new_version: 'New version', typo_fix: 'Typo fix', draft_replaced: 'Draft replaced',
   unchanged: 'Unchanged', blocked: 'Blocked',
@@ -64,7 +67,7 @@ export function ImportsList() {
               <tr key={r.import_id} onClick={() => (location.hash = `#/imports/${r.import_id}`)}>
                 <td><a href={`#/imports/${r.import_id}`}>{r.import_id}</a></td>
                 <td>{when(r.started_at)}</td>
-                <td>{KIND[r.kind]}{r.chapter_id ? ` · ${r.chapter_id}` : ''}</td>
+                <td>{kindOf(r)}{r.chapter_id ? ` · ${r.chapter_id}` : ''}</td>
                 <td className="file" title={r.file_path}>{r.kind === 'topics' ? '3 workbooks' : fileName(r.file_path)}</td>
                 <td><Result r={r.result} /></td>
                 <td className="muted">{summary(r)}</td>
@@ -98,7 +101,7 @@ export function ImportDetail({ id }: { id: number }) {
       <p><a href="#/imports">← Imports</a></p>
       <h2>Import #{row.import_id} <Result r={row.result} /></h2>
       <dl className="facts">
-        <dt>What</dt><dd>{KIND[row.kind]}{row.chapter_id ? ` · ${row.chapter_id}` : ''}{row.options?.force_new_version ? ' · --force-new-version' : ''}</dd>
+        <dt>What</dt><dd>{kindOf(row)}{row.chapter_id ? ` · ${row.chapter_id}` : ''}{row.options?.force_new_version ? ' · --force-new-version' : ''}</dd>
         <dt>When</dt><dd>{when(row.started_at)}</dd>
         <dt>File</dt><dd className="file">{row.file_path}</dd>
         <dt>Commit</dt><dd>{row.git_commit ?? '—'}</dd>

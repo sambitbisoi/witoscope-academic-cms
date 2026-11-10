@@ -150,7 +150,7 @@ export const enc = (tx: Tx, row: Record<string, unknown>) =>
   Object.fromEntries(Object.entries(row).map(([k, v]) => [k, JSON_COLS.includes(k) && v !== null ? tx.json(v as never) : v]));
 
 // ---------------------------------------------------------------- typo fix in place
-async function applyTypo(tx: Tx, versionId: number, questionId: string, q: Question) {
+export async function applyTypo(tx: Tx, versionId: number, questionId: string, q: Question) {
   await tx`update cms.cms_question_versions set ${tx(enc(tx, {
     text: q.text, figure_description: q.figure?.description ?? null, tagging_why: q.tagging?.why ?? null,
     tagging_summary: q.tagging?.summary ?? null, author_notes: q.author_notes ?? null,

@@ -36,7 +36,7 @@ export function EditForm({ questionId, onDone }: { questionId: string; onDone: (
   const problems = useMemo(() => {
     if (!ctx || !q) return [];
     const d = ctx.detail;
-    const file: ChapterFile = { file_schema: 'cms-chapter/1.0', attribute_version: [...ctx.catalog.ruleVersions][0] ?? 'v10', subject: d.question.subject as 'math',
+    const file: ChapterFile = { file_schema: 'cms-chapter/1.0', attribute_version: ctx.ruleVersion, subject: d.question.subject as 'math',
       class: d.question.class, chapter_id: d.question.chapter_id, generated: { by: 'CMS editor', date: new Date().toISOString().slice(0, 10) }, questions: [q] };
     return checkFile(file, ctx.catalog, { gold: true }).filter((p) => p.key !== 'file' || p.level === 'error');
   }, [ctx, q]);
@@ -92,7 +92,7 @@ export function EditForm({ questionId, onDone }: { questionId: string; onDone: (
         <datalist id="concept-ids">{L.concepts.map((c) => <option key={c.concept_id} value={c.concept_id}>{c.name}</option>)}</datalist>
       </Sec>
 
-      <Sec title="Signature (v10)">
+      <Sec title={`Signature (${ctx.ruleVersion} rules)`}>
         <div className="form-grid">
           <label>Math difficulty<select value={q.signature.math_difficulty} onChange={(e) => set((x) => { x.signature.math_difficulty = e.target.value as 'Simple'; })}>{['Simple', 'Medium', 'Complex'].map((v) => <option key={v}>{v}</option>)}</select></label>
           <Num label="Reading (1–5)" v={q.signature.reading} min={1} max={5} on={(v) => set((x) => { x.signature.reading = v; })} />
