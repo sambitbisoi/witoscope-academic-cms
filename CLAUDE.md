@@ -15,7 +15,8 @@ Design source of truth: `docs/phase1-design.md` (approved 8 Nov 2026). Question 
 
 ## Content rules
 - **Only our own content leaves Sambit's Mac.** Third-party book material (NCERT/DAV/IXL/SOF PDFs, scans, screenshots, extracted item text, their numbers) is never stored in Supabase, R2 or any cloud, and never sent to a cloud service. The cloud may hold only our original content and bare citations (book, class, chapter, page, section, exercise/item number) plus official public links (e.g. ncert.nic.in). Book files and anything read from them stay on the Mac; `db:verify` checks the citation-only shape.
-- The originality (copy-from-book) check runs only on the Mac (`npm run check:originality`); the CMS records only its result and citations.
+- The originality (copy-from-book) check runs only on the Mac (`npm run check:originality`) before every import; the CMS records only its result and citations. A near-copy blocks the import; moderate similarity is a warning.
+- Question-generation threads never get book pages: they work from citations, topic names, patterns and the v10 rules (`claude/question-bank/generation-prompt.md`). No AI reads book pages (Phase 7 extraction is local text extraction / OCR).
 - Book questions (NCERT, DAV, IXL, SOF) are internal references only; they never reach the app.
 - Gold questions (`bank = 'gold'`) are never publishable.
 - IDs are permanent and never reused. Class is a field, never derived from an ID.

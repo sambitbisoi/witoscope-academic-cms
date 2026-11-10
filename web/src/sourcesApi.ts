@@ -109,7 +109,7 @@ export async function sourceItems(refIds: string[]) {
 }
 
 /** The latest local originality check of a version (citations and scores only). */
-export interface OriginalityCheck { checked_at: string; result: 'clear' | 'flagged' | 'no_sources'; similarity: number | null; same_numbers: boolean; closest_ref: string | null; missing: string[] }
+export interface OriginalityCheck { checked_at: string; result: 'clear' | 'flagged' | 'near_copy' | 'no_sources'; similarity: number | null; same_numbers: boolean; closest_ref: string | null; missing: string[] }
 export async function latestOriginality(versionId: number): Promise<OriginalityCheck | null> {
   const rows = must<OriginalityCheck[]>(await supabase.from('cms_originality_checks').select('checked_at, result, similarity, same_numbers, closest_ref, missing')
     .eq('version_id', versionId).order('check_id', { ascending: false }).limit(1));
