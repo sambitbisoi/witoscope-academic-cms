@@ -16,6 +16,7 @@ export type Route =
   | { name: 'browse'; subject: Subject; cls: string; ch: string | null; topic: string | null; q: string | null; v: number | null; tab: 'types' | 'concepts' | 'sources'; edit: boolean }
   | { name: 'review' }
   | { name: 'proposed'; kind: string | null }
+  | { name: 'map'; tab: 'topics' | 'sources'; cls: string; subject: string; ch: string | null; show: MapShow; q: string }
   | { name: 'generate'; q: string | null; set: string | null; topic: string | null }
   | { name: 'run'; id: number }
   | { name: 'model-check'; id: number | null }
@@ -33,6 +34,12 @@ export function parseRoute(hash: string): Route {
   if (p[0] === 'q' && p[1]) return { name: 'question', id: p[1] };
   if (p[0] === 'review') return { name: 'review' };
   if (p[0] === 'proposed') return { name: 'proposed', kind: qs.get('kind') };
+  if (p[0] === 'map') {
+    const show = qs.get('show');
+    return { name: 'map', tab: p[1] === 'sources' ? 'sources' : 'topics', cls: /^[1-6]$/.test(qs.get('cls') ?? '') ? qs.get('cls')! : 'all',
+      subject: SUBJECTS.some((x) => x.id === qs.get('subject')) ? qs.get('subject')! : 'all', ch: qs.get('ch'),
+      show: (['all', 'multi', 'gaps', 'empty'] as const).find((x) => x === show) ?? 'all', q: qs.get('q') ?? '' };
+  }
   if (p[0] === 'generate') return { name: 'generate', q: qs.get('q'), set: qs.get('set'), topic: qs.get('topic') };
   if (p[0] === 'run' && p[1] && /^\d+$/.test(p[1])) return { name: 'run', id: Number(p[1]) };
   if (p[0] === 'model-check') return { name: 'model-check', id: p[1] && /^\d+$/.test(p[1]) ? Number(p[1]) : null };
@@ -56,6 +63,18 @@ export function browseHash(r: { subject: string; cls: string; ch?: string | null
   if (r.edit && r.q) qs.set('edit', '1');
   const s = qs.toString();
   return s ? `${parts}?${s}` : parts;
+}
+
+export type MapShow = 'all' | 'multi' | 'gaps' | 'empty';
+export function mapHash(r: { tab?: string; cls: string; subject: string; ch: string | null; show: string; q: string }): string {
+  const qs = new URLSearchParams();
+  if (r.cls !== 'all') qs.set('cls', r.cls);
+  if (r.subject !== 'all') qs.set('subject', r.subject);
+  if (r.ch) qs.set('ch', r.ch);
+  if (r.show !== 'all') qs.set('show', r.show);
+  if (r.q) qs.set('q', r.q);
+  const s = qs.toString();
+  return `#/map${r.tab === 'sources' ? '/sources' : ''}${s ? `?${s}` : ''}`;
 }
 
 // ---------------------------------------------------------------- coverage
@@ -235,3 +254,36 @@ export function summarize(qs: Pick<ListQuestion, 'math_difficulty' | 'status' | 
 }
 export const statusCountsLabel = (b: Record<string, number>) =>
   ['approved', 'in_review', 'draft', 'rejected', 'retired'].filter((k) => b[k]).map((k) => `${b[k]} ${(STATUS_LABEL[k] ?? 'Retired').toLowerCase()}`).join(' · ');
+
+// ---------------------------------------------------------------- D8c: clone groups (PR B)
+/** Wording with the numbers taken out: two clones whose texts match here differ only in numbers. */
+export const skeleton = (t: string) => t.toLowerCase().replace(/\d+([.,/]\d+)*/g, '#').replace(/\s+/g, ' ').trim();
+
+export interface CloneInfo { key: string; size: number; index: number; nearIdentical: boolean }
+/**
+ * Orders questions so that clones (same clone_key) sit together, biggest group first, and says
+ * for each question "n of size" and whether its wording is near-identical to another clone's
+ * (the same once numbers are ignored). Questions without a clone key are their own group.
+ */
+export function cloneGroups<Q extends { question_id: string; clone_key?: string | null; text: string }>(qs: Q[]): { ordered: Q[]; info: Map<string, CloneInfo>; groups: number } {
+  const by = new Map<string, Q[]>();
+  for (const q of qs) { const k = q.clone_key ?? `solo:${q.question_id}`; by.set(k, [...(by.get(k) ?? []), q]); }
+  const keys = [...by.keys()].sort((a, b) => by.get(b)!.length - by.get(a)!.length || qs.indexOf(by.get(a)![0]!) - qs.indexOf(by.get(b)![0]!));
+  const info = new Map<string, CloneInfo>();
+  const ordered: Q[] = [];
+  for (const k of keys) {
+    const list = by.get(k)!;
+    const sk = list.map((q) => skeleton(q.text));
+    list.forEach((q, i) => {
+      ordered.push(q);
+      info.set(q.question_id, { key: k, size: list.length, index: i + 1, nearIdentical: list.length > 1 && sk.some((s, j) => j !== i && s === sk[i]) });
+    });
+  }
+  return { ordered, info, groups: keys.length };
+}
+
+/** U15: "Classes 4 · 5 · 6" for a topic in several classes; null for one class. */
+export const classesLabel = (classes: number[]) => {
+  const c = [...new Set(classes)].sort((a, b) => a - b);
+  return c.length > 1 ? `Classes ${c.join(' · ')}` : null;
+};

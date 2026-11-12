@@ -3,6 +3,7 @@
 // keys use it. Approve (→ active) or Retire from here, one by one or the ticked ones.
 // Audited through cms_set_catalogue_status; nothing is deleted.
 import { useEffect, useMemo, useState } from 'react';
+import { all } from './api';
 import { setCatalogueStatus } from './editApi';
 import { browseHash, safeSearch } from './logic';
 import { Proposed } from './QuestionDetail';
@@ -17,18 +18,6 @@ const KINDS: { id: Kind; label: string; table: string; key: string; cols: string
 ];
 interface Item { kind: Kind; id: string; label: string; detail: string; topic: string | null; status: string; proposedBy: string[]; usedBy: string[] }
 type Show = 'proposed' | 'active' | 'retired';
-
-/** PostgREST returns at most 1,000 rows per request: read in pages. */
-async function all<T>(make: (from: number, to: number) => PromiseLike<{ data: unknown; error: { message: string } | null }>): Promise<T[]> {
-  const out: T[] = [];
-  for (let from = 0; ; from += 1000) {
-    const { data, error } = await make(from, from + 999);
-    if (error) throw new Error(error.message);
-    const rows = (data ?? []) as T[];
-    out.push(...rows);
-    if (rows.length < 1000) return out;
-  }
-}
 
 async function load(kind: Kind, show: Show): Promise<Item[]> {
   const k = KINDS.find((x) => x.id === kind)!;

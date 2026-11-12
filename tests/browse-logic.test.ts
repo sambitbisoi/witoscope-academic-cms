@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  applyFilters, browseHash, countsLabel, sameWording, distinctTexts, involvementOf, summarize, statusCountsLabel, gapLabel, groupBySet, NO_FILTERS, parseRoute, safeSearch, signatureRows, derivedRows, statusLabel,
+  applyFilters, browseHash, countsLabel, sameWording, cloneGroups, classesLabel, distinctTexts, involvementOf, summarize, statusCountsLabel, gapLabel, groupBySet, NO_FILTERS, parseRoute, safeSearch, signatureRows, derivedRows, statusLabel,
   subjectOfChapter, type ListQuestion, type TopicStats, type VersionRow,
 } from '../web/src/logic.ts';
 
@@ -144,5 +144,27 @@ describe('queue 12 Nov 2026 (PR A)', () => {
 describe('U8 same wording', () => {
   it('counts identical texts', () => {
     expect(sameWording(['a', 'b', 'a', 'a'])).toEqual([3, 1, 3, 3]);
+  });
+});
+
+describe('PR B helpers', () => {
+  it('D8c: clones sit together, biggest group first, with n of size and near-identical wording', () => {
+    const qs = [
+      { question_id: 'Q1', clone_key: 'a', text: 'A lift is on floor 3. It goes down 5 floors.' },
+      { question_id: 'Q2', clone_key: 'b', text: 'Something else' },
+      { question_id: 'Q3', clone_key: 'a', text: 'A lift is on floor 4. It goes down 7 floors.' },
+      { question_id: 'Q4', clone_key: 'a', text: 'The temperature is 2 °C and falls by 6 degrees.' },
+      { question_id: 'Q5', clone_key: null, text: 'No pattern' },
+    ];
+    const g = cloneGroups(qs);
+    expect(g.ordered.map((q) => q.question_id)).toEqual(['Q1', 'Q3', 'Q4', 'Q2', 'Q5']);
+    expect(g.groups).toBe(3);
+    expect(g.info.get('Q3')).toMatchObject({ size: 3, index: 2, nearIdentical: true });
+    expect(g.info.get('Q4')!.nearIdentical).toBe(false);
+    expect(g.info.get('Q2')).toMatchObject({ size: 1, nearIdentical: false });
+  });
+  it('U15: the multi-class label', () => {
+    expect(classesLabel([5, 4, 6, 5])).toBe('Classes 4 · 5 · 6');
+    expect(classesLabel([5])).toBeNull();
   });
 });

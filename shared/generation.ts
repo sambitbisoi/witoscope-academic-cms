@@ -71,6 +71,9 @@ const GENERATE_RULES = [
   '- Every wrong MCQ option is a believable mistake and is tagged; a misconception tag names a misconception ID from the request.',
   '- The correct answer must be exactly one of the options for MCQ and True/False.',
   '- Use Indian context (₹, Indian names) and simple English for the class.',
+  // D8b (Sambit, 12 Nov 2026): the pattern rule, same text as claude/question-bank/generation-prompt.md
+  '- A pattern is the pure maths skeleton plus every constraint that changes the skill (signs, crossing zero, carrying or borrowing, like or unlike denominators, remainders, the position of the unknown). Keep every one of those constraints of the requested pattern.',
+  '- A pattern never includes the story. The story or context (the setting: a lift, a thermometer, a bank balance, or a bare calculation) may change between drafts; the skill may not.',
 ];
 const TAG_RULES = [
   '## Rules for tagging',
