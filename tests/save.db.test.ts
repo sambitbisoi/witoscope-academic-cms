@@ -141,12 +141,33 @@ describe('save path (planSave → cms_apply_save)', () => {
     expect([c.v.version_no, c.v.visual, c.v.text]).toEqual([2, 1, '5/6 − 1/4 = ? (draft edit)']);
   });
 
-  it('in review: editing is blocked; withdraw brings it back to draft', async () => {
-    await status(qid, 2, 'submit');
-    expect((await plan((q) => { q.hints[1] = 'x'; })).blocked).toBe('in_review');
-    const draftPayload = (await (async () => { await status(qid, 2, 'withdraw'); return plan((q) => { q.hints[1] = 'x'; }); })()).payload;
-    await status(qid, 2, 'submit');
-    await expect(apply(draftPayload)).rejects.toThrow(/Only an open draft can be edited in place; v2 is in_review/);
+  it('needs review (D6): a note is optional, the flagged version is edited in place and stays flagged; withdraw clears it', async () => {
+    await status(qid, 2, 'submit', 'check the hint wording');
+    const p = await plan((q) => { q.hints[1] = 'x'; });
+    expect([p.blocked, p.mode]).toEqual([null, 'update_draft']);
+    await apply(p.payload);
+    let c = await current();
+    expect([c.v.version_no, c.v.status]).toEqual([2, 'in_review']);
+    const [queued] = await owner`select note, note_action from cms.cms_review_queue where question_id = ${qid}`;
+    expect([queued!.note, queued!.note_action]).toEqual(['check the hint wording', 'submit']);
+    await status(qid, 2, 'withdraw');
+    c = await current();
+    expect(c.v.status).toBe('draft');
+    await status(qid, 2, 'submit'); // no note needed
+    expect((await current()).v.status).toBe('in_review');
+  });
+
+  it('proposed catalogue items are approved or retired through cms_set_catalogue_status (audited, admin only)', async () => {
+    await owner`insert into cms.cms_misconceptions (misconception_id, description, status) values ('G6-M-ZXZ2', 'test misconception', 'proposed')`;
+    const call = (s: string, uid: string | null = adminId) => as(uid, async (tx) => (await tx`select cms.cms_set_catalogue_status('misconception', 'G6-M-ZXZ2', ${s}, null) as r`)[0]!.r);
+    await expect(call('active', APP_USER_ID)).rejects.toThrow(/Only the CMS admin/);
+    await call('active');
+    await expect(call('active')).rejects.toThrow(/already active/);
+    const [m] = await owner`select status from cms.cms_misconceptions where misconception_id = 'G6-M-ZXZ2'`;
+    const [r] = await owner`select field_diff from cms.cms_reviews where target_id = 'G6-M-ZXZ2' order by review_id desc limit 1`;
+    expect([m!.status, r!.field_diff]).toEqual(['active', { status: { before: 'proposed', after: 'active' } }]);
+    await owner`delete from cms.cms_reviews where target_id = 'G6-M-ZXZ2'`;
+    await owner`delete from cms.cms_misconceptions where misconception_id = 'G6-M-ZXZ2'`;
   });
 
   it('reject needs a reason; v1 stays the approved version', async () => {

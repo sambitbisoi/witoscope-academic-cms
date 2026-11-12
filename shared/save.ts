@@ -78,8 +78,10 @@ export function planSave(args: {
   if (change.kind === 'unchanged') return none('No changes to save.');
   let mode: SaveMode;
   let summary: string;
-  if (args.currentStatus === 'in_review') return none(`v${args.baseVersionNo} is in review. Withdraw it to draft before editing.`, 'in_review');
-  if (args.currentStatus === 'draft') {
+  if (args.currentStatus === 'in_review') {
+    // D6 (12 Nov 2026): "Needs review" is a flag on an open version; editing keeps the flag.
+    mode = 'update_draft'; summary = `Update v${args.baseVersionNo} in place; it stays flagged "Needs review".`;
+  } else if (args.currentStatus === 'draft') {
     mode = 'update_draft'; summary = `Update the open draft v${args.baseVersionNo} in place (not reviewed yet).`;
   } else if (change.kind === 'typo' && args.currentStatus === 'approved') {
     mode = 'typo_fix'; summary = `Typo fix: same version v${args.baseVersionNo}, stays approved; logged with before and after.`;
