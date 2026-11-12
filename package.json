@@ -23,7 +23,10 @@
     "check:originality": "tsx scripts/check-originality.ts",
     "import:book": "tsx scripts/import-book.ts",
     "dev:files": "tsx scripts/dev-files.ts",
-    "rehash": "tsx scripts/rehash.ts"
+    "rehash": "tsx scripts/rehash.ts",
+    "import:proposals": "tsx scripts/import-proposals.ts",
+    "stage:pipeline": "tsx scripts/stage-pipeline.ts",
+    "import:figures": "tsx scripts/import-figures.ts"
   },
   "devDependencies": {
     "@types/node": "22.9.0",

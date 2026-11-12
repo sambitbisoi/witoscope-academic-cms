@@ -9,3 +9,4 @@ web/.vite/
 .r2-local/
 .dev-access/
 .wrangler/
+.local-import/
