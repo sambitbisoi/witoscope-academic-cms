@@ -2,6 +2,18 @@
 
 Changes to real (non-test) data that Sambit approved, with what was done and where the audit trail is.
 
+## 12 Nov 2026: NCERT Class 5 and Class 6 Math imported — LOCAL ONLY
+
+**Request (Sambit, 12 Nov 2026):** import NCERT Class 5 (Maths Mela ch 1–15) and Class 6 (Ganita Prakash ch 1–10) Math into the **local** CMS for review; the real project only after his OK. **The real project was not touched.**
+
+| Where | What | Audit trail |
+|---|---|---|
+| Local only | Migration 0018: catalogue status `proposed`, table `cms_catalogue_proposals` | `cms_schema_migrations` |
+| Local only | 232 concepts, 132 misconceptions, 302 typical sets, 769 patterns as **proposed** (1 pattern, MP0872, not imported: no Achievers row ACH-MC32-5 in the topic workbook) | `cms_imports` kind `proposals` |
+| Local only | 2,685 book item citations (citations only; `db:verify` passes) | `cms_imports` kind `book` |
+| Local only | 2,118 questions as **draft** (of 2,200): 77 near-copies blocked, 4 blocked by the missing ACH-MC32-5, 1 skipped (MC19-0001: key already used by the worked example) | `cms_imports` kind `chapter`, `cms_originality_checks` |
+| Local only | 814 figure PNGs in `.r2-local/cms-sources/figures/` | `cms_imports` kind `figures` |
+
 ## 10 Nov 2026: Question Attributes v11 loaded (rules, gold set)
 
 **Approval (Sambit, 10 Nov 2026):** "v11: go ahead. Lift the v10 lock, load v11 rules alongside v10, apply the 16 gold value changes as new gold versions and the 13 use changes in cms_gold_meta, add G1-013 with its concept and typical set, make the generator follow the loaded rule version, and exclude the 13 test-to-prompt questions from model-check scores. Local first, then the real project."
