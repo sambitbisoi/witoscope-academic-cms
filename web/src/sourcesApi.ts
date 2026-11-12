@@ -117,7 +117,7 @@ export async function sourceItems(refIds: string[]) {
 }
 
 /** The latest local originality check of a version (citations and scores only). */
-export interface OriginalityCheck { checked_at: string; result: 'clear' | 'flagged' | 'near_copy' | 'no_sources'; similarity: number | null; same_numbers: boolean; closest_ref: string | null; missing: string[] }
+export interface OriginalityCheck { checked_at: string; result: 'clear' | 'flagged' | 'near_copy' | 'no_sources'; similarity: number | null; same_numbers: boolean; closest_ref: string | null; missing: string[]; field?: string | null }
 /** Latest check per version, for several versions (e.g. a Generate run's drafts). */
 export async function latestOriginalityMany(versionIds: number[]): Promise<Map<number, OriginalityCheck>> {
   if (!versionIds.length) return new Map();
@@ -128,7 +128,7 @@ export async function latestOriginalityMany(versionIds: number[]): Promise<Map<n
   return m;
 }
 export async function latestOriginality(versionId: number): Promise<OriginalityCheck | null> {
-  const rows = must<OriginalityCheck[]>(await supabase.from('cms_originality_checks').select('checked_at, result, similarity, same_numbers, closest_ref, missing')
+  const rows = must<OriginalityCheck[]>(await supabase.from('cms_originality_checks').select('checked_at, result, similarity, same_numbers, closest_ref, missing, field')
     .eq('version_id', versionId).order('check_id', { ascending: false }).limit(1));
   return rows[0] ?? null;
 }

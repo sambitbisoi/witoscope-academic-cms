@@ -239,7 +239,7 @@ describe('chapter importer', () => {
     const body = JSON.stringify(f, null, 2);
     writeFileSync(p, body);
     const rep: Record<string, unknown> = {
-      file_schema: 'cms-originality/1.1', tool: 'check-originality 2', chapter_file_sha256: createHash('sha256').update(body).digest('hex'),
+      file_schema: 'cms-originality/1.2', tool: 'check-originality 3', chapter_file_sha256: createHash('sha256').update(body).digest('hex'),
       chapter_id: 'MC98', checked_at: '2026-11-10T06:00:00.000Z', threshold: 0.6, near_copy_threshold: 0.85, checked: [{ source_id: 'NCERT-fegp101', pages: 'pdf 1–12' }], missing: [],
       questions: f.questions.map((q) => ({ key: q.key, result: 'flagged', similarity: 0.72, same_numbers: false, closest_ref: 'NCERT-fegp101 p5' })),
     };

@@ -24,8 +24,9 @@ export function readOriginality(absChapterFile: string, fileHash: string): { rep
   const problems: Problem[] = [];
   if (rep.missing.length) problems.push({ level: 'warning', key: 'file', message: `originality: no file on this Mac for ${rep.missing.join(', ')}; those sources were not checked` });
   for (const q of rep.questions) {
-    if (q.result === 'near_copy') problems.push({ level: 'error', key: q.key, message: `near-copy of a book: ${q.closest_ref} (similarity ${q.similarity}${q.same_numbers ? ', same numbers in the same order' : ''}); rewrite it with new wording and numbers` });
-    if (q.result === 'flagged') problems.push({ level: 'warning', key: q.key, message: `close to a book: ${q.closest_ref} (similarity ${q.similarity}${q.same_numbers ? ', same numbers' : ''}); check it is original before approving` });
+    const where = q.field && q.field !== 'text' ? ` (in the ${q.field})` : '';
+    if (q.result === 'near_copy') problems.push({ level: 'error', key: q.key, message: `near-copy of a book${where}: ${q.closest_ref} (similarity ${q.similarity}${q.same_numbers ? ', same numbers in the same order' : ''}); rewrite it with new wording and numbers` });
+    if (q.result === 'flagged') problems.push({ level: 'warning', key: q.key, message: `close to a book${where}: ${q.closest_ref} (similarity ${q.similarity}${q.same_numbers ? ', same numbers' : ''}); check it is original before approving` });
   }
   return { report: rep, problems };
 }
