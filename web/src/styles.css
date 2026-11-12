@@ -400,3 +400,20 @@ table.map-table .gap { color: var(--warn); }
 .class-badge { display: inline-block; min-width: 20px; text-align: center; font-size: 0.75rem; font-weight: 600; padding: 1px 6px; margin-right: 4px; border-radius: 4px; background: var(--chip); color: var(--text); text-decoration: none; }
 .class-badge:hover { background: var(--multi-bg); }
 main.wide .filters select.chapter-select { max-width: 360px; }
+/* D5: curriculum forms */
+.curriculum-actions { display: flex; gap: 4px; margin: -4px 0 8px -10px; }
+.curriculum-form { margin: 8px 0 14px; }
+.curriculum-form .tag.retired { background: var(--err-bg); color: var(--error); }
+.curriculum-form .tag.proposed { background: var(--proposed-bg); color: var(--proposed); }
+.links-edit { display: flex; flex-direction: column; gap: 6px; border-top: 1px solid var(--row-line); padding-top: 8px; }
+.jump-row.three { grid-template-columns: 120px 150px 1fr auto; }
+.history { border-top: 1px solid var(--row-line); padding-top: 8px; margin-top: 4px; }
+.editor-actions { align-items: center; }
+textarea:disabled, input:disabled, select:disabled { background: var(--subtle); color: var(--muted); }
+.curriculum-actions.top { margin: 0; gap: 8px; }
+.curriculum-actions.top button.secondary { margin-top: 0; }
+.tabs.inline { border-bottom: none; margin: 0 0 0 16px; }
+.owner-line { margin: -6px 0 10px; }
+table.map-table tr.retired td { opacity: 0.55; }
+table.map-table tr.warn-row td:first-child { box-shadow: inset 3px 0 0 var(--warn); }
+.gap { color: var(--warn); }

@@ -12,7 +12,7 @@ const must = <T>(r: { data: T | null; error: { message: string } | null }): T =>
 export interface ChapterSource {
   chapter_id: string; page_from: number | null; page_to: number | null; source_id: string; kind: 'pdf' | 'scanned_pdf' | 'web';
   title: string; publisher: string; class: number | null; url: string | null; page_offset: number;
-  captured_at: string | null; n_items: number; n_items_in_chapter: number;
+  captured_at: string | null; n_items: number; n_items_in_chapter: number; status?: string;
 }
 export interface Jump { jump_id: number; source_id: string; chapter_id: string; label: string; pdf_page: number }
 

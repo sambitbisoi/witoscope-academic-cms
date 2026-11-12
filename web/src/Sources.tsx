@@ -44,7 +44,7 @@ export function SourcesTab({ chapterId, chapterName, cls, topicId }: { chapterId
       {!data && !error && <p className="muted">Loading…</p>}
       {data && data.sources.length === 0 && <p className="muted">No sources for {chapterId} yet.</p>}
       {data && thisTopic && topicCounts && !data.sources.some((s) => topicCounts.has(s.source_id)) && <p className="muted">No source cites {topicId} yet.</p>}
-      {data && sortSources(data.sources, cls).filter((s) => !thisTopic || !topicCounts || topicCounts.has(s.source_id)).map((s) => {
+      {data && sortSources(data.sources.filter((s) => s.status !== 'retired'), cls).filter((s) => !thisTopic || !topicCounts || topicCounts.has(s.source_id)).map((s) => {
         const jumps = data.jumps.filter((j) => j.source_id === s.source_id);
         const link = officialLink(s);
         const printed = (p: number) => p - s.page_offset;

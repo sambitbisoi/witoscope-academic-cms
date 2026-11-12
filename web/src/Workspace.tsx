@@ -5,6 +5,7 @@ import {
   subjectLabel, SUBJECTS, summarize, type Filters, type Subject,
 } from './logic';
 import { EditForm } from './EditForm';
+import { CurriculumForm, type Kind } from './CurriculumForms';
 import { Proposed, QuestionDetail, type ReviewCommand } from './QuestionDetail';
 import { SourcesTab } from './Sources';
 import { chapterSourceCount } from './sourcesApi';
@@ -126,7 +127,7 @@ export function Workspace(r: R) {
             : !r.topic ? <Pick subject={r.subject} cls={r.cls} ch={chapters.find((c) => c.chapter_id === r.ch)} n={data ? data.topics.filter((t) => !r.ch || t.chapter_id === r.ch).length : undefined} />
             : !data ? <p className="muted">Loading…</p>
             : !topic ? <p>Topic {r.topic} isn't in {subjectLabel(r.subject)}{r.cls !== 'all' ? ` class ${r.cls}` : ''}. <a href={browseHash({ ...r, cls: 'all' })}>Look in all classes</a></p>
-            : <TopicView key={topic.topic_id} reload={reload} topic={topic} chapter={data.chapters.find((c) => c.chapter_id === topic.chapter_id)} r={r} go={go} onOrder={setOrder} />}
+            : <TopicView key={topic.topic_id} reload={reload} topic={topic} chapter={data.chapters.find((c) => c.chapter_id === topic.chapter_id)} r={r} go={go} onOrder={setOrder} onChanged={() => setReload((x) => x + 1)} />}
         </section>
         <Handle side="detail" onDrag={(dx) => setPanes({ ...panes, detail: clamp(panes.detail - dx, 320, 900) })} onReset={() => setPanes({ ...panes, detail: PANES.detail })} />
         <aside className="ws-detail" aria-label="Question detail">
@@ -222,7 +223,10 @@ function useOpenGroups(topicId: string, tab: string) {
   return [open, setOpen] as const;
 }
 
-function TopicView({ topic, chapter, r, go, reload, onOrder }: { topic: TopicWithStats; chapter?: Chapter; r: R; go: (p: Partial<R>) => void; reload: number; onOrder: (ids: string[]) => void }) {
+function TopicView({ topic, chapter, r, go, reload, onOrder, onChanged }: { topic: TopicWithStats; chapter?: Chapter; r: R; go: (p: Partial<R>) => void; reload: number; onOrder: (ids: string[]) => void; onChanged: () => void }) {
+  // D5: the add / edit form open on this topic (one at a time)
+  const [form, setForm] = useState<{ kind: Kind; id: string | null; fixed?: Record<string, unknown> } | null>(null);
+  const edit = (kind: Kind, id: string | null, fixed?: Record<string, unknown>) => (e?: { stopPropagation: () => void }) => { e?.stopPropagation(); setForm({ kind, id, fixed }); };
   const [data, setData] = useState<Awaited<ReturnType<typeof topicData>> | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [filters, setFilters] = useState<Filters>(NO_FILTERS);
@@ -291,6 +295,16 @@ function TopicView({ topic, chapter, r, go, reload, onOrder }: { topic: TopicWit
         {topic.sub_skills && <div className="muted small subskills">Sub-skills: {topic.sub_skills.replace(/\s*;\s*\n?/g, '; ')}</div>}
       </div>
 
+      <div className="curriculum-actions small">
+        <button className="link" onClick={edit('topic', topic.topic_id)}>Edit topic</button>
+        <button className="link" onClick={edit('typical_set', null, { topic_id: topic.topic_id })}>+ Question type</button>
+        <button className="link" onClick={edit('pattern', null, { topic_id: topic.topic_id })}>+ Pattern</button>
+        <button className="link" onClick={edit('concept', null, { topic_id: topic.topic_id })}>+ Concept</button>
+      </div>
+      {form && <CurriculumForm key={`${form.kind}-${form.id}`} kind={form.kind} id={form.id} fixed={form.fixed}
+        options={{ typical_set_id: (data?.sets ?? []).map((x) => [x.typical_set_id, `${x.typical_set_id} · ${x.name}`] as [string, string]) }}
+        onDone={(saved) => { setForm(null); if (saved) onChanged(); }} />}
+
       <div role="tablist" className="tabs">
         <button role="tab" aria-selected={r.tab === 'types'} className={r.tab === 'types' ? 'on' : ''} onClick={() => go({ tab: 'types' })}>By question type</button>
         <button role="tab" aria-selected={r.tab === 'concepts'} className={r.tab === 'concepts' ? 'on' : ''} onClick={() => go({ tab: 'concepts' })}>
@@ -332,7 +346,8 @@ function TopicView({ topic, chapter, r, go, reload, onOrder }: { topic: TopicWit
           return (
             <Group key={id} open={open.has(id)} onToggle={() => toggle(id)} summary={summarize(all)}
               title={g.setId ? <>{g.setId} · {set?.name ?? ''}<Proposed status={set?.status} /></> : 'No typical set'}
-              extra={g.setId && <a className="small fill-link" href={`#/generate?set=${encodeURIComponent(g.setId)}&topic=${encodeURIComponent(topic.topic_id)}`} onClick={(e) => e.stopPropagation()}>Fill gaps</a>}
+              extra={g.setId && <><a className="small fill-link" href={`#/generate?set=${encodeURIComponent(g.setId)}&topic=${encodeURIComponent(topic.topic_id)}`} onClick={(e) => e.stopPropagation()}>Fill gaps</a>
+                <button className="link small" onClick={edit('typical_set', g.setId)}>Edit</button></>}
               sub={set && <>Class {set.class} · {set.parent_visible ? 'parent-visible' : 'hidden from parents'} · {set.status}
                 {set.instruction_pattern && ` · "${set.instruction_pattern}"`}{main.length ? ` · concepts ${main.join(', ')}` : ''}
                 {set.topic_id && set.topic_id !== topic.topic_id ? ` · set belongs to ${set.topic_id}` : ''}</>}>
@@ -342,7 +357,8 @@ function TopicView({ topic, chapter, r, go, reload, onOrder }: { topic: TopicWit
                 return (
                   <div key={p.patternId ?? 'none'}>
                     {(p.patternId || g.patterns.length > 1) && (
-                      <div className="pattern-head small">{p.patternId ? <>{p.patternId} · {pat?.name ?? ''}<Proposed status={pat?.status} />{pat?.target_misconceptions?.length ? <span className="muted"> · targets {pat.target_misconceptions.join(', ')}</span> : null}</> : <span className="muted">No pattern</span>}</div>
+                      <div className="pattern-head small">{p.patternId ? <>{p.patternId} · {pat?.name ?? ''}<Proposed status={pat?.status} />{pat?.target_misconceptions?.length ? <span className="muted"> · targets {pat.target_misconceptions.join(', ')}</span> : null}
+                        <button className="link small" onClick={edit('pattern', p.patternId)}>Edit</button></> : <span className="muted">No pattern</span>}</div>
                     )}
                     {p.questions.map((q, i) => {
                       const c = clones.get(q.question_id);
@@ -369,7 +385,7 @@ function TopicView({ topic, chapter, r, go, reload, onOrder }: { topic: TopicWit
             const same = sameWording(list.map((x) => x.q.text));
             return (
               <Group key={c.concept_id} open={open.has(c.concept_id)} onToggle={() => toggle(c.concept_id)} summary={summarize(list.map((x) => x.q))}
-                title={<>{c.concept_id} · {c.name}<Proposed status={c.status} /></>}
+                title={<>{c.concept_id} · {c.name}<Proposed status={c.status} /><button className="link small" onClick={edit('concept', c.concept_id)}>Edit</button></>}
                 sub={<>Class {c.class}{c.type ? ` · ${c.type}` : ''} · {c.status}{c.description ? ` · ${c.description}` : ''}</>}>
                 {list.length === 0 ? <div className="muted small pad">No questions use this concept{qs.length < data.questions.length ? ' (with these filters)' : ''}.</div>
                   : list.map(({ q, inv }, i) => {
