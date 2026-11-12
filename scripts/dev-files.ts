@@ -3,7 +3,8 @@
 // Serves functions/_lib/files.ts (the same code as the Pages Function) on
 // http://127.0.0.1:8790 against .r2-local/cms-sources, with a LOCAL Access key:
 // .dev-access/ holds a generated RSA key, its JWKS and a dev token for
-// admin@cms.local.test. The Vite dev server forwards /api here and adds that
+// admin@cms.local.test. Also serves /api/local/… (U3: the Import screen's local mode; scripts/lib/local-import.ts).
+// The Vite dev server forwards /api here and adds that
 // token, playing Cloudflare Access's part. Without the token, requests are refused.
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
@@ -11,6 +12,8 @@ import { join, resolve } from 'node:path';
 import { handleAi } from '../functions/_lib/ai.ts';
 import { handleFiles, type FilesEnv } from '../functions/_lib/files.ts';
 import { fakeAiClient } from './lib/fake-ai.ts';
+import { handleLocal } from './lib/local-import.ts';
+import { verifyAccess } from '../functions/_lib/access.ts';
 import { FolderBucket } from './lib/r2-local.ts';
 
 export const DEV_ACCESS_DIR = resolve(import.meta.dirname, '..', '.dev-access');
@@ -53,7 +56,10 @@ if (import.meta.filename === process.argv[1]) {
       const headers = new Headers();
       for (const [k, v] of Object.entries(req.headers)) if (typeof v === 'string') headers.set(k, v);
       const request = new Request(`http://127.0.0.1:${port}${req.url}`, { method: req.method, headers, body: chunks.length && req.method !== 'GET' && req.method !== 'HEAD' ? Buffer.concat(chunks) : undefined });
-      const r = new URL(request.url).pathname.startsWith('/api/ai/') ? await handleAi(request, env, ai) : await handleFiles(request, env, bucket);
+      const path = new URL(request.url).pathname;
+      // U3: local-mode import (this Mac only; the live site has no /api/local). Same Access check as the file service.
+      const r = path.startsWith('/api/local/') ? await verifyAccess(request, env).then(() => handleLocal(request), () => new Response(JSON.stringify({ error: 'Access required' }), { status: 403 }))
+        : path.startsWith('/api/ai/') ? await handleAi(request, env, ai) : await handleFiles(request, env, bucket);
       res.writeHead(r.status, Object.fromEntries(r.headers));
       res.end(Buffer.from(await r.arrayBuffer()));
     } catch (e) {
