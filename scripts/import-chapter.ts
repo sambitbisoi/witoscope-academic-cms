@@ -326,6 +326,25 @@ export async function runChapter(sql: Sql, filePath: string, mode: 'validate' | 
         }
       }
 
+      // D7 (12 Nov 2026): the import registers the books its questions cite. Every source with a
+      // citation used by an imported question is linked to this chapter (citations only).
+      const cited = [...new Set(file.questions.filter((q) => report.outcomes.some((o) => o.key === q.key && o.result !== 'blocked'))
+        .flatMap((q) => (q.source_refs ?? []).map((r) => r.ref_id)))];
+      if (cited.length) {
+        const srcs = await tx`select distinct source_id from cms.cms_source_items where ref_id in ${tx(cited)}`;
+        let linked = 0;
+        for (const s of srcs) {
+          const r = await tx`insert into cms.cms_source_chapters (source_id, chapter_id) values (${s.source_id}, ${file.chapter_id}) on conflict do nothing returning source_id`;
+          if (r.length) {
+            linked++;
+            await tx`insert into cms.cms_reviews (target, target_table, target_id, action, reason, field_diff, by_label, import_id)
+              values ('catalogue', 'cms_source_chapters', ${`${s.source_id} · ${file.chapter_id}`}, 'edit_catalogue', 'cited by imported questions (D7)',
+                      ${tx.json({ chapter_id: { before: null, after: file.chapter_id } } as never)}, 'importer', ${importId})`;
+          }
+        }
+        if (linked) report.counts.sources_linked = linked;
+      }
+
       for (const o of report.outcomes) report.counts[o.result] = (report.counts[o.result] ?? 0) + 1;
       const done = report.outcomes.filter((o) => o.result !== 'blocked').length;
       report.result = fileErrors.length || done === 0 ? 'failed' : report.counts.blocked ? 'partial' : 'ok';

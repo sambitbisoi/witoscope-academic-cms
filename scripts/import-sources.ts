@@ -10,6 +10,7 @@ import { createHash } from 'node:crypto';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { assertCmsOwner, connect } from './lib/db.ts';
+import { refuseAfterCutover } from './lib/curriculum.ts';
 import { parseNcertSheet, type SourceProblem, type Subject } from './lib/sources.ts';
 import { upsertCatalogue, type UpsertCounts } from './lib/upsert.ts';
 import { readWorkbook } from './lib/xlsx.ts';
@@ -30,6 +31,8 @@ let importId: number | null = null;
 let summary = '';
 try {
   await assertCmsOwner(sql);
+  // D5: after the cut-over, NCERT sources are kept in the CMS (import:book registers new books; Sources → Add a source)
+  await refuseAfterCutover(sql, 'import:sources');
   const topicChapter = new Map((await sql`select topic_id, chapter_id from cms.cms_topics`).map((t) => [t.topic_id as string, t.chapter_id as string]));
   if (!topicChapter.size) throw new Error('no topics in the CMS; run import:topics first');
   const all = { sources: [] as ReturnType<typeof parseNcertSheet>['sources'], links: [] as ReturnType<typeof parseNcertSheet>['links'] };

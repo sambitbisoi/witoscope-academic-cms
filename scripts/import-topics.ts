@@ -11,6 +11,7 @@ import { createHash } from 'node:crypto';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { assertCmsOwner, connect } from './lib/db.ts';
+import { refuseAfterCutover } from './lib/curriculum.ts';
 import { achieversTopics, parseSubject, type Chapter, type Problem, type Strand, type Subject, type Topic } from './lib/topics.ts';
 import { upsertCatalogue } from './lib/upsert.ts';
 import { readWorkbook } from './lib/xlsx.ts';
@@ -66,6 +67,7 @@ class DryRunRollback extends Error {}
 let importId: number | null = null;
 try {
   await assertCmsOwner(sql);
+  await refuseAfterCutover(sql, 'import:topics');
   await sql.begin(async (tx) => {
     const [imp] = await tx`
       insert into cms.cms_imports (kind, file_path, git_commit, file_hash, options)
