@@ -65,8 +65,8 @@ afterAll(async () => {
 });
 
 describe('catalog: every table is locked the same way', () => {
-  it('has 38 tables, all with RLS enabled', async () => {
-    expect(tables).toHaveLength(38);
+  it('has 39 tables, all with RLS enabled', async () => {
+    expect(tables).toHaveLength(39); // 0018 added cms_catalogue_proposals
     const off = await su`select relname from pg_class c join pg_namespace n on n.oid = c.relnamespace
                          where n.nspname = 'cms' and c.relkind = 'r' and not c.relrowsecurity`;
     expect(off).toEqual([]);
@@ -184,7 +184,7 @@ describe('an app user gets zero rows', () => {
       return out;
     });
     expect(Object.values(counts).every((n) => n === 0)).toBe(true);
-    expect(Object.keys(counts)).toHaveLength(37);
+    expect(Object.keys(counts)).toHaveLength(38);
   });
 
   it('SQL: zero rows from every cms view (views are security_invoker)', async () => {
