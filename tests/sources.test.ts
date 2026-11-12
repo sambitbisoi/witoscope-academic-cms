@@ -97,3 +97,20 @@ describe('book-chapter files (D3)', () => {
     expect(parseBook(dup, topics).problems.map((x) => x.message)).toContain('ref_id appears twice');
   });
 });
+
+describe('source-mapping tabs (12 Nov 2026)', () => {
+  it('keep book · class · chapter · topic → master topic IDs; drop evidence, notes and scan paths', async () => {
+    const { mappingRows } = await import('../scripts/lib/sources.ts');
+    const sheets = new Map([
+      ['NCERT (CBSE)', [{ row: 2, values: { 'S.No': 1, Grade: 1, 'NCERT Book': 'Joyful Mathematics', 'Chapter No': 1, 'Chapter (NCERT title)': 'Finding the Furry Cat!', Topic: 'Positional words', Basis: 'Derived from content', 'Evidence (from chapter text)': 'BOOK TEXT', 'Source PDF': 'https://ncert.nic.in/textbook/pdf/aejm101.pdf', 'Master Topic ID(s)': 'MT0092, MT0093' } }]],
+      ['DAV', [{ row: 2, values: { 'S.No': 1, Grade: 1, Chapter: 'Comparison', 'Evidence (OCR text, verbatim incl. OCR errors)': 'OCR', Note: 'n', 'Source scan': 'DAV Math/x.pdf', 'Master Topic ID(s)': 'MT0001' } }]],
+      ['IMO Olympiad (SOF)', [{ row: 2, values: { Grade: 1, Topic: 'Patterns', 'Notes / Inferred?': 'x', 'Master Topic ID(s)': 'MT0088' } }]],
+      ['Judgment Log', [{ row: 2, values: { a: 1 } }]],
+    ]) as never;
+    const r = mappingRows('math', sheets);
+    expect(r.rows.map((x) => [x.sheet, x.topic_ids])).toEqual([['NCERT (CBSE)', ['MT0092', 'MT0093']], ['DAV', ['MT0001']], ['IMO Olympiad (SOF)', ['MT0088']]]);
+    expect(r.rows[0]!.cells.map(([h]) => h)).toEqual(['S.No', 'Grade', 'NCERT Book', 'Chapter No', 'Chapter (NCERT title)', 'Topic', 'Basis', 'Source PDF', 'Master Topic ID(s)']);
+    expect(JSON.stringify(r.rows)).not.toMatch(/BOOK TEXT|OCR|DAV Math|Inferred/);
+    expect(r.dropped.DAV).toEqual(['Evidence (OCR text, verbatim incl. OCR errors)', 'Note', 'Source scan']);
+  });
+});

@@ -320,10 +320,29 @@ export async function runChapter(sql: Sql, filePath: string, mode: 'validate' | 
           const [v] = await tx`select version_id from cms.cms_question_versions where question_id = ${o.question_id} and version_no = ${o.version}`;
           await tx`insert into cms.cms_originality_checks ${tx({
             version_id: v!.version_id, checked_at: orig.report.checked_at, result: r.result, similarity: r.similarity, same_numbers: r.same_numbers,
-            closest_ref: r.closest_ref, checked: tx.json(orig.report.checked as never), missing: tx.json(orig.report.missing as never),
+            closest_ref: r.closest_ref, field: r.field ?? null, checked: tx.json(orig.report.checked as never), missing: tx.json(orig.report.missing as never),
             threshold: orig.report.threshold, near_copy_threshold: orig.report.near_copy_threshold, tool: orig.report.tool, import_id: importId,
           } as never)}`;
         }
+      }
+
+      // D7 (12 Nov 2026): the import registers the books its questions cite. Every source with a
+      // citation used by an imported question is linked to this chapter (citations only).
+      const cited = [...new Set(file.questions.filter((q) => report.outcomes.some((o) => o.key === q.key && o.result !== 'blocked'))
+        .flatMap((q) => (q.source_refs ?? []).map((r) => r.ref_id)))];
+      if (cited.length) {
+        const srcs = await tx`select distinct source_id from cms.cms_source_items where ref_id in ${tx(cited)}`;
+        let linked = 0;
+        for (const s of srcs) {
+          const r = await tx`insert into cms.cms_source_chapters (source_id, chapter_id) values (${s.source_id}, ${file.chapter_id}) on conflict do nothing returning source_id`;
+          if (r.length) {
+            linked++;
+            await tx`insert into cms.cms_reviews (target, target_table, target_id, action, reason, field_diff, by_label, import_id)
+              values ('catalogue', 'cms_source_chapters', ${`${s.source_id} · ${file.chapter_id}`}, 'edit_catalogue', 'cited by imported questions (D7)',
+                      ${tx.json({ chapter_id: { before: null, after: file.chapter_id } } as never)}, 'importer', ${importId})`;
+          }
+        }
+        if (linked) report.counts.sources_linked = linked;
       }
 
       for (const o of report.outcomes) report.counts[o.result] = (report.counts[o.result] ?? 0) + 1;

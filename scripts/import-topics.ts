@@ -1,4 +1,4 @@
-// npm run import:topics [-- --dry-run] [--math <xlsx>] [--science <xlsx>] [--english <xlsx>]
+// npm run import:topics [-- --dry-run [--list]] [--math <xlsx>] [--science <xlsx>] [--english <xlsx>]
 //
 // Loads the master topic lists into cms_strands, cms_chapters and cms_topics,
 // plus one ACH-<chapter>-<class> Achievers row per chapter and class.
@@ -11,6 +11,7 @@ import { createHash } from 'node:crypto';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { assertCmsOwner, connect } from './lib/db.ts';
+import { refuseAfterCutover } from './lib/curriculum.ts';
 import { achieversTopics, parseSubject, type Chapter, type Problem, type Strand, type Subject, type Topic } from './lib/topics.ts';
 import { upsertCatalogue } from './lib/upsert.ts';
 import { readWorkbook } from './lib/xlsx.ts';
@@ -61,11 +62,14 @@ type Counts = Record<string, { inserted: number; updated: number; unchanged: num
 const counts: Counts = {};
 const notes: Problem[] = [];
 
+type Listing = { newChapters: string[]; newTopics: string[]; changed: { table: string; id: string; action: string; diff: Record<string, { before: unknown; after: unknown }> }[] };
+let listing: Listing | null = null;
 const sql = connect();
 class DryRunRollback extends Error {}
 let importId: number | null = null;
 try {
   await assertCmsOwner(sql);
+  await refuseAfterCutover(sql, 'import:topics');
   await sql.begin(async (tx) => {
     const [imp] = await tx`
       insert into cms.cms_imports (kind, file_path, git_commit, file_hash, options)
@@ -82,6 +86,10 @@ try {
       notes.push(...r.notes.map((n) => ({ ...n, message: n.message.replace('not in the source', 'not in the workbook') })));
     }
 
+    const before = args.includes('--list') ? {
+      chapters: new Set((await tx`select chapter_id from cms.cms_chapters`).map((r) => r.chapter_id as string)),
+      topics: new Set((await tx`select topic_id from cms.cms_topics`).map((r) => r.topic_id as string)),
+    } : null;
     // `tx(\`cms.${table}\`)` is postgres.js identifier escaping: "cms"."cms_x".
     await upsert('cms_strands', 'strand_id', strands);
     await upsert('cms_chapters', 'chapter_id', chapters);
@@ -92,6 +100,14 @@ try {
       update cms.cms_imports
       set finished_at = now(), result = 'ok', counts = ${tx.json(counts)}, error_report = ${tx.json(report as never)}
       where import_id = ${importId}`;
+    if (before) {
+      // --list: every new row and every changed field, for review before the real import
+      const newCh = chapters.filter((c) => !before.chapters.has(c.chapter_id));
+      const newT = allTopics.filter((t) => !before.topics.has(t.topic_id));
+      const changed = await tx`select target_table, target_id, action, field_diff from cms.cms_reviews where import_id = ${importId} order by target_table, target_id`;
+      listing = { newChapters: newCh.map((c) => `${c.chapter_id} ${c.name}`), newTopics: newT.map((t) => `${t.topic_id} · ${t.chapter_id} · class ${t.class} · ${t.name}`),
+        changed: changed.map((c) => ({ table: c.target_table as string, id: c.target_id as string, action: c.action as string, diff: c.field_diff as Record<string, { before: unknown; after: unknown }> })) };
+    }
     if (dryRun) throw new DryRunRollback();
   });
   if (errors.length) {
@@ -115,6 +131,14 @@ if (errors.length) {
   for (const [t, c] of Object.entries(counts)) {
     console.log(`  ${t.padEnd(13)} +${c.inserted} new · ${c.updated} updated · ${c.unchanged} unchanged${c.missing_from_workbook ? ` · ${c.missing_from_workbook} not in workbook` : ''}`);
   }
+}
+const L = listing as Listing | null;
+if (L) {
+  const show = (v: unknown) => (v === null || v === undefined ? '—' : typeof v === 'string' ? v.replace(/\s+/g, ' ') : JSON.stringify(v));
+  console.log(`\nNew chapters (${L.newChapters.length}):`); for (const c of L.newChapters) console.log(`  + ${c}`);
+  console.log(`New topics (${L.newTopics.length}):`); for (const t of L.newTopics) console.log(`  + ${t}`);
+  console.log(`Changed rows (${L.changed.length}):`);
+  for (const c of L.changed) console.log(`  ~ ${c.table.replace('cms_', '')} ${c.id}${c.action !== 'edit_catalogue' ? ` (${c.action})` : ''}: ${Object.entries(c.diff).map(([k, d]) => `${k}: ${show(d.before)} → ${show(d.after)}`).join(' | ')}`);
 }
 if (warnings.length) {
   console.log(`\n${warnings.length} warning(s):`);

@@ -65,8 +65,8 @@ afterAll(async () => {
 });
 
 describe('catalog: every table is locked the same way', () => {
-  it('has 42 tables, all with RLS enabled', async () => {
-    expect(tables).toHaveLength(42); // 0018 added cms_catalogue_proposals
+  it('has 43 tables, all with RLS enabled', async () => {
+    expect(tables).toHaveLength(43); // 0018 added cms_catalogue_proposals
     const off = await su`select relname from pg_class c join pg_namespace n on n.oid = c.relnamespace
                          where n.nspname = 'cms' and c.relkind = 'r' and not c.relrowsecurity`;
     expect(off).toEqual([]);
@@ -114,6 +114,7 @@ describe('catalog: every table is locked the same way', () => {
       { proname: 'cms_is_admin', prosecdef: true, provolatile: 's', proconfig: ['search_path=""'], auth_exec: true, anon_exec: false, public_exec: false },
       { proname: 'cms_record_run', prosecdef: true, provolatile: 'v', proconfig: ['search_path=""'], auth_exec: true, anon_exec: false, public_exec: false },
       { proname: 'cms_retire', prosecdef: true, provolatile: 'v', proconfig: ['search_path=""'], auth_exec: true, anon_exec: false, public_exec: false },
+      { proname: 'cms_save_curriculum', prosecdef: true, provolatile: 'v', proconfig: ['search_path=""'], auth_exec: true, anon_exec: false, public_exec: false },
       { proname: 'cms_save_job', prosecdef: true, provolatile: 'v', proconfig: ['search_path=""'], auth_exec: true, anon_exec: false, public_exec: false },
       { proname: 'cms_set_catalogue_status', prosecdef: true, provolatile: 'v', proconfig: ['search_path=""'], auth_exec: true, anon_exec: false, public_exec: false },
       { proname: 'cms_set_status', prosecdef: true, provolatile: 'v', proconfig: ['search_path=""'], auth_exec: true, anon_exec: false, public_exec: false },
@@ -185,7 +186,7 @@ describe('an app user gets zero rows', () => {
       return out;
     });
     expect(Object.values(counts).every((n) => n === 0)).toBe(true);
-    expect(Object.keys(counts)).toHaveLength(41);
+    expect(Object.keys(counts)).toHaveLength(42);
   });
 
   it('SQL: zero rows from every cms view (views are security_invoker)', async () => {

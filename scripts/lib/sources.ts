@@ -52,3 +52,26 @@ export function parseNcertSheet(subject: Subject, rows: Row[], topicChapter: Map
   }
   return { sources, links, problems };
 }
+
+// ---------------------------------------------------------------- source-mapping tabs (12 Nov 2026)
+/** The workbook tabs that map books, classes and chapters to master topics. */
+export const MAPPING_SHEETS = ['NCERT (CBSE)', 'DAV', 'IXL', 'ISO Olympiad (SOF)', 'IMO Olympiad (SOF)'];
+/** Columns never stored or exported: book text (evidence snippets, OCR), free notes, local scan paths. */
+export const DROPPED_COLUMN = /evidence|^notes?\b|source scan/i;
+export interface MapRow { subject: Subject; sheet: string; row_no: number; cells: [string, string | number | boolean | null][]; topic_ids: string[]; status: 'active' }
+
+export function mappingRows(subject: Subject, sheets: Map<string, Row[]>): { rows: MapRow[]; dropped: Record<string, string[]> } {
+  const rows: MapRow[] = []; const dropped: Record<string, string[]> = {};
+  for (const sheet of MAPPING_SHEETS) {
+    const data = sheets.get(sheet);
+    if (!data) continue;
+    const headers = [...new Set(data.flatMap((r) => Object.keys(r.values)))];
+    dropped[sheet] = headers.filter((h) => DROPPED_COLUMN.test(h));
+    for (const r of data) {
+      const cells = Object.entries(r.values).filter(([h]) => !DROPPED_COLUMN.test(h)) as MapRow['cells'];
+      const ids = Object.entries(r.values).filter(([h]) => /master topic id/i.test(h)).flatMap(([, v]) => String(v ?? '').match(TOPIC_RE) ?? []);
+      rows.push({ subject, sheet, row_no: r.row, cells, topic_ids: [...new Set(ids)], status: 'active' });
+    }
+  }
+  return { rows, dropped };
+}

@@ -13,8 +13,8 @@ let dir = '';
 const example = () => JSON.parse(readFileSync('content/examples/MC19-example.json', 'utf8')
   .replaceAll('MC19', 'MC95').replaceAll('MT0393', 'MT9995').replaceAll('TS-G6-FRAC-ADD-UNLIKE', 'TS-G6-ZV-TEST')
   .replaceAll('G6-M-FRC1', 'G6-M-ZVZ1').replaceAll('G6-FRC-C1', 'G6-ZVZ-C1'));
-const fileWith = (keys: string[]) => {
-  const f = example(); const q0 = f.questions[0]; delete q0.source_refs;
+const fileWith = (keys: string[], keepRefs = false) => {
+  const f = example(); const q0 = f.questions[0]; if (keepRefs) q0.source_refs = [{ ref_id: 'N6-01-004', relation: 'same_idea' }]; else delete q0.source_refs;
   f.questions = keys.map((k, i) => ({ ...structuredClone(q0), key: k, text: `${q0.text} (updates test ${k} ${i})` }));
   return f;
 };
@@ -32,6 +32,8 @@ async function cleanup() {
   await sql`delete from cms.cms_reviews where import_id in (select import_id from cms.cms_imports where chapter_id = 'MC95' or file_path like '%cms-updates-test-%')`;
   await sql`delete from cms.cms_reviews where target_table in ('cms_settings', 'cms_topic_classes') and (target_id like 'SET99%' or target_id like 'MT999%')`;
   await sql`delete from cms.cms_topic_classes where topic_id in ('MT9995', 'MT9994')`;
+  await sql`delete from cms.cms_reviews where target_table = 'cms_source_chapters' and target_id like '% · MC95'`;
+  await sql`delete from cms.cms_source_chapters where chapter_id = 'MC95'`;
   await sql`delete from cms.cms_settings where setting_id like 'SET99%'`;
   await sql`delete from cms.cms_imports where chapter_id = 'MC95' or file_path like '%cms-updates-test-%'`;
   await sql`delete from cms.cms_typical_sets where typical_set_id = 'TS-G6-ZV-TEST'`;
@@ -59,7 +61,7 @@ beforeAll(async () => {
   writeFileSync(join(dir, 'topic_classes.csv'), 'topic_id,class,source,evidence\nMT9995,6,workbook-default,\nMT9995,5,NCERT,test\nMT9995,4,DAV,test\n');
   writeFileSync(join(dir, 'question_levels.csv'), 'file_key,level,source_file,source_field\nMC95-0001,5,x,Book class\nMC95-0002,6,x,Book class\nMC95-0999,4,x,Book class\n');
   writeFileSync(join(dir, 'question_settings.csv'), 'file_key,setting_id,confidence,note\nMC95-0001,SET9902,high,lift story\nMC95-0002,SET9901,medium,\n');
-  writeFileSync(join(dir, 'near_copy_rewrites', 'MC95-C6.json'), JSON.stringify(fileWith(['MC95-0003'])));
+  writeFileSync(join(dir, 'near_copy_rewrites', 'MC95-C6.json'), JSON.stringify(fileWith(['MC95-0003'], true)));
   const pipe = join(tmp, 'NCERT-TEST'); mkdirSync(pipe);
   writeFileSync(join(pipe, 'MC95-C6.json'), JSON.stringify(fileWith(['MC95-0004'])));
   writeFileSync(join(dir, 'key_fixes.csv'), `old_file_key,new_file_key,source_file,reason\nMC95-0004,MC95-0904,${join(pipe, 'MC95-C6.json')},test clash\n`);
@@ -81,11 +83,18 @@ describe('import:updates (queue 12 Nov 2026, PR B)', () => {
     expect(by('question_levels.csv').counts.questions).toEqual({ updated: 2, unchanged: 0, not_in_cms: 1 });
     expect(by('question_settings.csv').counts.questions).toEqual({ updated: 2, unchanged: 0, not_in_cms: 0 });
     expect(by('MC95-0904').result).not.toBe('failed');
-    expect(by('MC95-C6.json').result).not.toBe('failed');
+    expect(by('near_copy_rewrites/MC95-C6.json').result).not.toBe('failed');
     const qs = await sql`select file_key, level, setting_id, setting_confidence from cms.cms_questions where file_key like 'MC95-%' order by file_key`;
     expect(qs.map((q) => [q.file_key, q.level, q.setting_id])).toEqual([['MC95-0001', 5, 'SET9902'], ['MC95-0002', 6, 'SET9901'], ['MC95-0003', null, null], ['MC95-0904', null, null]]);
     const [audit] = await sql`select field_diff from cms.cms_reviews where action = 'import_update' and target_id = (select question_id from cms.cms_questions where file_key = 'MC95-0001') order by review_id limit 1`;
     expect(audit!.field_diff).toEqual({ level: { before: null, after: 5 } });
+  });
+
+  it('D7: a chapter import links the books its questions cite to the chapter (audited)', async () => {
+    const links = await sql`select source_id from cms.cms_source_chapters where chapter_id = 'MC95'`;
+    expect(links.map((l) => l.source_id)).toEqual(['NCERT-fegp101']);
+    const [rev] = await sql`select reason from cms.cms_reviews where target_table = 'cms_source_chapters' and target_id = 'NCERT-fegp101 · MC95'`;
+    expect(rev!.reason).toMatch(/D7/);
   });
 
   it('D3: a question shows in class N when its topic is in N and its level ≤ N', async () => {

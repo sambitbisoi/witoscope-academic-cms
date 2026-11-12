@@ -101,5 +101,10 @@ export async function handleLocal(req: Request): Promise<Response> {
     if (!body.folder || !FOLDER.test(body.folder)) return json(400, { error: 'pick a pipeline folder' });
     try { return json(200, { steps: await run(path, body.folder, Array.isArray(body.files) ? body.files : null) }); } catch (e) { return json(400, { error: (e as Error).message }); }
   }
+  // D5: Export to Excel (the topic workbooks regenerated from the CMS, on this Mac)
+  if (path === 'export' && req.method === 'POST') {
+    const r = await runOne(['scripts/export-topics.ts']);
+    return json(r.code === 0 ? 200 : 500, r.code === 0 ? { output: r.output.replaceAll(homedir(), '~') } : { error: r.output.slice(-2000) });
+  }
   return json(404, { error: 'not found' });
 }
