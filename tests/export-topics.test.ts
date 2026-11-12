@@ -26,3 +26,50 @@ describe('buildSheets', () => {
     expect(by('Achievers').rows[0]![0]).toBe('ACH-MC01-2');
   });
 });
+
+describe('source-mapping tabs in the export', () => {
+  it('written in workbook order with their columns; book-text columns never written', async () => {
+    const { mappingSheets } = await import('../scripts/lib/export-topics.ts');
+    const s = mappingSheets([
+      { sheet: 'DAV', row_no: 3, cells: [['S.No', 2], ['Grade', 1], ['Master Topic ID(s)', 'MT0002']] },
+      { sheet: 'NCERT (CBSE)', row_no: 2, cells: [['S.No', 1], ['Grade', 1], ['Topic', 'Positional words'], ['Evidence (from chapter text)', 'X'], ['Master Topic ID(s)', 'MT0092']] },
+      { sheet: 'DAV', row_no: 2, cells: [['S.No', 1], ['Grade', 1], ['Master Topic ID(s)', 'MT0001']] },
+    ]);
+    expect(s.map((x) => x.name)).toEqual(['NCERT (CBSE)', 'DAV']);
+    expect(s[0]!.columns).toEqual(['S.No', 'Grade', 'Topic', 'Master Topic ID(s)']);
+    expect(s[1]!.rows).toEqual([[1, 1, 'MT0001'], [2, 1, 'MT0002']]);
+  });
+});
+
+describe('per-subject source columns', () => {
+  it('Science has NCERT, DAV, ISO; English IXL, NCERT, DAV', () => {
+    const cols = (s: 'science' | 'grammar') => buildSheets(s, strands, chapters, [], 'x').find((x) => x.name === 'Master Topics')!.columns.filter((c) => c.startsWith('Classes – '));
+    expect(cols('science')).toEqual(['Classes – NCERT', 'Classes – DAV', 'Classes – ISO']);
+    expect(cols('grammar')).toEqual(['Classes – IXL', 'Classes – NCERT', 'Classes – DAV']);
+  });
+});
+
+describe('publish (after the cut-over)', () => {
+  it('archives each original once, then puts the export in place read-only', async () => {
+    const { mkdtempSync, writeFileSync, readFileSync, readdirSync, statSync, mkdirSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const home = mkdtempSync(join(tmpdir(), 'cms-publish-'));
+    const out = join(home, 'out'); mkdirSync(out);
+    for (const d of ['Math', 'Science', 'English']) mkdirSync(join(home, 'WitoScope', 'ContentResearch', d), { recursive: true });
+    const { vi } = await import('vitest');
+    vi.resetModules();
+    vi.doMock('node:os', async (orig) => ({ ...(await orig<typeof import('node:os')>()), homedir: () => home }));
+    const mod = await import('../scripts/export-topics.ts');
+    for (const [s, f] of Object.entries(mod.PIPELINE_PATHS)) { writeFileSync(f, `original ${s}`); writeFileSync(join(out, f.split('/').pop()!), `export ${s}`); }
+    mod.publish(out, '2026-11-12');
+    mod.publish(out, '2026-11-13');
+    const m = mod.PIPELINE_PATHS.math;
+    expect(readFileSync(m, 'utf8')).toBe('export math');
+    expect(statSync(m).mode & 0o222).toBe(0);
+    const arch = readdirSync(join(m, '..', '_archive'));
+    expect(arch).toEqual(['WitoScope_Math_Topics_Class1-6.final-before-cutover-2026-11-12.xlsx']);
+    expect(readFileSync(join(m, '..', '_archive', arch[0]!), 'utf8')).toBe('original math');
+    vi.doUnmock('node:os');
+  });
+});
