@@ -417,3 +417,13 @@ textarea:disabled, input:disabled, select:disabled { background: var(--subtle); 
 table.map-table tr.retired td { opacity: 0.55; }
 table.map-table tr.warn-row td:first-child { box-shadow: inset 3px 0 0 var(--warn); }
 .gap { color: var(--warn); }
+/* override requests */
+.override-row { display: flex; gap: 12px; justify-content: space-between; padding: 10px 14px; border-top: 1px solid var(--row-line); flex-wrap: wrap; }
+.override-row.approved, .override-row.declined { opacity: 0.75; }
+.override-main { flex: 1; min-width: 300px; display: flex; flex-direction: column; gap: 3px; }
+.override-actions { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.override-actions input { width: 260px; height: 34px; padding: 0 10px; }
+.book-check-inline.near_copy { color: var(--error); }
+.book-check-inline.flagged { color: var(--warn); }
+.pill.attention:not(.on) { border-color: var(--warn); color: var(--warn); }
+.qtext-wrap { color: var(--text); }

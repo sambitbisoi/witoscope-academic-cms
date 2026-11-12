@@ -61,7 +61,7 @@ try {
   check('cms_is_admin: security definer, stable, empty search_path, authenticated only',
     !!adm && adm.prosecdef && adm.provolatile === 's' && adm.proconfig?.[0] === 'search_path=""' && adm.auth_exec && !adm.anon_exec);
 
-  const DEFINER_ALLOWED = ['cms_is_admin', 'cms_apply_save', 'cms_set_status', 'cms_retire', 'cms_record_run', 'cms_save_job', 'cms_set_catalogue_status', 'cms_save_curriculum'];
+  const DEFINER_ALLOWED = ['cms_is_admin', 'cms_apply_save', 'cms_set_status', 'cms_retire', 'cms_record_run', 'cms_save_job', 'cms_set_catalogue_status', 'cms_save_curriculum', 'cms_decide_override'];
   const badFns = fns.filter((f) => f.proconfig?.[0] !== 'search_path=""' || f.anon_exec || (f.prosecdef && !DEFINER_ALLOWED.includes(f.proname)));
   check('every cms function: empty search_path, no anon access; only the listed functions run as owner', badFns.length === 0, badFns.map((f) => f.proname).join(', '));
 

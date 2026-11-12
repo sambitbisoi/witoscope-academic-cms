@@ -46,3 +46,12 @@ describe('file contracts', () => {
     expect(c.images).toEqual(['A.png']);
   });
 });
+
+describe('override_requests.csv', () => {
+  it('needs a key, a field and a reason; a pair once', async () => {
+    const { parseOverrides } = await import('../scripts/lib/updates.ts');
+    const r = parseOverrides('file_key,field,reason\nMC36-0101,options,"the standard turn fractions, which the skill is about"\nMC36-0101,options,"twice listed here"\nbad,options,x\nMC10-0008,options,short\n');
+    expect(r.rows.map((x) => [x.file_key, x.field])).toEqual([['MC36-0101', 'options']]);
+    expect(r.problems.map((p) => p.level)).toEqual(['warning', 'error', 'error']);
+  });
+});

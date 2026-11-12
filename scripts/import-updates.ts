@@ -18,14 +18,15 @@ import type postgres from 'postgres';
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, isAbsolute, join, resolve } from 'node:path';
-import { checkChapterFile, reportPathFor } from './check-originality.ts';
+import { checkChapterFile, checkStoredVersion, reportPathFor } from './check-originality.ts';
+import { ORIGINALITY_TOOL } from '../shared/originality.ts';
 import { runChapter, type ChapterReport } from './import-chapter.ts';
 import { assertCmsOwner, connect, targetUrl } from './lib/db.ts';
 import { hasPdftotext } from './lib/local-books.ts';
 import { FolderBucket } from './lib/r2-local.ts';
 import { upsertCatalogue } from './lib/upsert.ts';
 import {
-  convertPipelineFile, parseKeyFixes, parseLevels, parseQuestionSettings, parseSettings, parseTopicClasses, type Problem,
+  convertPipelineFile, parseKeyFixes, parseOverrides, parseLevels, parseQuestionSettings, parseSettings, parseTopicClasses, type Problem,
 } from './lib/updates.ts';
 import { PIPELINE_ROOT } from './lib/local-import.ts';
 import { STAGE_DIR } from './stage-pipeline.ts';
@@ -180,16 +181,70 @@ async function keyFixes(sql: Sql, dir: string, dryRun: boolean): Promise<FileRes
 }
 const dirnameOf = (p: string) => p.slice(0, p.lastIndexOf('/'));
 
+/**
+ * override_requests.csv (Sambit, 12 Nov 2026): never applied automatically. For each row the
+ * question's current version gets the every-field originality check (recorded), and a PENDING
+ * override request is filed for Sambit to approve or decline one by one in the Review tab.
+ */
+async function overrides(sql: Sql, dir: string, dryRun: boolean): Promise<FileResult> {
+  const path = join(dir, 'override_requests.csv');
+  const raw = readFileSync(path);
+  const p = parseOverrides(raw.toString('utf8'));
+  let out: FileResult = { file: path, importId: null, result: 'failed', counts: {}, problems: [] };
+  const cache = new Map();
+  // the checks read the book PDFs on this Mac; do them before the transaction
+  const checked: { row: typeof p.rows[number]; q: { question_id: string; version_id: string; version_no: number; chapter_id: string } | null; c: Awaited<ReturnType<typeof checkStoredVersion>> | null }[] = [];
+  for (const row of p.rows) {
+    const [q] = await sql`select q.question_id, v.version_id, v.version_no, q.chapter_id from cms.cms_questions q
+      join cms.cms_question_versions v on v.question_id = q.question_id and v.version_no = q.current_version where q.file_key = ${row.file_key}`;
+    checked.push({ row, q: (q as never) ?? null, c: q ? await checkStoredVersion(sql, Number(q.version_id), q.chapter_id, cache) : null });
+  }
+  try {
+    await sql.begin(async (tx) => {
+      const importId = await begin(tx, path, raw, dryRun);
+      const problems: Problem[] = [...p.problems];
+      const counts = { requested: 0, already_requested: 0, not_needed: 0, not_in_cms: 0, checks_recorded: 0 };
+      for (const { row, q, c } of checked) {
+        const where = `${row.file_key} ${row.field}`;
+        if (!q || !c) { counts.not_in_cms++; problems.push({ level: 'warning', where, message: 'not in the CMS; skipped' }); continue; }
+        const r = c.result;
+        const [chk] = await tx`insert into cms.cms_originality_checks ${tx({
+          version_id: q.version_id, checked_at: new Date().toISOString(), result: r.result, similarity: r.similarity, same_numbers: r.same_numbers,
+          closest_ref: r.closest_ref, field: r.field, checked: tx.json(c.checked as never), missing: tx.json(c.missing as never),
+          threshold: c.th, near_copy_threshold: c.near, tool: ORIGINALITY_TOOL, import_id: importId } as never)} returning check_id`;
+        counts.checks_recorded++;
+        const hit = r.fields.find((f) => f.field === row.field || f.field.startsWith(`${row.field} (`));
+        if (!hit || hit.result !== 'near_copy') {
+          counts.not_needed++;
+          problems.push({ level: 'warning', where, message: `the check finds no near-copy in ${row.field} (${hit ? hit.result : 'clear'}); no request filed` });
+          continue;
+        }
+        if (r.result === 'near_copy' && r.field !== hit.field) problems.push({ level: 'warning', where, message: `the question is also a near-copy in ${r.field}; an override of ${row.field} alone will not let it be approved` });
+        const [have] = await tx`select request_id, status from cms.cms_override_requests where version_id = ${q.version_id} and field = ${hit.field} order by request_id desc limit 1`;
+        if (have) { counts.already_requested++; continue; }
+        await tx`insert into cms.cms_override_requests (question_id, version_id, file_key, field, reason, requested_by, check_id, import_id)
+          values (${q.question_id}, ${q.version_id}, ${row.file_key}, ${hit.field}, ${row.reason}, 'Math data thread', ${chk!.check_id}, ${importId})`;
+        counts.requested++;
+      }
+      out = { file: path, importId, result: await finish(tx, importId, counts, problems), counts, problems };
+      if (dryRun) throw new DryRun();
+    });
+  } catch (e) { if (!(e instanceof DryRun)) throw e; }
+  return out;
+}
+
 export async function runUpdates(sql: Sql, dir = UPDATES_DIR, opts: { dryRun?: boolean; only?: string[] } = {}): Promise<FileResult[]> {
   const host = new URL(targetUrl()).hostname;
   if (host !== '127.0.0.1' && host !== 'localhost') throw new Error('import:updates runs against the local database only (queue 12 Nov 2026).');
   const want = (n: string) => !opts.only?.length || opts.only.includes(n);
   const out: FileResult[] = [];
   const has = (n: string) => want(n) && existsSync(join(dir, n));
-  if ((has('key_fixes.csv') || has('near_copy_rewrites')) && !hasPdftotext()) throw new Error('pdftotext is needed for the originality check (brew install poppler).');
+  if ((has('key_fixes.csv') || has('near_copy_rewrites') || has('override_requests.csv')) && !hasPdftotext()) throw new Error('pdftotext is needed for the originality check (brew install poppler).');
   for (const name of CSV_ORDER.filter((n) => BEFORE_REWRITES.includes(n))) if (has(name)) out.push(await csvFile(sql, dir, name, !!opts.dryRun));
   if (has('key_fixes.csv')) { out.push(await csvFile(sql, dir, 'key_fixes.csv', !!opts.dryRun)); out.push(...await keyFixes(sql, dir, !!opts.dryRun)); }
   if (has('near_copy_rewrites')) out.push(...await rewrites(sql, dir, !!opts.dryRun));
+  // after the rewrites, so the requests attach to each question's latest version
+  if (has('override_requests.csv')) out.push(await overrides(sql, dir, !!opts.dryRun));
   for (const name of CSV_ORDER.filter((n) => !BEFORE_REWRITES.includes(n) && n !== 'key_fixes.csv')) if (has(name)) out.push(await csvFile(sql, dir, name, !!opts.dryRun));
   return out;
 }

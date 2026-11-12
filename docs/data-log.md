@@ -2,6 +2,17 @@
 
 Changes to real (non-test) data that Sambit approved, with what was done and where the audit trail is.
 
+## 12 Nov 2026: batch 2 of the Math rewrites + override requests — LOCAL ONLY
+
+**Request (Sambit, 12 Nov 2026):** import batch 2 (field-only rewrites after the every-field originality check) and file `override_requests.csv` as pending overrides for him to approve one by one. Backup before: `pg_dump` of schema `cms` (session scratchpad). The real project was not touched.
+
+| What | Count | Audit trail |
+|---|---|---|
+| Rewrites (`near_copy_rewrites/`, 69 files, 607 questions) | **541 drafts replaced** (unreviewed drafts are replaced in place, logged), 66 unchanged; every-field check: 534 clear, 73 close (the known question-text warnings), 0 near-copy; 214 figure PNGs written to the local file store (192 are unchanged copies) | one `chapter` import per file, `cms_originality_checks` (tool `check-originality 3`) |
+| Question settings | 521 updated: 3 confidence changes, 518 note text only; no setting changed | `cms_imports` #2009, `import_update` rows |
+| Levels, topic classes, settings catalogue, key fix | unchanged | `cms_imports` kind `updates`, #1935–2009 for the whole run |
+| `override_requests.csv` | 7 rows → every-field check recorded for each current version (all 7 near-copy in `options`, by the numbers rule) and **7 PENDING override requests** (`cms_override_requests`, migration 0026). Nothing approved | #2007 |
+
 ## 12 Nov 2026: curriculum cut-over (D5) — LOCAL ONLY
 
 **Approval (Sambit, 12 Nov 2026):** "OK for the cut-over. Run the six steps in order." The real project was not touched. Backup before: `pg_dump` of schema `cms` (session scratchpad).

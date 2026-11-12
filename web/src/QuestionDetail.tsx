@@ -244,7 +244,11 @@ function Refs({ refs }: { refs: QuestionDetailData['refs'] }) {
 /** The local originality check of this version (run on Sambit's Mac; citations and scores only). */
 function BookCheck({ versionId, bank }: { versionId: number; bank: string }) {
   const [c, setC] = useState<OriginalityCheck | null | undefined>(undefined);
-  useEffect(() => { latestOriginality(versionId).then(setC).catch(() => setC(undefined)); }, [versionId]);
+  const [ov, setOv] = useState<{ field: string; status: string; reason: string }[]>([]);
+  useEffect(() => {
+    latestOriginality(versionId).then(setC).catch(() => setC(undefined));
+    supabase.from('cms_override_requests').select('field, status, reason').eq('version_id', versionId).order('request_id').then(({ data }) => setOv(data ?? []));
+  }, [versionId]);
   if (bank === 'gold' || c === undefined) return null; // best-effort; gold is never published
   const when = c ? new Date(c.checked_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '';
   return (
@@ -254,6 +258,7 @@ function BookCheck({ versionId, bank }: { versionId: number; bank: string }) {
         : c.result === 'near_copy' ? <strong>near-copy{c.field && c.field !== 'text' ? ` (${c.field})` : ''} of {c.closest_ref} (similarity {c.similarity}{c.same_numbers ? ', same numbers in the same order' : ''}; {when}) · rewrite it before approving</strong>
         : c.result === 'flagged' ? <strong>close{c.field && c.field !== 'text' ? ` (${c.field})` : ''} to {c.closest_ref} (similarity {c.similarity}{c.same_numbers ? ', same numbers' : ''}; {when}) · make sure it is original</strong>
         : <span className="muted">no book for this chapter on your Mac ({when})</span>}
+      {ov.map((o, i) => <div key={i}>Override of the {o.field}: <strong>{o.status === 'pending' ? 'requested, waiting for you (Review → Overrides)' : o.status}</strong> <span className="muted">— {o.reason}</span></div>)}
     </div>
   );
 }
@@ -289,8 +294,14 @@ function Actions({ d, onEdit, onChanged, command, onAdvance }: { d: QuestionDeta
   const viaKey = useRef(false);
   const mounted = useRef(Date.now());
   const q = d.question, v = d.version;
-  useEffect(() => { setCheck(null); setOverride(false); latestOriginality(v.version_id).then(setCheck).catch(() => setCheck(null)); }, [v.version_id]);
-  const nearCopy = check?.result === 'near_copy';
+  const [overrides, setOverrides] = useState<{ field: string; status: string }[]>([]);
+  useEffect(() => {
+    setCheck(null); setOverride(false); latestOriginality(v.version_id).then(setCheck).catch(() => setCheck(null));
+    supabase.from('cms_override_requests').select('field, status').eq('version_id', v.version_id).then(({ data }) => setOverrides(data ?? []));
+  }, [v.version_id]);
+  // an override approved one by one in Review → Overrides covers the near-copy (the SQL checks it too)
+  const overridden = overrides.some((o) => o.status === 'approved' && (!check?.field || o.field === check.field));
+  const nearCopy = check?.result === 'near_copy' && !overridden;
   const open = v.status === 'draft' || v.status === 'in_review';
   const run = async (f: () => Promise<unknown>) => {
     setBusy(true); setErr(null);

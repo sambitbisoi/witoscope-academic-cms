@@ -100,6 +100,33 @@ export async function reviewQueue() {
     await supabase.from('cms_review_queue').select('*').order('noted_at', { ascending: true, nullsFirst: true }).order('version_created_at').limit(1000));
 }
 
+/** Override requests (Sambit, 12 Nov 2026): pending first, then decided; with the recorded check. */
+export interface OverrideRequest { request_id: number; question_id: string; version_id: number; file_key: string | null; field: string; reason: string; requested_by: string;
+  status: 'pending' | 'approved' | 'declined'; decided_at: string | null; decision_note: string | null; created_at: string;
+  check: { result: string; similarity: number | null; same_numbers: boolean; closest_ref: string | null; field: string | null } | null;
+  version_no: number | null; current_version: number | null; chapter_id: string | null; topic_id: string | null; class: number | null; text: string | null }
+export async function overrideRequests(): Promise<OverrideRequest[]> {
+  const reqs = must<(Omit<OverrideRequest, 'check' | 'version_no' | 'current_version' | 'chapter_id' | 'topic_id' | 'class' | 'text'> & { check_id: number | null })[]>(
+    await supabase.from('cms_override_requests').select('*').order('status', { ascending: false }).order('request_id').limit(500));
+  if (!reqs.length) return [];
+  const ids = [...new Set(reqs.map((r) => r.question_id))];
+  const [checks, qs, vs] = await Promise.all([
+    supabase.from('cms_originality_checks').select('check_id, result, similarity, same_numbers, closest_ref, field').in('check_id', reqs.map((r) => r.check_id).filter((x): x is number => !!x)),
+    supabase.from('cms_question_list').select('question_id, current_version, chapter_id, topic_id, class, text').in('question_id', ids),
+    supabase.from('cms_question_versions').select('version_id, version_no').in('version_id', reqs.map((r) => r.version_id)),
+  ]);
+  const C = must<{ check_id: number; result: string; similarity: number | null; same_numbers: boolean; closest_ref: string | null; field: string | null }[]>(checks);
+  const Q = must<{ question_id: string; current_version: number; chapter_id: string; topic_id: string; class: number; text: string }[]>(qs);
+  const V = must<{ version_id: number; version_no: number }[]>(vs);
+  return reqs.map((r) => {
+    const q = Q.find((x) => x.question_id === r.question_id);
+    return { ...r, check: C.find((c) => c.check_id === r.check_id) ?? null, version_no: V.find((v) => v.version_id === r.version_id)?.version_no ?? null,
+      current_version: q?.current_version ?? null, chapter_id: q?.chapter_id ?? null, topic_id: q?.topic_id ?? null, class: q?.class ?? null, text: q?.text ?? null };
+  });
+}
+export const decideOverride = (requestId: number, approve: boolean, note: string | null) =>
+  rpc('cms_decide_override', { p_request_id: requestId, p_approve: approve, p_note: note });
+
 /** U2: approve (active), retire, or put back to proposed, a catalogue item (audited). */
 export const setCatalogueStatus = (kind: 'concept' | 'misconception' | 'typical_set' | 'pattern', id: string, status: 'active' | 'retired' | 'proposed', reason: string | null) =>
   rpc('cms_set_catalogue_status', { p_kind: kind, p_id: id, p_status: status, p_reason: reason });

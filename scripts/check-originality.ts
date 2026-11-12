@@ -58,7 +58,7 @@ export async function chapterCorpus(sql: Sql, chapterId: string, pdfs = indexPdf
   return { corpus: corpus(pages, items) as Corpus, checked, missing };
 }
 
-async function thresholds(sql: Sql) {
+export async function thresholds(sql: Sql) {
   const rows = await sql`select key, value from cms.cms_config where key in ('similarity_threshold', 'originality_near_copy')`;
   const v = (k: string, d: number) => Number(rows.find((r) => r.key === k)?.value ?? d);
   return { th: v('similarity_threshold', 0.6), near: v('originality_near_copy', NEAR_COPY_DEFAULT) };
@@ -74,6 +74,15 @@ export async function checkChapterFile(sql: Sql, path: string): Promise<Original
     chapter_id: file.chapter_id, checked_at: new Date().toISOString(), threshold: th, near_copy_threshold: near, checked, missing,
     questions: file.questions.map((q) => ({ key: q.key, ...checkQuestion(q, c, th, near) })),
   };
+}
+
+/** The every-field check of one stored version (corpus cached per chapter by the caller). */
+export async function checkStoredVersion(sql: Sql, versionId: number, chapterId: string, cache = new Map<string, Awaited<ReturnType<typeof chapterCorpus>>>()) {
+  const { th, near } = await thresholds(sql);
+  if (!cache.has(chapterId)) cache.set(chapterId, await chapterCorpus(sql, chapterId));
+  const { corpus: c, checked, missing } = cache.get(chapterId)!;
+  const q = questionFromDb(await loadBundle(sql, versionId));
+  return { result: checkQuestion(q, c, th, near), checked, missing, th, near };
 }
 
 interface DbRow { version_id: string; question_id: string; version_no: number; chapter_id: string; file_key: string | null; status: string }

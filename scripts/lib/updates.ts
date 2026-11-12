@@ -168,3 +168,22 @@ export function convertPipelineFile(data: { patterns?: unknown; questions?: { ke
   }
   return { file: out, notes, images };
 }
+
+export interface OverrideRow { file_key: string; field: string; reason: string }
+/** override_requests.csv: file_key, field, reason (a near-copy field whose values are standard and cannot change). */
+export function parseOverrides(text: string, file = 'override_requests.csv') {
+  const problems: Problem[] = []; const rows: OverrideRow[] = []; const seen = new Set<string>();
+  const csv = parseCsv(text);
+  if (!needColumns(file, csv.header, ['file_key', 'field', 'reason'], problems)) return { rows, problems };
+  for (const { line, values: v } of csv.rows) {
+    const where = `${file} line ${line}`;
+    if (!FILE_KEY.test(v.file_key ?? '')) { problems.push({ level: 'error', where, message: `file_key "${v.file_key}" is not a question key` }); continue; }
+    if (!v.field) { problems.push({ level: 'error', where, message: `${v.file_key}: field is empty` }); continue; }
+    if (!v.reason || v.reason.length < 10) { problems.push({ level: 'error', where, message: `${v.file_key}: an override needs a reason` }); continue; }
+    const k = `${v.file_key}|${v.field}`;
+    if (seen.has(k)) { problems.push({ level: 'warning', where, message: `${v.file_key} ${v.field} is listed twice; the first row is used` }); continue; }
+    seen.add(k);
+    rows.push({ file_key: v.file_key!, field: v.field, reason: v.reason });
+  }
+  return { rows, problems };
+}
