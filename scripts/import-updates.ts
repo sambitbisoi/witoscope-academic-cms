@@ -33,7 +33,9 @@ import { STAGE_DIR } from './stage-pipeline.ts';
 type Sql = ReturnType<typeof connect>;
 type Tx = postgres.TransactionSql;
 export const UPDATES_DIR = resolve(process.env.CMS_UPDATES_DIR ?? join(homedir(), 'WitoScope', 'ContentResearch', 'CMS-updates'));
+// Order (data thread README, 12 Nov 2026): key fixes and rewrites come before levels and settings, which already use the new keys.
 const CSV_ORDER = ['settings_catalogue.csv', 'topic_classes.csv', 'question_levels.csv', 'question_settings.csv', 'key_fixes.csv'] as const;
+const BEFORE_REWRITES = ['settings_catalogue.csv', 'topic_classes.csv'];
 class DryRun extends Error {}
 
 export interface FileResult { file: string; importId: number | null; result: 'ok' | 'partial' | 'failed'; counts: Record<string, unknown>; problems: Problem[] }
@@ -90,7 +92,7 @@ async function csvFile(sql: Sql, dir: string, name: typeof CSV_ORDER[number], dr
       } else if (name === 'topic_classes.csv') {
         const p = parseTopicClasses(text); problems.push(...p.problems);
         const topics = new Map((await tx`select topic_id, class from cms.cms_topics`).map((r) => [r.topic_id as string, r.class as number]));
-        const rows = p.rows.filter((r) => topics.has(r.topic_id) || (problems.push({ level: 'error', where: name, message: `${r.topic_id} is not in the topic lists` }), false));
+        const rows = p.rows.filter((r) => topics.has(r.topic_id) || (problems.push({ level: 'warning', where: name, message: `${r.topic_id} class ${r.class} skipped: ${r.topic_id} is not in the CMS yet (it comes with the next import:topics)` }), false));
         const homeOnly = rows.filter((r) => topics.get(r.topic_id) === r.class).length;
         const u = await upsertCatalogue(tx, 'cms_topic_classes', ['topic_id', 'class'], rows as never[], { byLabel: 'updates importer', importId, reason });
         counts.cms_topic_classes = { ...u.counts, home_class_rows: homeOnly, topics: new Set(rows.map((r) => r.topic_id)).size,
@@ -160,7 +162,9 @@ async function keyFixes(sql: Sql, dir: string, dryRun: boolean): Promise<FileRes
     const problems: Problem[] = [];
     const [have] = await sql`select question_id from cms.cms_questions where file_key = ${fx.new_file_key}`;
     if (have) { out.push({ file: `${fx.old_file_key} → ${fx.new_file_key}`, importId: null, result: 'ok', counts: { already_in_cms: have.question_id }, problems }); continue; }
-    const src = isAbsolute(fx.source_file) ? fx.source_file : [join(PIPELINE_ROOT, fx.source_file), join(dir, fx.source_file)].find((x) => existsSync(x)) ?? join(PIPELINE_ROOT, fx.source_file);
+    // source_file may be relative to QuestionBank, to ContentResearch (e.g. QuestionBank/NCERT-C6-07/…) or to the updates folder
+    const src = isAbsolute(fx.source_file) ? fx.source_file
+      : [join(PIPELINE_ROOT, fx.source_file), join(PIPELINE_ROOT, '..', fx.source_file), join(dir, fx.source_file)].find((x) => existsSync(x)) ?? join(PIPELINE_ROOT, fx.source_file);
     if (!existsSync(src)) { out.push({ file: `${fx.old_file_key} → ${fx.new_file_key}`, importId: null, result: 'failed', counts: {}, problems: [{ level: 'error', where: fx.source_file, message: 'source file not found' }] }); continue; }
     const data = JSON.parse(readFileSync(src, 'utf8')) as { questions: { key: string }[] } & Record<string, unknown>;
     const q = data.questions.find((x) => x.key === fx.old_file_key);
@@ -181,11 +185,12 @@ export async function runUpdates(sql: Sql, dir = UPDATES_DIR, opts: { dryRun?: b
   if (host !== '127.0.0.1' && host !== 'localhost') throw new Error('import:updates runs against the local database only (queue 12 Nov 2026).');
   const want = (n: string) => !opts.only?.length || opts.only.includes(n);
   const out: FileResult[] = [];
-  for (const name of CSV_ORDER) if (want(name) && existsSync(join(dir, name))) out.push(await csvFile(sql, dir, name, !!opts.dryRun));
-  const needsBooks = (want('key_fixes.csv') && existsSync(join(dir, 'key_fixes.csv'))) || (want('near_copy_rewrites') && existsSync(join(dir, 'near_copy_rewrites')));
-  if (needsBooks && !hasPdftotext()) throw new Error('pdftotext is needed for the originality check (brew install poppler).');
-  if (want('key_fixes.csv') && existsSync(join(dir, 'key_fixes.csv'))) out.push(...await keyFixes(sql, dir, !!opts.dryRun));
-  if (want('near_copy_rewrites') && existsSync(join(dir, 'near_copy_rewrites'))) out.push(...await rewrites(sql, dir, !!opts.dryRun));
+  const has = (n: string) => want(n) && existsSync(join(dir, n));
+  if ((has('key_fixes.csv') || has('near_copy_rewrites')) && !hasPdftotext()) throw new Error('pdftotext is needed for the originality check (brew install poppler).');
+  for (const name of CSV_ORDER.filter((n) => BEFORE_REWRITES.includes(n))) if (has(name)) out.push(await csvFile(sql, dir, name, !!opts.dryRun));
+  if (has('key_fixes.csv')) { out.push(await csvFile(sql, dir, 'key_fixes.csv', !!opts.dryRun)); out.push(...await keyFixes(sql, dir, !!opts.dryRun)); }
+  if (has('near_copy_rewrites')) out.push(...await rewrites(sql, dir, !!opts.dryRun));
+  for (const name of CSV_ORDER.filter((n) => !BEFORE_REWRITES.includes(n) && n !== 'key_fixes.csv')) if (has(name)) out.push(await csvFile(sql, dir, name, !!opts.dryRun));
   return out;
 }
 

@@ -21,6 +21,8 @@ describe('file contracts', () => {
     const r = parseTopicClasses('topic_id,class,source,evidence\nMT0429,5,NCERT,Maths Mela ch 3\nMT0429,6,DAV,\nMT0429,6,DAV,\nMT0001,9,NCERT,\nMT0002,3,Other,\n');
     expect(r.rows.map((x) => `${x.topic_id}/${x.class}`)).toEqual(['MT0429/5', 'MT0429/6', 'MT0002/3']);
     expect(r.problems.map((p) => p.level)).toEqual(['warning', 'error', 'warning']);
+    const m = parseTopicClasses('topic_id,class,source,evidence\nMT0001,1,workbook-default; DAV; IMO,x\n');
+    expect([m.rows[0]!.source, m.problems]).toEqual(['workbook-default; DAV; IMO', []]);
   });
   it('settings_catalogue: SET ids, unique names, Bare expected', () => {
     const r = parseSettings('setting_id,name,description,theme,status\nSET001,Lift,Floors up and down,Motion,proposed\nSET002,lift,dup,,\nSET003,Thermometer,,Weather,\n');
