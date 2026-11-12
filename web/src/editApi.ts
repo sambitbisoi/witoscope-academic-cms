@@ -93,13 +93,16 @@ export const setStatus = (questionId: string, versionNo: number, action: 'submit
   rpc('cms_set_status', { p_question_id: questionId, p_version_no: versionNo, p_action: action, p_reason: reason, p_override_near_copy: overrideNearCopy });
 export const retire = (questionId: string, doRetire: boolean, reason: string) => rpc('cms_retire', { p_question_id: questionId, p_retire: doRetire, p_reason: reason });
 
-/** Drafts and in-review versions, oldest first (the review queue). */
+/** The Review tab (D6): flagged ("Needs review") and rejected current versions with their latest note, oldest first. */
 export async function reviewQueue() {
-  return must<{ question_id: string; bank: string; subject: string; chapter_id: string; topic_id: string; class: number; status: string; text: string;
-    current_version: number; approved_version: number | null; version_created_at: string; math_difficulty: string | null }[]>(
-    await supabase.from('cms_question_list').select('question_id, bank, subject, chapter_id, topic_id, class, status, text, current_version, approved_version, version_created_at, math_difficulty')
-      .in('status', ['draft', 'in_review']).is('retired_at', null).order('version_created_at').limit(500));
+  return must<{ question_id: string; bank: string; subject: string; file_key: string | null; chapter_id: string; topic_id: string; class: number; status: string; text: string;
+    current_version: number; approved_version: number | null; version_created_at: string; math_difficulty: string | null; note: string | null; note_action: string | null; noted_at: string | null }[]>(
+    await supabase.from('cms_review_queue').select('*').order('noted_at', { ascending: true, nullsFirst: true }).order('version_created_at').limit(1000));
 }
+
+/** U2: approve (active), retire, or put back to proposed, a catalogue item (audited). */
+export const setCatalogueStatus = (kind: 'concept' | 'misconception' | 'typical_set' | 'pattern', id: string, status: 'active' | 'retired' | 'proposed', reason: string | null) =>
+  rpc('cms_set_catalogue_status', { p_kind: kind, p_id: id, p_status: status, p_reason: reason });
 
 /** The current rule version (cms_config current_rule_version, else the newest loaded): what Generate,
  *  tagging, the model check and the editor use. */

@@ -13,8 +13,9 @@ export const subjectOfChapter = (chapterId: string): Subject =>
 // ---------------------------------------------------------------- routes (hash)
 export type Route =
   | { name: 'home'; grade: string | null }
-  | { name: 'browse'; subject: Subject; cls: string; topic: string | null; q: string | null; v: number | null; tab: 'types' | 'concepts' | 'sources'; edit: boolean }
+  | { name: 'browse'; subject: Subject; cls: string; ch: string | null; topic: string | null; q: string | null; v: number | null; tab: 'types' | 'concepts' | 'sources'; edit: boolean }
   | { name: 'review' }
+  | { name: 'proposed'; kind: string | null }
   | { name: 'generate'; q: string | null; set: string | null; topic: string | null }
   | { name: 'run'; id: number }
   | { name: 'model-check'; id: number | null }
@@ -31,21 +32,24 @@ export function parseRoute(hash: string): Route {
   if (p[0] === 'imports') return p[1] && /^\d+$/.test(p[1]) ? { name: 'import', id: Number(p[1]) } : { name: 'imports' };
   if (p[0] === 'q' && p[1]) return { name: 'question', id: p[1] };
   if (p[0] === 'review') return { name: 'review' };
+  if (p[0] === 'proposed') return { name: 'proposed', kind: qs.get('kind') };
   if (p[0] === 'generate') return { name: 'generate', q: qs.get('q'), set: qs.get('set'), topic: qs.get('topic') };
   if (p[0] === 'run' && p[1] && /^\d+$/.test(p[1])) return { name: 'run', id: Number(p[1]) };
   if (p[0] === 'model-check') return { name: 'model-check', id: p[1] && /^\d+$/.test(p[1]) ? Number(p[1]) : null };
   if (p[0] === 'browse' && SUBJECTS.some((s) => s.id === p[1])) {
     const cls = p[2] && /^([1-6]|all)$/.test(p[2]) ? p[2] : 'all';
     const v = qs.get('v');
-    return { name: 'browse', subject: p[1] as Subject, cls, topic: p[3] ?? null, q: qs.get('q'), v: v && /^\d+$/.test(v) ? Number(v) : null,
+    const ch = qs.get('ch');
+    return { name: 'browse', subject: p[1] as Subject, cls, ch: ch && /^(MC|SC|GC)[0-9]{2}$/.test(ch) ? ch : null, topic: p[3] ?? null, q: qs.get('q'), v: v && /^\d+$/.test(v) ? Number(v) : null,
       tab: qs.get('tab') === 'concepts' ? 'concepts' : qs.get('tab') === 'sources' ? 'sources' : 'types', edit: qs.get('edit') === '1' };
   }
   return { name: 'notfound' };
 }
 
-export function browseHash(r: { subject: string; cls: string; topic?: string | null; q?: string | null; v?: number | null; tab?: string; edit?: boolean }): string {
+export function browseHash(r: { subject: string; cls: string; ch?: string | null; topic?: string | null; q?: string | null; v?: number | null; tab?: string; edit?: boolean }): string {
   const parts = ['#/browse', r.subject, r.cls, ...(r.topic ? [encodeURIComponent(r.topic)] : [])].join('/');
   const qs = new URLSearchParams();
+  if (r.ch) qs.set('ch', r.ch);
   if (r.q) qs.set('q', r.q);
   if (r.v) qs.set('v', String(r.v));
   if (r.tab && r.tab !== 'types') qs.set('tab', r.tab);
@@ -57,10 +61,13 @@ export function browseHash(r: { subject: string; cls: string; topic?: string | n
 // ---------------------------------------------------------------- coverage
 export interface TopicStats { n_questions: number; n_simple: number; n_medium: number; n_complex: number; n_gold: number; n_draft: number; n_in_review: number; n_approved: number }
 
-/** "3 Qs · S1 M2 C0" — production questions only; gold is shown separately. */
+/** "Simple 1 · Medium 2 · Complex 0" (U6: spelled out, not S1 M2 C0). */
+export const mixLabel = (m: { simple: number; medium: number; complex: number }) => `Simple ${m.simple} · Medium ${m.medium} · Complex ${m.complex}`;
+
+/** "3 Qs · Simple 1 · Medium 2 · Complex 0" — production questions only; gold is shown separately. */
 export function countsLabel(s: TopicStats | undefined): string {
   if (!s || s.n_questions === 0) return s?.n_gold ? `no questions · gold ${s.n_gold}` : 'no questions';
-  const base = `${s.n_questions} Q${s.n_questions === 1 ? '' : 's'} · S${s.n_simple} M${s.n_medium} C${s.n_complex}`;
+  const base = `${s.n_questions} Q${s.n_questions === 1 ? '' : 's'} · ${mixLabel({ simple: s.n_simple, medium: s.n_medium, complex: s.n_complex })}`;
   return s.n_gold ? `${base} · gold ${s.n_gold}` : base;
 }
 
@@ -75,7 +82,8 @@ export function gapLabel(s: TopicStats | undefined): string | null {
 }
 
 // ---------------------------------------------------------------- status
-export const STATUS_LABEL: Record<string, string> = { draft: 'Draft', in_review: 'In review', approved: 'Approved', rejected: 'Rejected' };
+/** D6 (12 Nov 2026): in_review is shown as "Needs review" (a flag with an optional note). */
+export const STATUS_LABEL: Record<string, string> = { draft: 'Draft', in_review: 'Needs review', approved: 'Approved', rejected: 'Rejected' };
 export function statusLabel(q: { status: string; current_version: number; approved_version: number | null; retired_at?: string | null }): string {
   if (q.retired_at) return 'Retired';
   const cur = STATUS_LABEL[q.status] ?? q.status;
@@ -181,3 +189,49 @@ export const TAG_LABEL: Record<string, string> = {
 
 /** Keep only characters that are safe inside a PostgREST or() filter. */
 export const safeSearch = (s: string) => s.replace(/[^\p{L}\p{N}\s\-_.]/gu, ' ').replace(/\s+/g, ' ').trim().slice(0, 60);
+
+// ---------------------------------------------------------------- U8: rows that look the same
+/**
+ * Row texts that would look identical when cut off: for each text that shares a long
+ * opening with another text in the list, show "…" + the part from where they differ
+ * (backed up to a word start). Texts that are unique early on are returned unchanged.
+ */
+export function distinctTexts(texts: string[], minShared = 40): string[] {
+  const common = (a: string, b: string) => { let i = 0; while (i < a.length && i < b.length && a[i] === b[i]) i++; return i; };
+  return texts.map((t, i) => {
+    let shared = 0;
+    texts.forEach((o, j) => { if (j !== i) shared = Math.max(shared, common(t, o)); });
+    if (shared < minShared || shared >= t.length) return t;
+    let cut = shared;
+    while (cut > 0 && !/\s/.test(t[cut - 1]!)) cut--;
+    const start = Math.max(0, cut - 12);
+    let from = start;
+    while (from > 0 && !/\s/.test(t[from - 1]!)) from--;
+    return `…${t.slice(from)}`;
+  });
+}
+
+/** How many texts in the list have exactly this wording (U8: identical stems differ only in the figure or answer). */
+export const sameWording = (texts: string[]) => { const n = new Map<string, number>(); for (const t of texts) n.set(t, (n.get(t) ?? 0) + 1); return texts.map((t) => n.get(t)!); };
+
+// ---------------------------------------------------------------- U9: concept involvement
+export const INVOLVEMENT: Record<string, { label: string; title: string }> = {
+  '1.0': { label: 'main', title: 'Involvement 1.0: the main concept of the question' },
+  '0.5': { label: 'secondary', title: 'Involvement 0.5: a secondary concept' },
+  '0.2': { label: 'minor', title: 'Involvement 0.2: a minor concept' },
+};
+export const involvementOf = (n: number) => INVOLVEMENT[Number(n).toFixed(1)] ?? { label: Number(n).toFixed(1), title: `Involvement ${n}` };
+
+// ---------------------------------------------------------------- U7: group summaries
+export interface GroupSummary { count: number; simple: number; medium: number; complex: number; byStatus: Record<string, number> }
+export function summarize(qs: Pick<ListQuestion, 'math_difficulty' | 'status' | 'retired_at'>[]): GroupSummary {
+  const s: GroupSummary = { count: qs.length, simple: 0, medium: 0, complex: 0, byStatus: {} };
+  for (const q of qs) {
+    if (q.math_difficulty === 'Simple') s.simple++; else if (q.math_difficulty === 'Medium') s.medium++; else if (q.math_difficulty === 'Complex') s.complex++;
+    const k = q.retired_at ? 'retired' : q.status;
+    s.byStatus[k] = (s.byStatus[k] ?? 0) + 1;
+  }
+  return s;
+}
+export const statusCountsLabel = (b: Record<string, number>) =>
+  ['approved', 'in_review', 'draft', 'rejected', 'retired'].filter((k) => b[k]).map((k) => `${b[k]} ${(STATUS_LABEL[k] ?? 'Retired').toLowerCase()}`).join(' · ');

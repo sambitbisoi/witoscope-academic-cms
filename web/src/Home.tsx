@@ -34,17 +34,19 @@ export function Home({ grade: routeGrade }: { grade: string | null }) {
   const pick = (g: string) => { try { localStorage.setItem(GRADE_KEY, g); } catch { /* best effort */ } location.hash = g === 'all' ? '#/' : `#/?grade=${g}`; };
 
   if (error) return <main><p className="error">Couldn't load the overview: {error}</p></main>;
-  const queue = SUBJECTS.map((s) => ({ s, n: (stats ?? []).filter((r) => r.subject === s.id).reduce((n, r) => n + r.draft + r.in_review, 0) }));
+  // D6: the Review tab holds "Needs review" and rejected questions; drafts are reviewed in Browse.
+  const queue = SUBJECTS.map((s) => ({ s, n: (stats ?? []).filter((r) => r.subject === s.id).reduce((n, r) => n + r.in_review, 0) }));
   const queueTotal = queue.reduce((n, x) => n + x.n, 0);
+  const drafts = (stats ?? []).reduce((n, r) => n + r.draft, 0);
 
   return (
     <main className="wide">
       <section className="work-strip" aria-label="Today's work">
         <div className="card">
-          <div className="eyebrow">Review queue</div>
-          <div className="big">{stats ? queueTotal : '…'} <span className="muted">draft{queueTotal === 1 ? '' : 's'} waiting</span></div>
-          <div className="muted small">{queue.map((x) => `${x.s.label} ${x.n}`).join(' · ')}</div>
-          {queueTotal > 0 && <a className="button-link" href="#/review">Open the review queue</a>}
+          <div className="eyebrow">Review</div>
+          <div className="big">{stats ? queueTotal : '…'} <span className="muted">need{queueTotal === 1 ? 's' : ''} review</span></div>
+          <div className="muted small">{queue.map((x) => `${x.s.label} ${x.n}`).join(' · ')}{stats ? ` · ${drafts} draft${drafts === 1 ? '' : 's'} not reviewed yet (review them in Browse)` : ''}</div>
+          <a className="button-link" href="#/review">Open Review (flagged and rejected)</a>
         </div>
         <div className="card">
           <div className="eyebrow">Jobs</div>
@@ -80,7 +82,7 @@ export function Home({ grade: routeGrade }: { grade: string | null }) {
                   <>
                     {/* chapters span classes, so per-class chapter counts can't be added up for "All" */}
                     <div className="muted">{classes} · {grade !== 'all' ? `${t.chapters} chapters · ` : ''}{t.topics} topics</div>
-                    <div>{t.questions === 0 ? <span className="muted">Questions: none yet</span> : <>Questions: {t.approved} approved · {t.draft} draft{t.in_review ? ` · ${t.in_review} in review` : ''}</>}</div>
+                    <div>{t.questions === 0 ? <span className="muted">Questions: none yet</span> : <>Questions: {t.approved} approved · {t.draft} draft{t.in_review ? ` · ${t.in_review} need review` : ''}</>}</div>
                     {t.gold > 0 && <div className="muted small">Gold set: {t.gold} (reference only)</div>}
                     {t.questions > 0 && <span className="chip">All 3 levels: {t.topics_all_levels} of {t.topics_with_questions} topics with questions</span>}
                   </>
