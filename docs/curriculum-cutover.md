@@ -1,6 +1,6 @@
 # Curriculum cut-over: the CMS takes over from the topic workbooks (D5)
 
-Agreed by Sambit on 12 Nov 2026 (`docs/queue-2026-11-12.md`, D5, option B). This is a one-time switch. **Nothing here has been run.** Claude stops before step 4 and waits for Sambit's OK.
+Agreed by Sambit on 12 Nov 2026 (`docs/queue-2026-11-12.md`, D5, option B). This is a one-time switch. **Done locally on 12 Nov 2026 with Sambit's OK** (steps 1–5 below; log in `docs/data-log.md`). The real project (step 6) still needs its own OK.
 
 ## Before and after
 
