@@ -1,4 +1,4 @@
-# Question-generation threads: guidance (10 Nov 2026, rule restated and v11)
+# Question-generation threads: guidance (10 Nov 2026, rule restated and v11; pattern rule 12 Nov 2026)
 
 This guidance is for the Claude chat threads that write chapter files of WitoScope questions. Paste it, or point the thread to it, at the start of every thread.
 
@@ -34,6 +34,12 @@ The thread works from citations and our own catalogue instead. If a thread is ev
 4. **Record the citation, not the content.** Put the item you were asked to cover in `source_refs`, e.g. `{ "ref_id": "N6-01-004", "relation": "same_idea" }`. Use `modelled_on` only if the question follows that item's idea closely, still in new words and numbers. No field may hold book text, including `author_notes`, `tagging.why` and patterns' `notes`.
 5. **Tag with the current rules (v11)** and set `attribute_version: "v11"`. Follow the shape of `content/examples/MC19-example.json`, which is tagged under v10. Under v11, Inhibition counts only if a child who does NOT hold the misconception would still feel the pull, and WorkingMemory 4–5 only when the question rules out paper.
 6. **Output one chapter file** (`file_schema: cms-chapter/1.0`, see `schema/chapter.schema.json`), with `generated.by`, `thread` and `model` filled in.
+
+## Patterns and settings (Sambit, 12 Nov 2026)
+
+- **A pattern is the pure maths skeleton plus every constraint that changes the skill**: the operation and its order, signs, crossing zero, carrying or borrowing, like or unlike denominators, remainders, the unknown's position, the number range when it changes the method. Two questions with the same pattern practise exactly the same skill.
+- **A pattern never includes the story.** The story or context is the question's **setting** (Lift, Thermometer, Bank balance, … or **Bare** for no story), chosen from the settings catalogue: one setting per question. Changing only the setting or the names keeps the pattern; changing a skill-changing constraint (e.g. now crossing zero) is a different pattern.
+- Questions with the same pattern, the same signature and the same concepts are **clones** (interchangeable). The CMS groups them; vary the setting and the numbers across clones, not the skill.
 
 ## Before every import (Sambit, on the Mac)
 
