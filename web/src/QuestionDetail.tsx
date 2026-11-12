@@ -114,7 +114,7 @@ export function QuestionDetail({ id, versionNo, onVersion, onEdit, reloadKey = 0
             {[...d.concepts].sort((a, b) => a.part_label.localeCompare(b.part_label) || b.involvement - a.involvement).map((c) => (
               <li key={`${c.part_label}-${c.concept_id}`}>
                 {c.part_label && <span className="muted">({c.part_label}) </span>}
-                <span className="mono">{c.concept_id}</span> {d.conceptNames.get(c.concept_id)?.name ?? ''} <span className="muted">× {Number(c.involvement).toFixed(1)}</span>
+                <span className="mono">{c.concept_id}</span> {d.conceptNames.get(c.concept_id)?.name ?? ''}<Proposed status={d.conceptNames.get(c.concept_id)?.status} /> <span className="muted">× {Number(c.involvement).toFixed(1)}</span>
               </li>
             ))}
           </ul>
@@ -125,8 +125,8 @@ export function QuestionDetail({ id, versionNo, onVersion, onEdit, reloadKey = 0
         <KV one rows={[
           { k: 'Topic', v: d.topic ? `${d.topic.topic_id} · ${d.topic.name}` : (v.topic_id ?? q.topic_id) },
           { k: 'Class', v: `${q.class}${q.class_override ? ` (shown in class ${q.class_override})` : ''}` },
-          { k: 'Typical set', v: d.set ? `${d.set.typical_set_id} · ${d.set.name}` : '—' },
-          { k: 'Pattern', v: d.pattern ? `${d.pattern.pattern_id} · ${d.pattern.name}` : '—' },
+          { k: 'Typical set', v: d.set ? `${d.set.typical_set_id} · ${d.set.name}${d.set.status === 'proposed' ? ' · PROPOSED (not approved)' : ''}` : '—' },
+          { k: 'Pattern', v: d.pattern ? `${d.pattern.pattern_id} · ${d.pattern.name}${d.pattern.status === 'proposed' ? ' · PROPOSED (not approved)' : ''}` : '—' },
           { k: 'Clone batch', v: q.clone_batch_id ?? '—' },
           { k: 'Duration', v: v.duration_s ? `${v.duration_s} s` : '—' },
           ...(q.placement_note ? [{ k: 'Placement note', v: q.placement_note }] : []),
@@ -242,8 +242,8 @@ function Tag({ w, d }: { w: QuestionDetailData['wrong'][number]; d: QuestionDeta
   return (
     <span title={w.why ?? undefined}>
       {TAG_LABEL[w.tag] ?? w.tag}
-      {w.misconception_id && <> · <span className="mono">{w.misconception_id}</span>{m ? ` ${m.description}` : ''}</>}
-      {w.target_concept_id && <> · <span className="mono">{w.target_concept_id}</span>{c ? ` ${c.name}` : ''}</>}
+      {w.misconception_id && <> · <span className="mono">{w.misconception_id}</span>{m ? ` ${m.description}` : ''}<Proposed status={m?.status} /></>}
+      {w.target_concept_id && <> · <span className="mono">{w.target_concept_id}</span>{c ? ` ${c.name}` : ''}<Proposed status={c?.status} /></>}
       {w.why && !m && <span className="muted"> · {w.why}</span>}
     </span>
   );
@@ -337,6 +337,11 @@ function Compare({ id, a, b }: { id: string; a: number; b: number }) {
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return <div className="dsec"><div className="eyebrow">{title}</div>{children}</div>;
+}
+
+/** Catalogue items proposed by the book pipeline (migration 0018): usable as tags, not approved. */
+export function Proposed({ status }: { status?: string | null }) {
+  return status === 'proposed' ? <span className="tag proposed" title="Proposed by the book pipeline; not approved yet">Proposed</span> : null;
 }
 
 function KV({ rows, one }: { rows: { k: string; v: string }[]; one?: boolean }) {

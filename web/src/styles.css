@@ -138,6 +138,7 @@ select.active { border-color: var(--accent); }
 .lvl.Complex { background: #fde7e5; color: var(--error); }
 .qstatus { color: var(--muted); flex: none; min-width: 64px; text-align: right; }
 .tag.gold { background: #fff3d6; color: #8a5a00; margin-left: 6px; }
+.tag.proposed { background: #ece6fb; color: #5b3fb0; font-weight: 600; }
 
 .ws-detail { background: var(--card); border-left: 1px solid var(--line); padding: 18px; overflow: auto; max-height: calc(100vh - 110px); position: sticky; top: 104px; }
 .detail { display: flex; flex-direction: column; gap: 14px; }

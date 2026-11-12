@@ -124,12 +124,12 @@ export async function questionDetail(questionId: string, versionNo: number | nul
   const miscIds = [...new Set(wa.map((w) => w.misconception_id).filter((x): x is string => !!x))];
   const conceptIds = [...new Set([...vc.map((c) => c.concept_id), ...wa.map((w) => w.target_concept_id).filter((x): x is string => !!x)])];
   const [miscs, conceptNames, insight, topic, set, pattern] = await Promise.all([
-    miscIds.length ? supabase.from('cms_misconceptions').select('misconception_id, description, parent_description').in('misconception_id', miscIds) : Promise.resolve({ data: [], error: null }),
-    conceptIds.length ? supabase.from('cms_concepts').select('concept_id, name, class').in('concept_id', conceptIds) : Promise.resolve({ data: [], error: null }),
+    miscIds.length ? supabase.from('cms_misconceptions').select('misconception_id, description, parent_description, status').in('misconception_id', miscIds) : Promise.resolve({ data: [], error: null }),
+    conceptIds.length ? supabase.from('cms_concepts').select('concept_id, name, class, status').in('concept_id', conceptIds) : Promise.resolve({ data: [], error: null }),
     v.insight_id ? supabase.from('cms_insights').select('insight_id, name').eq('insight_id', v.insight_id).maybeSingle() : Promise.resolve({ data: null, error: null }),
     supabase.from('cms_topics').select('topic_id, name, class, chapter_id').eq('topic_id', (v.topic_id ?? q.topic_id) as string).maybeSingle(),
-    (v.typical_set_id ?? q.typical_set_id) ? supabase.from('cms_typical_sets').select('typical_set_id, name').eq('typical_set_id', (v.typical_set_id ?? q.typical_set_id) as string).maybeSingle() : Promise.resolve({ data: null, error: null }),
-    (v.pattern_id ?? q.pattern_id) ? supabase.from('cms_patterns').select('pattern_id, name').eq('pattern_id', (v.pattern_id ?? q.pattern_id) as string).maybeSingle() : Promise.resolve({ data: null, error: null }),
+    (v.typical_set_id ?? q.typical_set_id) ? supabase.from('cms_typical_sets').select('typical_set_id, name, status').eq('typical_set_id', (v.typical_set_id ?? q.typical_set_id) as string).maybeSingle() : Promise.resolve({ data: null, error: null }),
+    (v.pattern_id ?? q.pattern_id) ? supabase.from('cms_patterns').select('pattern_id, name, status').eq('pattern_id', (v.pattern_id ?? q.pattern_id) as string).maybeSingle() : Promise.resolve({ data: null, error: null }),
   ]);
   return {
     question: q as { question_id: string; bank: string; subject: string; file_key: string | null; chapter_id: string; topic_id: string; class: number;
@@ -146,12 +146,12 @@ export async function questionDetail(questionId: string, versionNo: number | nul
     refs: must<{ ref_id: string; relation: string }[]>(refs),
     gold: must<{ use: string; old_qid: string | null; final_reasoning: string | null; review_verdict: string | null; review_notes: string | null } | null>(gold),
     reviews: must<{ review_id: number; target_id: string; action: string; reason: string | null; field_diff: unknown; by_label: string; at: string }[]>(reviews),
-    misconceptions: new Map(must<{ misconception_id: string; description: string; parent_description: string | null }[]>(miscs).map((m) => [m.misconception_id, m])),
-    conceptNames: new Map(must<{ concept_id: string; name: string; class: number }[]>(conceptNames).map((c) => [c.concept_id, c])),
+    misconceptions: new Map(must<{ misconception_id: string; description: string; parent_description: string | null; status: string }[]>(miscs).map((m) => [m.misconception_id, m])),
+    conceptNames: new Map(must<{ concept_id: string; name: string; class: number; status: string }[]>(conceptNames).map((c) => [c.concept_id, c])),
     insightName: (must<{ name: string } | null>(insight))?.name ?? null,
     topic: must<{ topic_id: string; name: string; class: number; chapter_id: string } | null>(topic),
-    set: must<{ typical_set_id: string; name: string } | null>(set),
-    pattern: must<{ pattern_id: string; name: string } | null>(pattern),
+    set: must<{ typical_set_id: string; name: string; status: string } | null>(set),
+    pattern: must<{ pattern_id: string; name: string; status: string } | null>(pattern),
   };
 }
 export type QuestionDetailData = NonNullable<Awaited<ReturnType<typeof questionDetail>>>;
