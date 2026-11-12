@@ -2,6 +2,22 @@
 
 Changes to real (non-test) data that Sambit approved, with what was done and where the audit trail is.
 
+## 12 Nov 2026: Math data thread's CMS-updates imported — LOCAL ONLY
+
+**Request (Sambit, 12 Nov 2026):** run `import:updates` into the local DB and report the counts. **The real project was not touched.** Source: `~/WitoScope/ContentResearch/CMS-updates/` (see its README). Backup before: a `pg_dump` of schema `cms` in the session scratchpad.
+
+| What | Count | Audit trail |
+|---|---|---|
+| Settings catalogue (`cms_settings`) | 41 new, all proposed | `cms_imports` #1472 (kind `updates`) |
+| Topic ↔ classes (`cms_topic_classes`) | 2,671 rows for 1,051 topics (730 in more than one class); the 1 row for MT0516 is waiting for the topic import | #1473 |
+| Key fix MC19-0001 → **MC19-0039** | imported as MQ004668 (originality clear) | #1474–1475 |
+| Near-copy rewrites (32 files) | 86 questions: **77 new** (the blocked near-copies) + **9 drafts replaced** (the follow-up rewrites; unreviewed drafts are replaced in place and logged); all 86 originality **clear**; 20 new figure PNGs in the local file store | one `chapter` import per file |
+| Question levels | 2,196 set (level 5: 1,271 · level 6: 929 in the file); 4 waiting (MC32-0002…0005) | #1508, one `import_update` audit row per question |
+| Question settings | 2,196 set (high 1,632 · medium 498 · low 70 in the file); 4 waiting (MC32) | #1509 |
+| Source-mapping tabs (`cms_source_map`, migration 0024, by `import:sources`) | 4,771 rows (Math 2,403 · Science 1,327 · English 1,041); evidence columns, notes and scan paths left out (`db:verify` checks) | `cms_imports` kind `sources` |
+
+Waiting for the next `import:topics` (Sambit's OK; `docs/curriculum-cutover.md` step 2): MT0516 (+ ACH-MC32-5), its class row, and MC32-0002…0005 with their level and setting.
+
 ## 12 Nov 2026: NCERT Class 5 and Class 6 Math imported — LOCAL ONLY
 
 **Request (Sambit, 12 Nov 2026):** import NCERT Class 5 (Maths Mela ch 1–15) and Class 6 (Ganita Prakash ch 1–10) Math into the **local** CMS for review; the real project only after his OK. **The real project was not touched.**

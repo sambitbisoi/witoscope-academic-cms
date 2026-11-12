@@ -9,7 +9,8 @@ Agreed by Sambit on 12 Nov 2026 (`docs/queue-2026-11-12.md`, D5, option B). This
 | Chapters, topics, Achievers rows | Come from the three workbooks through `npm run import:topics`. The CMS forms show them read-only | Added and edited in the CMS (Curriculum → + Add chapter / + Add topic; Edit topic on the topic screen). `import:topics` refuses to run |
 | NCERT source registry | `npm run import:sources` reads the workbooks' "NCERT (CBSE)" sheets | Kept in the CMS: `import:book` and every chapter import register books and citations (D7); Sources → + Add a citation by hand. `import:sources` refuses to run |
 | Topic classes (D2), prerequisites (D4), concepts, question types, patterns | Already CMS data: editable now | Same |
-| The workbooks | The source | Read-only exports: `npm run export:topics` (or Export to Excel on the Curriculum page, local mode) writes them to `~/WitoScope/ContentResearch/CMS-exports/<date>/` |
+| The workbooks | The source | Read-only exports: `npm run export:topics` (or Export to Excel on the Curriculum page, local mode) writes them to `~/WitoScope/ContentResearch/CMS-exports/<date>/`; `--publish` also puts them at the usual `ContentResearch/{Math,Science,English}/WitoScope_*_Topics_Class1-6.xlsx` paths (read-only) so the pipelines keep working |
+| Source-mapping tabs (NCERT (CBSE), DAV, IXL, ISO / IMO Olympiad) | In the workbooks | In the CMS (`cms_source_map`, loaded by `import:sources`; book · class · chapter · topic → master topic IDs) and written into every export. Evidence columns (book text), notes and scan paths are never stored or exported; the archived final workbooks keep them |
 
 `cms_config.curriculum_owner` (`workbooks` or `cms`) holds the switch. `cms_save_curriculum` and the two importers check it.
 
@@ -18,16 +19,17 @@ Agreed by Sambit on 12 Nov 2026 (`docs/queue-2026-11-12.md`, D5, option B). This
 | # | Step | Who | Command / where | Must show |
 |---|---|---|---|---|
 | 1 | Confirm the workbooks are final: the Math data thread's workbook fixes (e.g. C2) are done, and nothing else is pending in Science or English | **Sambit** | — | "workbooks are final" |
-| 2 | Final workbook import, local: dry run, then for real | Claude | `npm run import:topics -- --dry-run`, then `npm run import:topics` | No errors. On 12 Nov the dry run showed **2 new and 30 updated topics** since the last import (#4, 8 Nov) |
+| 2 | Final workbook import, local: dry run, then for real; then the source tabs | Claude | `npm run import:topics -- --dry-run --list`, then `npm run import:topics`; `npm run import:sources`; then re-import NCERT-C5-07 `MC32-C5.json` + its proposals (needs MT0516) | No errors. On 12 Nov the list was **MT0516 + ACH-MC32-5 new, and 30 Class 5 topics whose Seq moves down by one** (MT0516 is inserted at Seq 67); nothing else |
 | 3 | Check readiness, local | Claude | `npm run curriculum:cutover` | "Workbooks on this Mac match the last import: yes" |
 | 4 | **Switch, local** (after Sambit's OK) | Claude | `npm run curriculum:cutover -- --confirm` | "Done: the CMS owns chapters and topics". Logged in `cms_reviews` (`cms_config` · `curriculum_owner`) with the workbooks' sha256 |
-| 5 | First export; keep the last workbooks | Claude + Sambit | `npm run export:topics`. Sambit keeps the final workbooks as an archive (they hold the source-evidence sheets NCERT (CBSE), DAV, IXL and IMO; those sheets are not in the CMS and are not exported) and points the content pipelines at the exports | Three files in `CMS-exports/<date>/` |
+| 5 | Archive the final workbooks and publish the first export | Claude | `npm run export:topics -- --publish`: exports to `CMS-exports/<date>/`, copies each original once to `<subject folder>/_archive/…final-before-cutover-<date>.xlsx` (frozen, read-only; keeps the evidence columns, which never enter the CMS), then puts the export at the usual paths (read-only) | Three dated exports; three archives; the pipelines read the exports from the usual paths |
 | 6 | Real project (only with Sambit's separate OK; the real project is not touched in PRs A–C) | Claude | Migrations 0019–0023 on the real project; final `import:topics` there; then `npx tsx --env-file=.env.real scripts/curriculum-cutover.ts --confirm` | Same as 2–4 |
 
 A mistake can be undone with `npm run curriculum:cutover -- --revert` (audited). CMS edits made in the meantime stay, but a workbook import may overwrite them.
 
-## Questions for Sambit
+## Decided (Sambit, 12 Nov 2026)
 
-1. **Source-evidence sheets.** The workbooks' NCERT (CBSE), DAV, IXL and IMO sheets hold evidence text (DAV OCR, NCERT chapter text). Under the book rule that can't go into the CMS, so after the cut-over nobody maintains them. Keep the last workbooks as a frozen archive on the Mac, or should the data thread keep them in a separate file?
-2. **Export location.** The exports go to `CMS-exports/<date>/`, so the originals are never overwritten. Should they later replace the files in `Math/`, `Science/` and `English/`, where the pipelines read them today?
-3. **Achievers rows.** The workbooks don't list them (`import:topics` derives one per chapter and class). The export adds an "Achievers" sheet. Is that OK?
+1. The final workbooks are kept as a frozen archive on the Mac; book text never enters the CMS or the export.
+2. Exports stay in dated folders, and the latest is also published at the usual paths after the cut-over (`--publish`), with the source-mapping tabs (no evidence columns) because the Science pipeline reads the NCERT tab.
+3. Master-workbook export from the CMS stays "Later".
+4. Cut-over: not yet. Sambit gives the OK after seeing the dry-run list (step 2).
