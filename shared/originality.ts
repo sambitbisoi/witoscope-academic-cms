@@ -76,10 +76,10 @@ export const corpus = (pages: BookPage[], items: BookItem[]): Corpus =>
  *  - flagged (a warning): wording ≥ threshold similar, or those numbers in one piece in another order;
  *  - clear otherwise. Pieces are 1–6 consecutive lines of a book page, or a local book item.
  */
-export function checkText(text: string, c: Corpus, threshold: number, nearCopy = NEAR_COPY_DEFAULT, opts: { wording?: boolean } = {}): OriginalityResult {
+export function checkText(text: string, c: Corpus, threshold: number, nearCopy = NEAR_COPY_DEFAULT, opts: { wording?: boolean; numbers?: boolean } = {}): OriginalityResult {
   if (!c.items.length) return { result: 'no_sources', similarity: null, same_numbers: false, closest_ref: null };
   const qn = nums(text), qo = orderedNums(text);
-  const strong = distinctive(qn);
+  const strong = (opts.numbers ?? true) && distinctive(qn);
   const wording = opts.wording ?? true;
   const qt = trigrams(text);
   let best = { sim: -1, cite: '' }, sameSet: string | null = null, samePattern: string | null = null;
@@ -120,9 +120,13 @@ export function questionFields(q: Checkable): FieldText[] {
 const RANK = { no_sources: 0, clear: 1, flagged: 2, near_copy: 3 } as const;
 export const worse = (a: OriginalityResult, b: OriginalityResult) => RANK[a.result] > RANK[b.result] || (RANK[a.result] === RANK[b.result] && (a.similarity ?? 0) > (b.similarity ?? 0));
 export type FieldResult = OriginalityResult & { field: string };
+/** Fields where the numbers rule applies (Sambit, 12 Nov 2026, option a): what the child reads. Hints,
+ *  solutions and wrong-answer notes repeat the question's numbers and their working, so they get the
+ *  wording test only. */
+export const NUMBERS_RULE_FIELD = (field: string) => field === 'text' || field === 'figure description' || field.startsWith('options');
 /** Check every field; the question's result is its worst field, which is named. Same thresholds as checkText. */
 export function checkQuestion(q: Checkable, c: Corpus, threshold: number, nearCopy = NEAR_COPY_DEFAULT): FieldResult & { fields: FieldResult[] } {
-  const fields = questionFields(q).map((f) => ({ field: f.field, ...checkText(f.text, c, threshold, nearCopy, { wording: f.field === 'text' || f.text.trim().split(/\s+/).length >= MIN_WORDS }) }));
+  const fields = questionFields(q).map((f) => ({ field: f.field, ...checkText(f.text, c, threshold, nearCopy, { wording: f.field === 'text' || f.text.trim().split(/\s+/).length >= MIN_WORDS, numbers: NUMBERS_RULE_FIELD(f.field) }) }));
   let worst = fields[0]!;
   for (const f of fields) if (worse(f, worst)) worst = f;
   return { ...worst, fields: fields.filter((f) => f.result === 'flagged' || f.result === 'near_copy') };

@@ -72,10 +72,12 @@ describe('every text field (12 Nov 2026)', () => {
     expect(questionFields({ ...base, parts: [{ part_label: 'a', text: 'Part a?', answer: { format: 'Typed-number', correct: '3' }, concepts: [] }] }).map((f) => f.field))
       .toEqual(['text', 'options', 'wrong-answer note 1', 'solution', 'hint 1']);
   });
-  it('short fields skip the wording test but keep the numbers rule', () => {
+  it('the numbers rule applies to the text, figure description and options only (option a); hints get the wording test only', () => {
     const nums = corpus([], [{ ref_id: 'N5-01-001', text: 'Add 23, 45 and 67 together.' }]);
-    const r = checkQuestion({ ...base, hints: ['23, 45, 67'] }, nums, 0.6, 0.85);
-    expect([r.result, r.field, r.same_numbers]).toEqual(['near_copy', 'hint 1', true]);
+    const hint = checkQuestion({ ...base, hints: ['23, 45, 67'] }, nums, 0.6, 0.85);
+    expect(hint.fields).toEqual([]);
+    const opts = checkQuestion({ ...base, answer: { ...base.answer, options: ['23', '45', '67'] } }, nums, 0.6, 0.85);
+    expect([opts.result, opts.field, opts.same_numbers]).toEqual(['near_copy', 'options', true]);
     const short = checkQuestion({ ...base, hints: ['Look at the needle.'] }, corpus([], [{ ref_id: 'X', text: 'Look at the needle.' }]), 0.6, 0.85);
     expect(short.fields.map((f) => f.field)).toEqual([]); // 4 words: no wording test
   });

@@ -7,11 +7,12 @@
 //       book files) of the chapter's sources and writes <chapter>.originality.json next to
 //       it. import:chapter reads that report and records each result.
 //   npm run check:originality -- --unchecked [--chapter MC27] [--dry-run]
-//   npm run check:originality -- --all [--chapter MC27]
+//   npm run check:originality -- --all [--chapter MC27] [--to-fix <file.csv>]
 //       Every current version in the CMS, every field, LIST ONLY (nothing recorded): what the field
 //       check (12 Nov 2026) flags beyond the old text-only check. CSV to .local-import/.
 // Since 12 Nov 2026 every text field is checked: text (with parts), figure description, options,
-// solutions, hints and wrong-answer notes; the question's result is its worst field.
+// solutions, hints and wrong-answer notes; the question's result is its worst field. The numbers rule
+// applies to the text, figure description and options only (option a); the others get the wording test.
 //       Questions already in the CMS whose current version has never been checked (e.g.
 //       drafts made by Generate). Records the results in cms_originality_checks.
 //
@@ -129,7 +130,7 @@ async function checkUnchecked(sql: Sql, chapter: string | null, dryRun: boolean)
  * changed). Reports what the field check flags beyond the old text-only check. Writes a CSV of
  * citations and scores (no book text) to .local-import/ on this Mac.
  */
-async function checkAll(sql: Sql, chapter: string | null) {
+async function checkAll(sql: Sql, chapter: string | null, toFix: string | null) {
   const rows = await currentVersions(sql, chapter, false);
   const fresh: { r: DbRow; f: FieldResult; old: ReturnType<typeof checkText> }[] = [];
   const tally: Record<string, number> = { clear: 0, flagged: 0, near_copy: 0, no_sources: 0 };
@@ -143,6 +144,12 @@ async function checkAll(sql: Sql, chapter: string | null) {
   const q = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`;
   writeFileSync(out, ['question_id,file_key,chapter,status,field,result,similarity,same_numbers,closest_ref,text_only_result',
     ...fresh.map(({ r, f, old }) => [r.question_id, r.file_key, r.chapter_id, r.status, f.field, f.result, f.similarity, f.same_numbers, f.closest_ref, old.result].map(q).join(','))].join('\n') + '\n');
+  if (toFix) {
+    // the hand-over list for the data thread (citations and scores only)
+    writeFileSync(toFix, ['file_key,question_id,field,result,score,citation',
+      ...fresh.map(({ r, f }) => [r.file_key, r.question_id, f.field, f.result, f.similarity, f.closest_ref].map(q).join(','))].join('\n') + '\n');
+    console.log(`To-fix list: ${toFix}`);
+  }
   const qs = new Set(fresh.map((x) => x.r.question_id));
   console.log(`\n${rows.length} questions checked (every field): ${tally.clear} clear · ${tally.flagged} close · ${tally.near_copy} near-copy · ${tally.no_sources} no book on this Mac`);
   console.log(`NEW beyond the text-only check: ${fresh.length} field(s) in ${qs.size} question(s): ${fresh.filter((x) => x.f.result === 'near_copy').length} near-copy, ${fresh.filter((x) => x.f.result === 'flagged').length} close`);
@@ -162,7 +169,7 @@ function print(rows: ({ label: string; field?: string } & ReturnType<typeof chec
 if (import.meta.filename === process.argv[1]) {
   const args = process.argv.slice(2);
   const opt = (name: string) => (args.includes(name) ? args[args.indexOf(name) + 1] ?? null : null);
-  const file = args.find((a, i) => !a.startsWith('--') && args[i - 1] !== '--chapter');
+  const file = args.find((a, i) => !a.startsWith('--') && args[i - 1] !== '--chapter' && args[i - 1] !== '--to-fix');
   if (!file && !args.includes('--unchecked') && !args.includes('--all')) {
     console.error('usage: npm run check:originality -- <chapter.json>\n       npm run check:originality -- --unchecked [--chapter MC27] [--dry-run]\n       npm run check:originality -- --all [--chapter MC27]   (list only)');
     process.exit(1);
@@ -180,7 +187,7 @@ if (import.meta.filename === process.argv[1]) {
       print(rep.questions.map((q) => ({ label: q.key, ...q })));
       console.log(`Report: ${out} (citations and scores only; import:chapter records it)`);
     } else {
-      if (args.includes('--all')) await checkAll(sql, opt('--chapter'));
+      if (args.includes('--all')) await checkAll(sql, opt('--chapter'), opt('--to-fix') ? resolve(opt('--to-fix')!) : null);
       else await checkUnchecked(sql, opt('--chapter'), args.includes('--dry-run'));
     }
   } finally {
