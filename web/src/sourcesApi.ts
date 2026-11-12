@@ -29,6 +29,14 @@ export const chapterSourceCount = async (chapterId: string) => {
   return count ?? 0;
 };
 
+/** U17: citations per source for one topic. */
+export async function topicSourceCounts(topicId: string) {
+  const rows = must<{ source_id: string }[]>(await supabase.from('cms_source_items').select('source_id').eq('topic_id', topicId).limit(1000));
+  const m = new Map<string, number>();
+  for (const r of rows) m.set(r.source_id, (m.get(r.source_id) ?? 0) + 1);
+  return m;
+}
+
 const PUBLISHER_ORDER = ['NCERT', 'DAV', 'IXL', 'SOF', 'other'];
 /** NCERT, DAV, IXL, SOF, other; within a publisher, the topic's class first, then by class and title. */
 export function sortSources(list: ChapterSource[], cls: number): ChapterSource[] {

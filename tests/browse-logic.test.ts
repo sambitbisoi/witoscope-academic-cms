@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  applyFilters, browseHash, countsLabel, gapLabel, groupBySet, NO_FILTERS, parseRoute, safeSearch, signatureRows, derivedRows, statusLabel,
+  applyFilters, browseHash, countsLabel, sameWording, distinctTexts, involvementOf, summarize, statusCountsLabel, gapLabel, groupBySet, NO_FILTERS, parseRoute, safeSearch, signatureRows, derivedRows, statusLabel,
   subjectOfChapter, type ListQuestion, type TopicStats, type VersionRow,
 } from '../web/src/logic.ts';
 
@@ -17,13 +17,13 @@ describe('routes', () => {
     ['#/generate?q=MQ000010', { name: 'generate', q: 'MQ000010', set: null, topic: null }],
     ['#/generate?set=TS-G6-X&topic=MT0393', { name: 'generate', q: null, set: 'TS-G6-X', topic: 'MT0393' }],
     ['#/run/12', { name: 'run', id: 12 }],
-    ['#/browse/math/6/MT0393?q=MQ000010&edit=1', { name: 'browse', subject: 'math', cls: '6', topic: 'MT0393', q: 'MQ000010', v: null, tab: 'types', edit: true }],
+    ['#/browse/math/6/MT0393?q=MQ000010&edit=1', { name: 'browse', subject: 'math', cls: '6', ch: null, topic: 'MT0393', q: 'MQ000010', v: null, tab: 'types', edit: true }],
     ['#/imports/12', { name: 'import', id: 12 }],
     ['#/q/G5-007', { name: 'question', id: 'G5-007' }],
-    ['#/browse/math/6', { name: 'browse', subject: 'math', cls: '6', topic: null, q: null, v: null, tab: 'types', edit: false }],
-    ['#/browse/science/all/ST0001?q=SQ000001&v=2&tab=concepts', { name: 'browse', subject: 'science', cls: 'all', topic: 'ST0001', q: 'SQ000001', v: 2, tab: 'concepts', edit: false }],
-    ['#/browse/math/6/MT0393?tab=sources', { name: 'browse', subject: 'math', cls: '6', topic: 'MT0393', q: null, v: null, tab: 'sources', edit: false }],
-    ['#/browse/math/9', { name: 'browse', subject: 'math', cls: 'all', topic: null, q: null, v: null, tab: 'types', edit: false }],
+    ['#/browse/math/6', { name: 'browse', subject: 'math', cls: '6', ch: null, topic: null, q: null, v: null, tab: 'types', edit: false }],
+    ['#/browse/science/all/ST0001?q=SQ000001&v=2&tab=concepts', { name: 'browse', subject: 'science', cls: 'all', ch: null, topic: 'ST0001', q: 'SQ000001', v: 2, tab: 'concepts', edit: false }],
+    ['#/browse/math/6/MT0393?tab=sources', { name: 'browse', subject: 'math', cls: '6', ch: null, topic: 'MT0393', q: null, v: null, tab: 'sources', edit: false }],
+    ['#/browse/math/9', { name: 'browse', subject: 'math', cls: 'all', ch: null, topic: null, q: null, v: null, tab: 'types', edit: false }],
     ['#/browse/art/6', { name: 'notfound' }],
   ])('%s', (hash, route) => expect(parseRoute(hash)).toEqual(route));
 
@@ -42,8 +42,8 @@ describe('coverage labels', () => {
   it('counts: production only, gold separately', () => {
     expect(countsLabel(stats({}))).toBe('no questions');
     expect(countsLabel(stats({ n_gold: 3 }))).toBe('no questions · gold 3');
-    expect(countsLabel(stats({ n_questions: 1, n_medium: 1 }))).toBe('1 Q · S0 M1 C0');
-    expect(countsLabel(stats({ n_questions: 12, n_simple: 4, n_medium: 6, n_complex: 2, n_gold: 1 }))).toBe('12 Qs · S4 M6 C2 · gold 1');
+    expect(countsLabel(stats({ n_questions: 1, n_medium: 1 }))).toBe('1 Q · Simple 0 · Medium 1 · Complex 0');
+    expect(countsLabel(stats({ n_questions: 12, n_simple: 4, n_medium: 6, n_complex: 2, n_gold: 1 }))).toBe('12 Qs · Simple 4 · Medium 6 · Complex 2 · gold 1');
   });
   it('gap: only for topics that have questions [guess]', () => {
     expect(gapLabel(stats({}))).toBeNull();
@@ -104,5 +104,45 @@ describe('v10 signature', () => {
   it('search input is made safe for PostgREST filters', () => {
     expect(safeSearch('MT0393),or(x.eq.1')).toBe('MT0393 or x.eq.1');
     expect(safeSearch('  unlike   fractions ')).toBe('unlike fractions');
+  });
+});
+
+describe('queue 12 Nov 2026 (PR A)', () => {
+  it('U4: the chapter is kept in the browse URL', () => {
+    const h = browseHash({ subject: 'math', cls: '5', ch: 'MC34', topic: 'MT0429', q: 'MQ000001' });
+    expect(h).toBe('#/browse/math/5/MT0429?ch=MC34&q=MQ000001');
+    expect(parseRoute(h)).toMatchObject({ name: 'browse', ch: 'MC34', topic: 'MT0429', q: 'MQ000001' });
+    expect(parseRoute('#/browse/math/5?ch=bad')).toMatchObject({ ch: null });
+  });
+  it('U2: the proposed list route', () => {
+    expect(parseRoute('#/proposed?kind=pattern')).toEqual({ name: 'proposed', kind: 'pattern' });
+  });
+  it('U8: texts that share a long opening show the part that differs', () => {
+    const a = 'A fish made a quarter turn. Look at it before and after. Did it turn clockwise or anti-clockwise? (red fish)';
+    const b = 'A fish made a quarter turn. Look at it before and after. Did it turn clockwise or anti-clockwise? (blue fish)';
+    const [x, y, z] = distinctTexts([a, b, 'Something else entirely']);
+    expect(x!.startsWith('…')).toBe(true);
+    expect(x).toContain('(red fish)');
+    expect(y).toContain('(blue fish)');
+    expect(z).toBe('Something else entirely');
+    expect(distinctTexts([a, a])).toEqual([a, a]); // identical texts: nothing differs, keep them
+  });
+  it('U9 / U7: involvement labels and group summaries', () => {
+    expect(involvementOf(1).label).toBe('main');
+    expect(involvementOf(0.5).label).toBe('secondary');
+    expect(involvementOf(0.2).label).toBe('minor');
+    const s = summarize([
+      { math_difficulty: 'Simple', status: 'draft', retired_at: null },
+      { math_difficulty: 'Complex', status: 'approved', retired_at: null },
+      { math_difficulty: 'Simple', status: 'in_review', retired_at: null },
+    ]);
+    expect(s).toEqual({ count: 3, simple: 2, medium: 0, complex: 1, byStatus: { draft: 1, approved: 1, in_review: 1 } });
+    expect(statusCountsLabel(s.byStatus)).toBe('1 approved · 1 needs review · 1 draft');
+  });
+});
+
+describe('U8 same wording', () => {
+  it('counts identical texts', () => {
+    expect(sameWording(['a', 'b', 'a', 'a'])).toEqual([3, 1, 3, 3]);
   });
 });

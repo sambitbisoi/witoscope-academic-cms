@@ -1,31 +1,98 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { topicData, tree, type Chapter, type QuestionRow, type TopicWithStats } from './api';
 import {
-  applyFilters, browseHash, countsLabel, gapLabel, groupBySet, NO_FILTERS, statusLabel, subjectLabel, SUBJECTS, type Filters, type Subject,
+  applyFilters, browseHash, countsLabel, distinctTexts, sameWording, gapLabel, groupBySet, involvementOf, mixLabel, NO_FILTERS, statusCountsLabel, statusLabel,
+  subjectLabel, SUBJECTS, summarize, type Filters, type Subject,
 } from './logic';
 import { EditForm } from './EditForm';
-import { Proposed, QuestionDetail } from './QuestionDetail';
+import { Proposed, QuestionDetail, type ReviewCommand } from './QuestionDetail';
 import { SourcesTab } from './Sources';
 import { chapterSourceCount } from './sourcesApi';
 import { rememberBrowse } from './Shell';
 
-type R = { subject: Subject; cls: string; topic: string | null; q: string | null; v: number | null; tab: 'types' | 'concepts' | 'sources'; edit: boolean };
+type R = { subject: Subject; cls: string; ch: string | null; topic: string | null; q: string | null; v: number | null; tab: 'types' | 'concepts' | 'sources'; edit: boolean };
 const SOURCE_LABEL: Record<string, string> = { ncert: 'NCERT', dav: 'DAV', ixl: 'IXL', imo: 'IMO', iso: 'ISO', ieo: 'IEO' };
+
+// ---------------------------------------------------------------- small persisted preferences (best effort)
+function usePref<T>(key: string, initial: T): [T, (v: T) => void] {
+  const [v, setV] = useState<T>(() => { try { const s = localStorage.getItem(key); return s === null ? initial : JSON.parse(s) as T; } catch { return initial; } });
+  const set = useCallback((x: T) => { setV(x); try { localStorage.setItem(key, JSON.stringify(x)); } catch { /* best effort */ } }, [key]);
+  return [v, set];
+}
+
+// U11: pane widths and the pinned tree, remembered.
+const PANES = { tree: 300, detail: 440 };
+const isTyping = (t: EventTarget | null) => t instanceof HTMLElement && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName));
 
 export function Workspace(r: R) {
   const [data, setData] = useState<Awaited<ReturnType<typeof tree>> | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [gapsOnly, setGapsOnly] = useState(false);
+  const [hideEmpty, setHideEmpty] = usePref('cms.hideEmpty', false);
+  const [byStrand, setByStrand] = usePref('cms.byStrand', false);
+  const [panes, setPanes] = usePref('cms.panes', { tree: PANES.tree, detail: PANES.detail, pinned: true });
+  const [overlay, setOverlay] = useState(false);
   const [reload, setReload] = useState(0);
+  const [order, setOrder] = useState<string[]>([]);
+  const [command, setCommand] = useState<ReviewCommand | null>(null);
   useEffect(() => { rememberBrowse(browseHash(r)); });
   useEffect(() => {
     setData(null); setError(null);
     tree(r.subject, r.cls).then(setData).catch((e) => setError(e.message));
-  }, [r.subject, r.cls, reload]);
+  }, [r.subject, r.cls]);
+  useEffect(() => { if (reload) tree(r.subject, r.cls).then(setData).catch(() => {}); }, [reload]); // refresh counts quietly
 
-  const go = (patch: Partial<R>) => { location.hash = browseHash({ ...r, ...patch }); };
+  const go = useCallback((patch: Partial<R>) => { location.hash = browseHash({ ...r, ...patch }); }, [r.subject, r.cls, r.ch, r.topic, r.q, r.v, r.tab, r.edit]);
   const topic = data?.topics.find((t) => t.topic_id === r.topic) ?? null;
+  const step = useCallback((d: 1 | -1) => {
+    if (!order.length) return;
+    const i = r.q ? order.indexOf(r.q) : -1;
+    const next = order[Math.min(order.length - 1, Math.max(0, i < 0 ? 0 : i + d))];
+    if (next && next !== r.q) go({ q: next, v: null, edit: false });
+  }, [order, r.q, go]);
 
+  // Keyboard: A approve · R reject · F needs review · ↓↑ (or J/K) next/previous · [ toggles the tree.
+  useEffect(() => {
+    const on = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey || e.altKey || isTyping(e.target) || r.edit) return;
+      if (e.key === '[') { e.preventDefault(); setPanes({ ...panes, pinned: !panes.pinned }); setOverlay(false); return; }
+      if (e.key === 'ArrowDown' || e.key === 'j') { e.preventDefault(); step(1); return; }
+      if (e.key === 'ArrowUp' || e.key === 'k') { e.preventDefault(); step(-1); return; }
+      if (!r.q || r.v) return;
+      const kind = ({ a: 'approve', r: 'reject', f: 'flag' } as const)[e.key.toLowerCase() as 'a' | 'r' | 'f'];
+      if (kind) { e.preventDefault(); setCommand({ kind, n: Date.now() }); }
+    };
+    window.addEventListener('keydown', on);
+    return () => window.removeEventListener('keydown', on);
+  }, [step, r.q, r.v, r.edit, panes, setPanes]);
+
+  const chapters = useMemo(() => {
+    if (!data) return [];
+    const n = new Map<string, number>();
+    for (const t of data.topics) n.set(t.chapter_id, (n.get(t.chapter_id) ?? 0) + (t.stats?.n_questions ?? 0));
+    return data.chapters.filter((c) => n.has(c.chapter_id)).map((c) => ({ ...c, n: n.get(c.chapter_id)! }));
+  }, [data]);
+
+  const treeEl = (
+    <>
+      <div className="tree-head">
+        <span className="eyebrow">Chapters · topics</span>
+        <button className="pin" title={panes.pinned ? 'Unpin: fold the tree into a rail ([)' : 'Pin the tree open ([)'} aria-pressed={panes.pinned}
+          onClick={() => { setPanes({ ...panes, pinned: !panes.pinned }); setOverlay(false); }}>{panes.pinned ? '⇤ Unpin' : '📌 Pin'}</button>
+      </div>
+      <div className="tree-toggles">
+        <button className={`pill small ${gapsOnly ? 'on' : ''}`} aria-pressed={gapsOnly} onClick={() => setGapsOnly(!gapsOnly)}>Gaps only</button>
+        <button className={`pill small ${hideEmpty ? 'on' : ''}`} aria-pressed={hideEmpty} onClick={() => setHideEmpty(!hideEmpty)}>Hide empty topics</button>
+        <button className={`pill small ${byStrand ? 'on' : ''}`} aria-pressed={byStrand} onClick={() => setByStrand(!byStrand)}>By strand</button>
+      </div>
+      {error && <p className="error">Couldn't load topics: {error}</p>}
+      {!data && !error && <p className="muted">Loading…</p>}
+      {data && <Tree chapters={data.chapters.filter((c) => !r.ch || c.chapter_id === r.ch)} strands={byStrand ? data.strands : null} topics={data.topics} cls={r.cls}
+        selected={r.topic} gapsOnly={gapsOnly} hideEmpty={hideEmpty} onPick={(t) => { setOverlay(false); go({ topic: t, q: null, v: null }); }} />}
+    </>
+  );
+
+  const style = { '--tree-w': `${panes.pinned ? panes.tree : 34}px`, '--detail-w': `${panes.detail}px` } as CSSProperties;
   return (
     <div className="workspace">
       <div className="ws-bar">
@@ -35,29 +102,36 @@ export function Workspace(r: R) {
           {['1', '2', '3', '4', '5', '6'].map((c) => <option key={c} value={c}>Class {c}</option>)}
         </select>
         <label className="sr-only" htmlFor="ws-subject">Subject</label>
-        <select id="ws-subject" value={r.subject} onChange={(e) => go({ subject: e.target.value as Subject, topic: null, q: null, v: null })}>
+        <select id="ws-subject" value={r.subject} onChange={(e) => go({ subject: e.target.value as Subject, ch: null, topic: null, q: null, v: null })}>
           {SUBJECTS.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
         </select>
+        <label className="sr-only" htmlFor="ws-chapter">Chapter</label>
+        <select id="ws-chapter" className={`chapter-select ${r.ch ? 'active' : ''}`} value={r.ch ?? ''} onChange={(e) => go({ ch: e.target.value || null, topic: null, q: null, v: null })}>
+          <option value="">All chapters</option>
+          {chapters.map((c) => <option key={c.chapter_id} value={c.chapter_id}>{c.chapter_id} · {c.name} · {c.n} Q{c.n === 1 ? '' : 's'}</option>)}
+          {r.ch && !chapters.some((c) => c.chapter_id === r.ch) && <option value={r.ch}>{r.ch} (no topics in this class)</option>}
+        </select>
+        <span className="muted small keys" title="Keyboard shortcuts in Browse">Keys: <kbd>A</kbd> approve · <kbd>R</kbd> reject · <kbd>F</kbd> needs review · <kbd>↓</kbd><kbd>↑</kbd> next / previous · <kbd>[</kbd> tree</span>
       </div>
-      <div className="ws-cols">
-        <nav className="ws-tree" aria-label="Chapters and topics">
-          <div className="tree-head">
-            <span className="eyebrow">Chapters · topics</span>
-            <button className={`pill small ${gapsOnly ? 'on' : ''}`} aria-pressed={gapsOnly} onClick={() => setGapsOnly(!gapsOnly)}>Gaps only</button>
-          </div>
-          {error && <p className="error">Couldn't load topics: {error}</p>}
-          {!data && !error && <p className="muted">Loading…</p>}
-          {data && <Tree chapters={data.chapters} topics={data.topics} cls={r.cls} selected={r.topic} gapsOnly={gapsOnly} onPick={(t) => go({ topic: t, q: null, v: null })} />}
-        </nav>
+      <div className={`ws-cols ${panes.pinned ? '' : 'unpinned'}`} style={style}>
+        {panes.pinned ? <nav className="ws-tree" aria-label="Chapters and topics">{treeEl}</nav> : (
+          <nav className="ws-rail" aria-label="Chapters and topics">
+            <button className="rail-btn" title="Show the topic tree ([)" onClick={() => setOverlay(!overlay)}>☰<span>Topics</span></button>
+            {overlay && <div className="ws-tree overlay" style={{ width: panes.tree }}>{treeEl}</div>}
+          </nav>
+        )}
+        <Handle side="tree" disabled={!panes.pinned} onDrag={(dx) => setPanes({ ...panes, tree: clamp(panes.tree + dx, 200, 560) })} onReset={() => setPanes({ ...panes, tree: PANES.tree })} />
         <section className="ws-main" aria-label="Questions">
           {r.edit && r.q ? <EditForm key={r.q} questionId={r.q} onDone={(saved) => { go({ edit: false, v: null }); if (saved) setReload((x) => x + 1); }} />
-            : !r.topic ? <Pick subject={r.subject} cls={r.cls} n={data?.topics.length} />
+            : !r.topic ? <Pick subject={r.subject} cls={r.cls} ch={chapters.find((c) => c.chapter_id === r.ch)} n={data ? data.topics.filter((t) => !r.ch || t.chapter_id === r.ch).length : undefined} />
             : !data ? <p className="muted">Loading…</p>
             : !topic ? <p>Topic {r.topic} isn't in {subjectLabel(r.subject)}{r.cls !== 'all' ? ` class ${r.cls}` : ''}. <a href={browseHash({ ...r, cls: 'all' })}>Look in all classes</a></p>
-            : <TopicView key={`${topic.topic_id}-${reload}`} topic={topic} chapter={data.chapters.find((c) => c.chapter_id === topic.chapter_id)} r={r} go={go} />}
+            : <TopicView key={topic.topic_id} reload={reload} topic={topic} chapter={data.chapters.find((c) => c.chapter_id === topic.chapter_id)} r={r} go={go} onOrder={setOrder} />}
         </section>
+        <Handle side="detail" onDrag={(dx) => setPanes({ ...panes, detail: clamp(panes.detail - dx, 320, 900) })} onReset={() => setPanes({ ...panes, detail: PANES.detail })} />
         <aside className="ws-detail" aria-label="Question detail">
-          {r.q ? <QuestionDetail id={r.q} versionNo={r.v} reloadKey={reload} onVersion={(v) => go({ v })} onEdit={() => go({ edit: true, v: null })} onChanged={() => setReload((x) => x + 1)} />
+          {r.q ? <QuestionDetail id={r.q} versionNo={r.v} reloadKey={reload} onVersion={(v) => go({ v })} onEdit={() => go({ edit: true, v: null })}
+              onChanged={() => setReload((x) => x + 1)} command={command} onAdvance={() => step(1)} />
             : <p className="muted">Select a question to see it here.</p>}
         </aside>
       </div>
@@ -65,55 +139,100 @@ export function Workspace(r: R) {
   );
 }
 
-function Pick({ subject, cls, n }: { subject: Subject; cls: string; n?: number }) {
+const clamp = (x: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, x));
+
+/** U11: a drag handle between two panes; double-click resets the width. */
+function Handle({ side, onDrag, onReset, disabled }: { side: string; onDrag: (dx: number) => void; onReset: () => void; disabled?: boolean }) {
+  const last = useRef(0);
+  const drag = useRef(onDrag);
+  drag.current = onDrag;
+  const down = (e: React.MouseEvent) => {
+    if (disabled) return;
+    e.preventDefault();
+    last.current = e.clientX;
+    document.body.classList.add('resizing');
+    const move = (m: MouseEvent) => { const dx = m.clientX - last.current; if (dx) { last.current = m.clientX; drag.current(dx); } };
+    const up = () => { document.body.classList.remove('resizing'); window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up); };
+    window.addEventListener('mousemove', move);
+    window.addEventListener('mouseup', up);
+  };
+  return <div className={`ws-handle ${side} ${disabled ? 'off' : ''}`} role="separator" aria-orientation="vertical" title={disabled ? undefined : 'Drag to resize · double-click to reset'}
+    onMouseDown={down} onDoubleClick={disabled ? undefined : onReset} />;
+}
+
+function Pick({ subject, cls, ch, n }: { subject: Subject; cls: string; ch?: Chapter & { n: number }; n?: number }) {
   return (
     <div className="empty">
       <h1>{subjectLabel(subject)} · {cls === 'all' ? 'all classes' : `Class ${cls}`}</h1>
+      {ch && <div className="chapter-name">Chapter {ch.chapter_id} · {ch.name}</div>}
       <p className="muted">{n === undefined ? 'Loading…' : `${n} topics. Pick one on the left.`}</p>
     </div>
   );
 }
 
-function Tree({ chapters, topics, cls, selected, gapsOnly, onPick }: { chapters: Chapter[]; topics: TopicWithStats[]; cls: string; selected: string | null; gapsOnly: boolean; onPick: (t: string) => void }) {
-  const visible = topics.filter((t) => t.status === 'active' || t.topic_id === selected).filter((t) => !gapsOnly || gapLabel(t.stats) || t.topic_id === selected);
+function Tree({ chapters, strands, topics, cls, selected, gapsOnly, hideEmpty, onPick }: {
+  chapters: Chapter[]; strands: { strand_id: string; name: string }[] | null; topics: TopicWithStats[]; cls: string; selected: string | null;
+  gapsOnly: boolean; hideEmpty: boolean; onPick: (t: string) => void;
+}) {
+  const visible = topics.filter((t) => t.status === 'active' || t.topic_id === selected)
+    .filter((t) => !gapsOnly || gapLabel(t.stats) || t.topic_id === selected)
+    .filter((t) => !hideEmpty || (t.stats?.n_questions ?? 0) > 0 || (t.stats?.n_gold ?? 0) > 0 || t.topic_id === selected);
   const byChapter = new Map<string, TopicWithStats[]>();
   for (const t of visible) byChapter.set(t.chapter_id, [...(byChapter.get(t.chapter_id) ?? []), t]);
   const shown = chapters.filter((c) => byChapter.has(c.chapter_id));
-  if (!shown.length) return <p className="muted">{gapsOnly ? 'No gaps: every topic with questions has all 3 levels.' : 'No topics.'}</p>;
+  if (!shown.length) return <p className="muted">{gapsOnly ? 'No gaps: every topic with questions has all 3 levels.' : hideEmpty ? 'No topics with questions.' : 'No topics.'}</p>;
+  const chapterEl = (c: Chapter) => {
+    const ts = byChapter.get(c.chapter_id)!.sort((a, b) =>
+      (a.topic_kind === 'achievers' ? 1 : 0) - (b.topic_kind === 'achievers' ? 1 : 0) || a.class - b.class || (a.seq ?? 999) - (b.seq ?? 999) || a.topic_id.localeCompare(b.topic_id));
+    return (
+      <div key={c.chapter_id} className="tree-chapter">
+        <div className="tree-chapter-name chapter-name">Chapter {c.chapter_id} · {c.name}</div>
+        {ts.map((t) => {
+          const gap = gapLabel(t.stats);
+          return (
+            <button key={t.topic_id} className={`tree-topic ${t.topic_id === selected ? 'sel' : ''} ${t.topic_kind === 'achievers' ? 'ach' : ''}`} onClick={() => onPick(t.topic_id)}
+              ref={t.topic_id === selected ? (el) => el?.scrollIntoView({ block: 'nearest' }) : undefined}>
+              <span className="tt-name">{t.topic_kind === 'achievers' ? t.name : <>{t.topic_id} {t.name}</>}{cls === 'all' && <span className="cls"> · C{t.class}</span>}</span>
+              <span className="tt-meta">{countsLabel(t.stats)}{gap && <span className="gap"> · ⚠ {gap}</span>}</span>
+            </button>
+          );
+        })}
+      </div>
+    );
+  };
+  if (!strands) return <>{shown.map(chapterEl)}</>;
   return (
     <>
-      {shown.map((c) => {
-        const ts = byChapter.get(c.chapter_id)!.sort((a, b) =>
-          (a.topic_kind === 'achievers' ? 1 : 0) - (b.topic_kind === 'achievers' ? 1 : 0) || a.class - b.class || (a.seq ?? 999) - (b.seq ?? 999) || a.topic_id.localeCompare(b.topic_id));
-        return (
-          <div key={c.chapter_id} className="tree-chapter">
-            <div className="tree-chapter-name">{c.chapter_id} {c.name}</div>
-            {ts.map((t) => {
-              const gap = gapLabel(t.stats);
-              return (
-                <button key={t.topic_id} className={`tree-topic ${t.topic_id === selected ? 'sel' : ''} ${t.topic_kind === 'achievers' ? 'ach' : ''}`} onClick={() => onPick(t.topic_id)}
-                  ref={t.topic_id === selected ? (el) => el?.scrollIntoView({ block: 'nearest' }) : undefined}>
-                  <span className="tt-name">{t.topic_kind === 'achievers' ? t.name : <>{t.topic_id} {t.name}</>}{cls === 'all' && <span className="cls"> · C{t.class}</span>}</span>
-                  <span className="tt-meta">{countsLabel(t.stats)}{gap && <span className="gap"> · ⚠ {gap}</span>}</span>
-                </button>
-              );
-            })}
-          </div>
-        );
-      })}
+      {strands.filter((s) => shown.some((c) => c.strand_id === s.strand_id)).map((s) => (
+        <div key={s.strand_id} className="tree-strand">
+          <div className="tree-strand-name">{s.name}</div>
+          {shown.filter((c) => c.strand_id === s.strand_id).map(chapterEl)}
+        </div>
+      ))}
     </>
   );
 }
 
-function TopicView({ topic, chapter, r, go }: { topic: TopicWithStats; chapter?: Chapter; r: R; go: (p: Partial<R>) => void }) {
+/** U7: which groups are open, per topic and tab; collapsed by default; remembered. */
+function useOpenGroups(topicId: string, tab: string) {
+  const key = `cms.open.${topicId}.${tab}`;
+  const [open, setOpenState] = useState<Set<string>>(() => { try { return new Set(JSON.parse(localStorage.getItem(key) ?? '[]') as string[]); } catch { return new Set(); } });
+  const setOpen = useCallback((s: Set<string>) => { setOpenState(s); try { localStorage.setItem(key, JSON.stringify([...s])); } catch { /* best effort */ } }, [key]);
+  useEffect(() => { try { setOpenState(new Set(JSON.parse(localStorage.getItem(key) ?? '[]') as string[])); } catch { setOpenState(new Set()); } }, [key]);
+  return [open, setOpen] as const;
+}
+
+function TopicView({ topic, chapter, r, go, reload, onOrder }: { topic: TopicWithStats; chapter?: Chapter; r: R; go: (p: Partial<R>) => void; reload: number; onOrder: (ids: string[]) => void }) {
   const [data, setData] = useState<Awaited<ReturnType<typeof topicData>> | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [filters, setFilters] = useState<Filters>(NO_FILTERS);
   const [nSources, setNSources] = useState<number | null>(null);
+  const tab = r.tab === 'concepts' ? 'concepts' : 'types';
+  const [open, setOpen] = useOpenGroups(topic.topic_id, tab);
   useEffect(() => {
-    setData(null); setError(null); setFilters(NO_FILTERS);
+    setError(null);
     topicData(topic.topic_id).then(setData).catch((e) => setError(e.message));
-  }, [topic.topic_id]);
+  }, [topic.topic_id, reload]);
   useEffect(() => { setNSources(null); chapterSourceCount(topic.chapter_id).then(setNSources).catch(() => setNSources(null)); }, [topic.chapter_id]);
 
   const sources = Object.entries(topic.source_flags ?? {}).map(([k, v]) => `${SOURCE_LABEL[k] ?? k.toUpperCase()} ${v}`).join(' · ');
@@ -121,15 +240,30 @@ function TopicView({ topic, chapter, r, go }: { topic: TopicWithStats; chapter?:
   const filtered = filters.difficulty !== 'all' || filters.status !== 'all' || filters.bank !== 'all';
   const qs = useMemo(() => (data ? applyFilters(data.questions, filters) : []), [data, filters]);
   const groups = useMemo(() => (data ? groupBySet(qs, data.sets.filter((x) => x.topic_id === topic.topic_id).map((x) => x.typical_set_id)) : []), [data, qs, topic.topic_id]);
+  const conceptGroups = useMemo(() => (data ? conceptLists(data, new Set(qs.map((q) => q.question_id))) : []), [data, qs]);
+
+  // the display order (for ↓↑), and the group each question is in (to open it when selected)
+  const lists = useMemo(() => (tab === 'types'
+    ? groups.map((g) => ({ id: g.setId ?? 'none', ids: g.patterns.flatMap((p) => p.questions.map((q) => q.question_id)) }))
+    : conceptGroups.map((g) => ({ id: g.concept.concept_id, ids: g.qs.map((x) => x.q.question_id) }))), [tab, groups, conceptGroups]);
+  useEffect(() => { onOrder([...new Set(lists.flatMap((l) => l.ids))]); }, [lists, onOrder]);
+  useEffect(() => () => onOrder([]), [onOrder]);
+  useEffect(() => {
+    if (!r.q) return;
+    const home = lists.find((l) => l.ids.includes(r.q!));
+    if (home && !open.has(home.id) && !lists.some((l) => open.has(l.id) && l.ids.includes(r.q!))) setOpen(new Set([...open, home.id]));
+  }, [r.q, lists]); // eslint-disable-line react-hooks/exhaustive-deps
+  const toggle = (id: string) => { const n = new Set(open); if (n.has(id)) n.delete(id); else n.add(id); setOpen(n); };
 
   return (
     <>
       <div className="topic-head">
         <h1>{topic.topic_kind === 'achievers' ? topic.name : `${topic.topic_id} · ${topic.name}`}</h1>
-        <div className="muted small">
-          {chapter ? `${chapter.chapter_id} ${chapter.name}` : topic.chapter_id} · Class {topic.class}
-          {topic.topic_kind === 'achievers' ? ' · Achievers (chapter level)' : topic.taught_in_school ? ' · taught in school' : ' · not in NCERT / DAV'}
-          {sources && ` · ${sources}`}
+        <div className="small">
+          <span className="chapter-name">Chapter {chapter ? `${chapter.chapter_id} · ${chapter.name}` : topic.chapter_id}</span>
+          <span className="muted"> · Class {topic.class}
+            {topic.topic_kind === 'achievers' ? ' · Achievers (chapter level)' : topic.taught_in_school ? ' · taught in school' : ' · not in NCERT / DAV'}
+            {sources && ` · ${sources}`}</span>
         </div>
         <div className="muted small">
           {data ? `${data.sets.length} question type${data.sets.length === 1 ? '' : 's'} · ` : ''}{countsLabel(s)}
@@ -144,17 +278,22 @@ function TopicView({ topic, chapter, r, go }: { topic: TopicWithStats; chapter?:
           By concept{data ? ` · ${data.concepts.length}` : ''}
         </button>
         <button role="tab" aria-selected={r.tab === 'sources'} className={r.tab === 'sources' ? 'on' : ''} onClick={() => go({ tab: 'sources' })}>
-          Sources{nSources !== null ? ` · ${nSources}` : ''}
+          Chapter sources{nSources !== null ? ` · ${nSources}` : ''}
         </button>
       </div>
-      {r.tab === 'sources' ? <SourcesTab chapterId={topic.chapter_id} chapterName={chapter?.name ?? ''} cls={topic.class} /> : <>
+      {r.tab === 'sources' ? <SourcesTab chapterId={topic.chapter_id} chapterName={chapter?.name ?? ''} cls={topic.class} topicId={topic.topic_id} /> : <>
 
       <div className="filters">
         <span className="muted small">Filter</span>
         <Select label="Difficulty" value={filters.difficulty} onChange={(v) => setFilters({ ...filters, difficulty: v })} options={[['all', 'Difficulty: all'], ['Simple', 'Simple'], ['Medium', 'Medium'], ['Complex', 'Complex']]} />
-        <Select label="Status" value={filters.status} onChange={(v) => setFilters({ ...filters, status: v })} options={[['all', 'Status: all'], ['draft', 'Draft'], ['in_review', 'In review'], ['approved', 'Approved'], ['rejected', 'Rejected'], ['retired', 'Retired']]} />
+        <Select label="Status" value={filters.status} onChange={(v) => setFilters({ ...filters, status: v })} options={[['all', 'Status: all'], ['draft', 'Draft'], ['in_review', 'Needs review'], ['approved', 'Approved'], ['rejected', 'Rejected'], ['retired', 'Retired']]} />
         <Select label="Bank" value={filters.bank} onChange={(v) => setFilters({ ...filters, bank: v })} options={[['all', 'Bank: all'], ['production', 'Production'], ['gold', 'Gold']]} />
         {data && <span className="muted small">{qs.length} of {data.questions.length} shown</span>}
+        <span className="spacer" />
+        {data && lists.length > 0 && <>
+          <button className="link small" onClick={() => setOpen(new Set(lists.map((l) => l.id)))}>Expand all</button>
+          <button className="link small" onClick={() => setOpen(new Set())}>Collapse all</button>
+        </>}
       </div>
 
       {error && <p className="error">Couldn't load this topic: {error}</p>}
@@ -163,17 +302,19 @@ function TopicView({ topic, chapter, r, go }: { topic: TopicWithStats; chapter?:
         groups.length === 0 ? <p className="muted">No questions or question types for this topic yet.</p> : groups.map((g) => {
           const set = data.sets.find((x) => x.typical_set_id === g.setId);
           const main = data.setConcepts.filter((c) => c.typical_set_id === g.setId).sort((a) => (a.role === 'main' ? -1 : 1)).map((c) => c.concept_id);
+          const id = g.setId ?? 'none';
+          const all = g.patterns.flatMap((p) => p.questions);
+          const shown = distinctTexts(all.map((q) => q.text));
+          const same = sameWording(all.map((q) => q.text));
+          const textOf = new Map(all.map((q, i) => [q.question_id, shown[i]!]));
+          const sameOf = new Map(all.map((q, i) => [q.question_id, same[i]!]));
           return (
-            <div key={g.setId ?? 'none'} className="group">
-              <div className="group-head">
-                <div className="group-title">{g.setId ? <>{g.setId} · {set?.name ?? ''}<Proposed status={set?.status} /></> : 'No typical set'}
-                  {g.setId && <a className="small fill-link" href={`#/generate?set=${encodeURIComponent(g.setId)}&topic=${encodeURIComponent(topic.topic_id)}`}>Fill gaps</a>}</div>
-                {set && <div className="muted small">
-                  Class {set.class} · {set.parent_visible ? 'parent-visible' : 'hidden from parents'} · {set.status}
-                  {set.instruction_pattern && ` · "${set.instruction_pattern}"`}{main.length ? ` · concepts ${main.join(', ')}` : ''}
-                  {set.topic_id && set.topic_id !== topic.topic_id ? ` · set belongs to ${set.topic_id}` : ''}
-                </div>}
-              </div>
+            <Group key={id} open={open.has(id)} onToggle={() => toggle(id)} summary={summarize(all)}
+              title={g.setId ? <>{g.setId} · {set?.name ?? ''}<Proposed status={set?.status} /></> : 'No typical set'}
+              extra={g.setId && <a className="small fill-link" href={`#/generate?set=${encodeURIComponent(g.setId)}&topic=${encodeURIComponent(topic.topic_id)}`} onClick={(e) => e.stopPropagation()}>Fill gaps</a>}
+              sub={set && <>Class {set.class} · {set.parent_visible ? 'parent-visible' : 'hidden from parents'} · {set.status}
+                {set.instruction_pattern && ` · "${set.instruction_pattern}"`}{main.length ? ` · concepts ${main.join(', ')}` : ''}
+                {set.topic_id && set.topic_id !== topic.topic_id ? ` · set belongs to ${set.topic_id}` : ''}</>}>
               {g.count === 0 && <div className="muted small pad">No questions yet{filtered ? ' (with these filters)' : ''}.</div>}
               {g.patterns.map((p) => {
                 const pat = data.patterns.find((x) => x.pattern_id === p.patternId);
@@ -182,52 +323,82 @@ function TopicView({ topic, chapter, r, go }: { topic: TopicWithStats; chapter?:
                     {(p.patternId || g.patterns.length > 1) && (
                       <div className="pattern-head small">{p.patternId ? <>{p.patternId} · {pat?.name ?? ''}<Proposed status={pat?.status} />{pat?.target_misconceptions?.length ? <span className="muted"> · targets {pat.target_misconceptions.join(', ')}</span> : null}</> : <span className="muted">No pattern</span>}</div>
                     )}
-                    {p.questions.map((q) => <QRow key={q.question_id} q={q} selected={q.question_id === r.q} onPick={() => go({ q: q.question_id, v: null, edit: false })} />)}
+                    {p.questions.map((q) => <QRow key={q.question_id} q={q} shown={textOf.get(q.question_id)} same={sameOf.get(q.question_id)} selected={q.question_id === r.q} onPick={() => go({ q: q.question_id, v: null, edit: false })} />)}
                   </div>
                 );
               })}
-            </div>
+            </Group>
           );
         })
       )}
-      {data && r.tab === 'concepts' && <ConceptsTab data={data} visible={new Set(qs.map((q) => q.question_id))} selected={r.q} onPick={(q) => go({ q, v: null, edit: false })} />}
+      {data && r.tab === 'concepts' && (
+        !data.concepts.length ? <p className="muted">No concepts defined for this topic yet.</p> : <>
+          <p className="muted small involvement-note" title="How much each question uses the concept">Involvement: <strong>main</strong> 1.0 · <strong>secondary</strong> 0.5 · <strong>minor</strong> 0.2</p>
+          {conceptGroups.map(({ concept: c, qs: list }) => {
+            const shown = distinctTexts(list.map((x) => x.q.text));
+            const same = sameWording(list.map((x) => x.q.text));
+            return (
+              <Group key={c.concept_id} open={open.has(c.concept_id)} onToggle={() => toggle(c.concept_id)} summary={summarize(list.map((x) => x.q))}
+                title={<>{c.concept_id} · {c.name}<Proposed status={c.status} /></>}
+                sub={<>Class {c.class}{c.type ? ` · ${c.type}` : ''} · {c.status}{c.description ? ` · ${c.description}` : ''}</>}>
+                {list.length === 0 ? <div className="muted small pad">No questions use this concept{qs.length < data.questions.length ? ' (with these filters)' : ''}.</div>
+                  : list.map(({ q, inv }, i) => {
+                    const lab = involvementOf(inv);
+                    return <QRow key={q.question_id} q={q} shown={shown[i]} same={same[i]} selected={q.question_id === r.q} onPick={() => go({ q: q.question_id, v: null, edit: false })}
+                      extra={<span className="inv" title={lab.title}>{lab.label} {Number(inv).toFixed(1)}</span>} />;
+                  })}
+              </Group>
+            );
+          })}
+        </>
+      )}
       </>}
     </>
   );
 }
 
-function ConceptsTab({ data, visible, selected, onPick }: { data: Awaited<ReturnType<typeof topicData>>; visible: Set<string>; selected: string | null; onPick: (q: string) => void }) {
-  if (!data.concepts.length) return <p className="muted">No concepts defined for this topic yet.</p>;
+function conceptLists(data: Awaited<ReturnType<typeof topicData>>, visible: Set<string>) {
   const byVersion = new Map(data.questions.map((q) => [q.version_id, q]));
+  return data.concepts.map((concept) => {
+    const links = data.versionConcepts.filter((v) => v.concept_id === concept.concept_id && v.part_label === '');
+    const qs = links.map((l) => ({ q: byVersion.get(l.version_id), inv: l.involvement }))
+      .filter((x): x is { q: QuestionRow; inv: number } => !!x.q && visible.has(x.q.question_id))
+      .sort((a, b) => b.inv - a.inv || a.q.question_id.localeCompare(b.q.question_id));
+    return { concept, qs };
+  });
+}
+
+/** U7: a collapsible block; the collapsed header keeps the summary. */
+function Group({ open, onToggle, title, sub, extra, summary, children }: {
+  open: boolean; onToggle: () => void; title: ReactNode; sub?: ReactNode; extra?: ReactNode; summary: ReturnType<typeof summarize>; children: ReactNode;
+}) {
   return (
-    <>
-      {data.concepts.map((c) => {
-        const links = data.versionConcepts.filter((v) => v.concept_id === c.concept_id && v.part_label === '');
-        const qs = links.map((l) => ({ q: byVersion.get(l.version_id), inv: l.involvement })).filter((x): x is { q: QuestionRow; inv: number } => !!x.q && visible.has(x.q.question_id));
-        return (
-          <div key={c.concept_id} className="group">
-            <div className="group-head">
-              <div className="group-title">{c.concept_id} · {c.name}<Proposed status={c.status} /></div>
-              <div className="muted small">Class {c.class}{c.type ? ` · ${c.type}` : ''} · {c.status}{c.description ? ` · ${c.description}` : ''}</div>
-            </div>
-            {qs.length === 0 ? <div className="muted small pad">No questions use this concept{visible.size < data.questions.length ? ' (with these filters)' : ''}.</div>
-              : qs.sort((a, b) => b.inv - a.inv).map(({ q, inv }) => <QRow key={q.question_id} q={q} selected={q.question_id === selected} onPick={() => onPick(q.question_id)} extra={`× ${Number(inv).toFixed(1)}`} />)}
-          </div>
-        );
-      })}
-    </>
+    <div className={`group ${open ? 'open' : 'closed'}`}>
+      <div className="group-head" role="button" tabIndex={0} aria-expanded={open} onClick={onToggle}
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToggle(); } }}>
+        <div className="group-title"><span className="caret" aria-hidden>{open ? '▾' : '▸'}</span>{title}{extra}</div>
+        {sub && <div className="muted small">{sub}</div>}
+        <div className="group-summary small">
+          <strong>{summary.count} Q{summary.count === 1 ? '' : 's'}</strong>
+          {summary.count > 0 && <> · <span className="muted">{mixLabel(summary)}</span>{statusCountsLabel(summary.byStatus) && <span className="muted"> · {statusCountsLabel(summary.byStatus)}</span>}</>}
+        </div>
+      </div>
+      {open && children}
+    </div>
   );
 }
 
-function QRow({ q, selected, onPick, extra }: { q: QuestionRow; selected: boolean; onPick: () => void; extra?: string }) {
+function QRow({ q, shown, same, selected, onPick, extra }: { q: QuestionRow; shown?: string; same?: number; selected: boolean; onPick: () => void; extra?: ReactNode }) {
   return (
-    <button className={`qrow ${selected ? 'sel' : ''}`} onClick={onPick}>
+    <button className={`qrow ${selected ? 'sel' : ''}`} onClick={onPick} title={q.text}
+      ref={selected ? (el) => el?.scrollIntoView({ block: 'nearest' }) : undefined}>
       <span className="qid mono">{q.question_id}</span>
-      <span className="qtext">{q.text}</span>
+      <span className="qtext">{shown ?? q.text}</span>
+      {same && same > 1 ? <span className="tag same" title="These questions have exactly the same wording; they differ in the figure or the answer">same wording ×{same}</span> : null}
       {q.bank === 'gold' && <span className="tag gold">Gold</span>}
       {extra && <span className="muted small">{extra}</span>}
       <span className={`lvl ${q.math_difficulty ?? ''}`}>{q.math_difficulty ?? '—'}</span>
-      <span className="qstatus small">{statusLabel(q)}</span>
+      <span className={`qstatus small st-${q.retired_at ? 'retired' : q.status}`}>{statusLabel(q)}</span>
     </button>
   );
 }

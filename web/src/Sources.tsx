@@ -3,15 +3,22 @@
 // text, plus the official public link (ncert.nic.in) where there is one.
 import { useEffect, useState } from 'react';
 import {
-  chapterSources, idTaken, officialLink, saveSource, sortSources, suggestId, validate,
+  chapterSources, idTaken, topicSourceCounts, officialLink, saveSource, sortSources, suggestId, validate,
   type ChapterSource, type Jump, type SourceForm,
 } from './sourcesApi';
 import { supabase } from './supabase';
 
 const KIND_LABEL: Record<ChapterSource['kind'], string> = { pdf: 'PDF', scanned_pdf: 'Scanned PDF', web: 'Web' };
 
-export function SourcesTab({ chapterId, chapterName, cls }: { chapterId: string; chapterName: string; cls: number }) {
+export function SourcesTab({ chapterId, chapterName, cls, topicId }: { chapterId: string; chapterName: string; cls: number; topicId?: string }) {
   const [data, setData] = useState<{ sources: ChapterSource[]; jumps: Jump[] } | null>(null);
+  // U17: "This topic" shows only the sources with citations for the open topic.
+  const [thisTopic, setThisTopic] = useState(false);
+  const [topicCounts, setTopicCounts] = useState<Map<string, number> | null>(null);
+  useEffect(() => {
+    setTopicCounts(null);
+    if (topicId) topicSourceCounts(topicId).then(setTopicCounts).catch(() => setTopicCounts(new Map()));
+  }, [topicId]);
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<ChapterSource | 'new' | null>(null);
   const [flash, setFlash] = useState<string | null>(null);
@@ -21,8 +28,12 @@ export function SourcesTab({ chapterId, chapterName, cls }: { chapterId: string;
   return (
     <>
       <div className="sources-head">
-        <div className="muted small">Book citations for cross-checking · internal only, never published · the books stay on your Mac; here only titles, pages and sections, and the official link.</div>
-        {!editing && <button className="secondary" onClick={() => setEditing('new')}>+ Add a citation</button>}
+        <div className="muted small">Book citations for {chapterId} (all its topics) · internal only, never published · the books stay on your Mac; here only titles, pages and sections, and the official link.</div>
+        <div className="source-actions">
+          {topicId && <button className={`pill small ${thisTopic ? 'on' : ''}`} aria-pressed={thisTopic} onClick={() => setThisTopic(!thisTopic)}>
+            This topic{topicCounts ? ` · ${topicCounts.size}` : ''}</button>}
+          {!editing && <button className="secondary" onClick={() => setEditing('new')}>+ Add a citation</button>}
+        </div>
       </div>
       {flash && <div className="notice small">{flash}</div>}
       {editing && (
@@ -32,7 +43,8 @@ export function SourcesTab({ chapterId, chapterName, cls }: { chapterId: string;
       {error && <p className="error">Couldn't load sources: {error}</p>}
       {!data && !error && <p className="muted">Loading…</p>}
       {data && data.sources.length === 0 && <p className="muted">No sources for {chapterId} yet.</p>}
-      {data && sortSources(data.sources, cls).map((s) => {
+      {data && thisTopic && topicCounts && !data.sources.some((s) => topicCounts.has(s.source_id)) && <p className="muted">No source cites {topicId} yet.</p>}
+      {data && sortSources(data.sources, cls).filter((s) => !thisTopic || !topicCounts || topicCounts.has(s.source_id)).map((s) => {
         const jumps = data.jumps.filter((j) => j.source_id === s.source_id);
         const link = officialLink(s);
         const printed = (p: number) => p - s.page_offset;
@@ -45,6 +57,7 @@ export function SourcesTab({ chapterId, chapterName, cls }: { chapterId: string;
                   <span className="tag">{KIND_LABEL[s.kind]}</span> {s.publisher}{s.class ? ` · Class ${s.class}` : ''}
                   {s.page_from ? ` · pdf pages ${s.page_from}–${s.page_to ?? '?'}${s.page_offset ? ` (printed ${printed(s.page_from)}–${s.page_to ? printed(s.page_to) : '?'})` : ''}` : ''}
                   {s.n_items ? ` · ${s.n_items} item${s.n_items === 1 ? '' : 's'} cited${s.n_items_in_chapter !== s.n_items ? ` (${s.n_items_in_chapter} in ${chapterId})` : ''}` : ''}
+                  {topicId && topicCounts?.get(s.source_id) ? ` · ${topicCounts.get(s.source_id)} for ${topicId}` : ''}
                 </div>
                 <div className="muted small">
                   {link ? <span className="mono">{link}</span> : 'No official link · the book is on your Mac'}
