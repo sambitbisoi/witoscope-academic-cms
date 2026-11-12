@@ -4,7 +4,7 @@ import {
   applyFilters, browseHash, countsLabel, gapLabel, groupBySet, NO_FILTERS, statusLabel, subjectLabel, SUBJECTS, type Filters, type Subject,
 } from './logic';
 import { EditForm } from './EditForm';
-import { QuestionDetail } from './QuestionDetail';
+import { Proposed, QuestionDetail } from './QuestionDetail';
 import { SourcesTab } from './Sources';
 import { chapterSourceCount } from './sourcesApi';
 import { rememberBrowse } from './Shell';
@@ -166,7 +166,7 @@ function TopicView({ topic, chapter, r, go }: { topic: TopicWithStats; chapter?:
           return (
             <div key={g.setId ?? 'none'} className="group">
               <div className="group-head">
-                <div className="group-title">{g.setId ? <>{g.setId} · {set?.name ?? ''}</> : 'No typical set'}
+                <div className="group-title">{g.setId ? <>{g.setId} · {set?.name ?? ''}<Proposed status={set?.status} /></> : 'No typical set'}
                   {g.setId && <a className="small fill-link" href={`#/generate?set=${encodeURIComponent(g.setId)}&topic=${encodeURIComponent(topic.topic_id)}`}>Fill gaps</a>}</div>
                 {set && <div className="muted small">
                   Class {set.class} · {set.parent_visible ? 'parent-visible' : 'hidden from parents'} · {set.status}
@@ -180,7 +180,7 @@ function TopicView({ topic, chapter, r, go }: { topic: TopicWithStats; chapter?:
                 return (
                   <div key={p.patternId ?? 'none'}>
                     {(p.patternId || g.patterns.length > 1) && (
-                      <div className="pattern-head small">{p.patternId ? <>{p.patternId} · {pat?.name ?? ''}{pat?.target_misconceptions?.length ? <span className="muted"> · targets {pat.target_misconceptions.join(', ')}</span> : null}</> : <span className="muted">No pattern</span>}</div>
+                      <div className="pattern-head small">{p.patternId ? <>{p.patternId} · {pat?.name ?? ''}<Proposed status={pat?.status} />{pat?.target_misconceptions?.length ? <span className="muted"> · targets {pat.target_misconceptions.join(', ')}</span> : null}</> : <span className="muted">No pattern</span>}</div>
                     )}
                     {p.questions.map((q) => <QRow key={q.question_id} q={q} selected={q.question_id === r.q} onPick={() => go({ q: q.question_id, v: null, edit: false })} />)}
                   </div>
@@ -207,7 +207,7 @@ function ConceptsTab({ data, visible, selected, onPick }: { data: Awaited<Return
         return (
           <div key={c.concept_id} className="group">
             <div className="group-head">
-              <div className="group-title">{c.concept_id} · {c.name}</div>
+              <div className="group-title">{c.concept_id} · {c.name}<Proposed status={c.status} /></div>
               <div className="muted small">Class {c.class}{c.type ? ` · ${c.type}` : ''} · {c.status}{c.description ? ` · ${c.description}` : ''}</div>
             </div>
             {qs.length === 0 ? <div className="muted small pad">No questions use this concept{visible.size < data.questions.length ? ' (with these filters)' : ''}.</div>
