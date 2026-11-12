@@ -45,7 +45,8 @@ function needColumns(file: string, header: string[], cols: string[], problems: P
 export const FILE_KEY = /^(MC|SC|GC)[0-9]{2}-[0-9]{3,4}$/;
 export const TOPIC_ID = /^(MT|ST|GT)[0-9]{4}$|^ACH-(MC|SC|GC)[0-9]{2}-[1-6]$/;
 export const SETTING_ID = /^SET[0-9]{3,4}$/;
-export const TOPIC_CLASS_SOURCES = ['NCERT', 'DAV', 'ISO', 'IXL', 'workbook-default'];
+// IMO = Math's Olympiad (SOF IMO), as ISO is Science's (data thread, 12 Nov 2026).
+export const TOPIC_CLASS_SOURCES = ['workbook-default', 'NCERT', 'DAV', 'ISO', 'IMO', 'IXL'];
 const classOf = (s: string) => (/^[1-6]$/.test(s) ? Number(s) : null);
 
 export interface LevelRow { file_key: string; level: number; source: string }
@@ -78,12 +79,14 @@ export function parseTopicClasses(text: string, file = 'topic_classes.csv') {
     const cls = classOf(v.class ?? '');
     if (!TOPIC_ID.test(v.topic_id ?? '')) { problems.push({ level: 'error', where, message: `topic_id "${v.topic_id}" is not a topic ID` }); continue; }
     if (cls === null) { problems.push({ level: 'error', where, message: `${v.topic_id}: class "${v.class}" must be 1–6` }); continue; }
-    if (!v.source) { problems.push({ level: 'error', where, message: `${v.topic_id} class ${cls}: source is empty` }); continue; }
-    if (!TOPIC_CLASS_SOURCES.includes(v.source)) problems.push({ level: 'warning', where, message: `${v.topic_id}: source "${v.source}" is not one of ${TOPIC_CLASS_SOURCES.join(' / ')}` });
+    // several sources for the same class come in one row, separated by "; "
+    const sources = (v.source ?? '').split(';').map((x) => x.trim()).filter(Boolean);
+    if (!sources.length) { problems.push({ level: 'error', where, message: `${v.topic_id} class ${cls}: source is empty` }); continue; }
+    for (const s of sources) if (!TOPIC_CLASS_SOURCES.includes(s)) problems.push({ level: 'warning', where, message: `${v.topic_id}: source "${s}" is not one of ${TOPIC_CLASS_SOURCES.join(' / ')}` });
     const k = `${v.topic_id}|${cls}`;
     if (seen.has(k)) { problems.push({ level: 'warning', where, message: `${v.topic_id} class ${cls} is listed twice; the first row is used` }); continue; }
     seen.add(k);
-    rows.push({ topic_id: v.topic_id!, class: cls, source: v.source, evidence: v.evidence || null });
+    rows.push({ topic_id: v.topic_id!, class: cls, source: sources.join('; '), evidence: v.evidence || null });
   }
   return { rows, problems };
 }
