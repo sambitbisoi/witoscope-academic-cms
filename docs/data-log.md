@@ -2,6 +2,12 @@
 
 Changes to real (non-test) data that Sambit approved, with what was done and where the audit trail is.
 
+## 12 Nov 2026: MC19-5011 originality re-check — LOCAL ONLY
+
+**Request (Sambit, 12 Nov 2026):** replace the stale ui-probe check with a real every-field check (logged); don't delete history.
+
+MC19-5011 (MQ000104 v1, approved) carried check #21 (near-copy 0.91, tool "ui-probe", 10 Nov), left by a UI test. The every-field check (`check-originality 3`, import #2010) recorded check #6188: **clear**. Highest score 0.44 (wrong-answer note 2, closest NCERT-fegp107 p22); no field flagged; numbers rule not triggered. The latest check is the one the CMS uses, so #6188 now decides. Checks #13 and #21 stay in the history. Audit: `cms_reviews` #11554 (`import_update`, before → after). The question was not changed.
+
 ## 12 Nov 2026: batch 2 of the Math rewrites + override requests — LOCAL ONLY
 
 **Request (Sambit, 12 Nov 2026):** import batch 2 (field-only rewrites after the every-field originality check) and file `override_requests.csv` as pending overrides for him to approve one by one. Backup before: `pg_dump` of schema `cms` (session scratchpad). The real project was not touched.
