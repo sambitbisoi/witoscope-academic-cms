@@ -76,6 +76,9 @@ try {
   const [badUrl] = await sql`select count(*)::int as n from cms.cms_sources where publisher = 'NCERT' and url !~ '^https://ncert\\.nic\\.in/'`;
   check('NCERT sources link only to ncert.nic.in', badUrl!.n === 0, `${badUrl!.n} other links`);
 
+  const [mapCols] = await sql`select count(*)::int as n from cms.cms_source_map m, jsonb_array_elements(m.cells) c where c ->> 0 ~* '(evidence|^notes?\y|source scan)'`;
+  check('source-mapping rows hold no evidence, notes or scan paths (book text stays on the Mac)', mapCols!.n === 0, `${mapCols!.n} such cells`);
+
   const [admin] = await sql`select value #>> '{}' as id from cms.cms_config where key = 'admin_user_id'`;
   check('cms_config.admin_user_id is set to a UUID', /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(admin?.id ?? ''), admin?.id ?? 'not set');
 

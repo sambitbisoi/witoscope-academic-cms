@@ -11,7 +11,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { assertCmsOwner, connect } from './lib/db.ts';
 import { refuseAfterCutover } from './lib/curriculum.ts';
-import { parseNcertSheet, type SourceProblem, type Subject } from './lib/sources.ts';
+import { mappingRows, parseNcertSheet, type MapRow, type SourceProblem, type Subject } from './lib/sources.ts';
 import { upsertCatalogue, type UpsertCounts } from './lib/upsert.ts';
 import { readWorkbook } from './lib/xlsx.ts';
 
@@ -37,13 +37,16 @@ try {
   if (!topicChapter.size) throw new Error('no topics in the CMS; run import:topics first');
   const all = { sources: [] as ReturnType<typeof parseNcertSheet>['sources'], links: [] as ReturnType<typeof parseNcertSheet>['links'] };
   const hashes: string[] = [];
+  const maps: MapRow[] = []; const droppedCols = new Set<string>();
   for (const subject of Object.keys(FILES) as Subject[]) {
     const wb = await readWorkbook(FILES[subject]);
     hashes.push(wb.sha256);
     const p = parseNcertSheet(subject, wb.sheets.get('NCERT (CBSE)') ?? [], topicChapter);
     all.sources.push(...p.sources); all.links.push(...p.links); problems.push(...p.problems);
+    const m = mappingRows(subject, wb.sheets);
+    maps.push(...m.rows); for (const [sh, cols] of Object.entries(m.dropped)) for (const c of cols) droppedCols.add(`${subject} · ${sh} · ${c}`);
   }
-  summary = `${all.sources.length} NCERT chapter PDFs, ${all.links.length} chapter links`;
+  summary = `${all.sources.length} NCERT chapter PDFs, ${all.links.length} chapter links, ${maps.length} source-mapping rows (left out: ${[...droppedCols].join('; ')})`;
   await sql.begin(async (tx) => {
     const [imp] = await tx`insert into cms.cms_imports (kind, file_path, file_hash, options)
       values ('sources', ${Object.values(FILES).map((f) => f.replace(homedir(), '~')).join(', ')},
@@ -58,6 +61,13 @@ try {
     counts.cms_source_chapters = r2.counts;
     // links from other sources (book files, the browser) are not this importer's to judge
     problems.push(...r2.notes.filter((n) => n.message.startsWith('NCERT-')));
+    // source-mapping tabs (citations only; evidence, notes and scan paths were dropped by mappingRows)
+    const r3 = await upsertCatalogue(tx, 'cms_source_map', ['subject', 'sheet', 'row_no'], maps.map((m) => ({ ...m, cells: m.cells })), { ...opts, jsonCols: ['cells'], reason: 'source-mapping tabs of the topic workbooks' });
+    counts.cms_source_map = r3.counts;
+    const keep = new Set(maps.map((m) => `${m.subject} · ${m.sheet} · ${m.row_no}`));
+    const gone = (await tx`select subject, sheet, row_no from cms.cms_source_map where status = 'active'`).filter((r) => !keep.has(`${r.subject} · ${r.sheet} · ${r.row_no}`));
+    for (const g of gone) await tx`update cms.cms_source_map set status = 'retired', updated_at = now() where subject = ${g.subject} and sheet = ${g.sheet} and row_no = ${g.row_no}`;
+    if (gone.length) problems.push({ level: 'warning', where: 'source-mapping tabs', message: `${gone.length} row(s) no longer in the workbooks: retired, not deleted` });
     await tx`update cms.cms_imports set finished_at = now(), result = ${problems.some((p) => p.level === 'error') ? 'partial' : 'ok'},
              counts = ${tx.json(counts as never)}, error_report = ${tx.json(problems as never)} where import_id = ${importId}`;
     if (dryRun) throw new DryRun();
