@@ -28,15 +28,15 @@ Items marked **[guess]** are inferred and need your check.
 
 | Thing | ID | Example | Who assigns |
 |---|---|---|---|
-| Chapter / topic | MC##/MT####, SC##/ST####, GC##/GT#### | MC19, MT0393 | Master topic lists |
+| Chapter / topic | MC##/MT####, SC##/ST####, GC##/GT#### | MC19, MT0393 | Master topic lists until the cut-over; then the CMS (next free number, D5, 12 Nov 2026) |
 | Strand | `<subject>-<name>` **[guess: the topic lists may already have strand IDs]** | math-logical-reasoning | Topic import |
 | Question | MQ######, SQ######, GQ###### | MQ000001 | CMS, on first import |
 | File key | `<chapter>-####` | MC19-0001 | Generation thread; permanent, links the file row to its MQ ID |
 | Gold question | G6-001 … | G5-007-a | Gold set only |
-| Concept | `G{class}-{area}-C#` / `-A#` | G6-FRC-C1 | Author |
+| Concept | `G{class}-{area}-C#` / `-A#` | G6-FRC-C1 | Author; in the CMS the next free number for the code (D5) |
 | Misconception | `G{class}-M-{area}#`; legacy MM### in `alias` | G6-M-FRC1 | Author |
-| Typical set | `TS-G{class}-…` | TS-G6-FRAC-ADD-UNLIKE | Author |
-| Pattern | MP####, SP####, GP#### | MP0007 | Author / generation |
+| Typical set | `TS-G{class}-…` | TS-G6-FRAC-ADD-UNLIKE | Author; in the CMS made from the name (D5) |
+| Pattern | MP####, SP####, GP#### | MP0007 | Author / generation; in the CMS the next free number (D5) |
 | Insight | INS-… | INS-LAST-STEP | Author |
 | Source item | N7-###, D5-### … | N7-031 | Source extraction |
 | Release | integer, rising | 1, 2, 3 | Publish step |
@@ -47,7 +47,9 @@ All IDs are permanent and never reused. Class is a field, never inferred from an
 
 ## 2. Tables (all in schema `cms`)
 
-### A. Curriculum (from the master topic lists)
+### A. Curriculum (owned by the CMS after the one-time cut-over; until then from the master topic lists)
+
+> **Changed 12 Nov 2026 (D5, Sambit, option B):** the CMS owns the curriculum. Chapters, topics, concepts, typical sets and patterns are added and edited in the CMS (`cms_save_curriculum`: automatic permanent IDs, Retire instead of delete, every change audited, new catalogue items Proposed). The topic workbooks become read-only exports (`npm run export:topics`). Until the cut-over (`docs/curriculum-cutover.md`, `cms_config.curriculum_owner`), `import:topics` still owns chapters and topics. Topic ↔ classes (`cms_topic_classes`) and prerequisites (`cms_topic_prereqs`) are CMS data from the start.
 
 | Table | Purpose | Key columns |
 |---|---|---|
@@ -196,7 +198,7 @@ If a config value changes, a one-click "recompute" refreshes these without creat
 
 | Source (v10 CSV / sheet) | Into |
 |---|---|
-| Master topic lists (Mac) | cms_strands, cms_chapters, cms_topics |
+| Master topic lists (Mac), until the D5 cut-over | cms_strands, cms_chapters, cms_topics |
 | gold_concepts | cms_concepts, cms_concept_links, cms_concept_prereq_topics |
 | misconceptions | cms_misconceptions |
 | typical_sets | cms_typical_sets, cms_typical_set_concepts |
@@ -248,3 +250,4 @@ Errors are listed per question key, in plain words.
 | — | pgvector | ~~Phase 6, installed into `cms`~~ → **not used** (Sambit, 9 Nov 2026): duplicate and copy checks are shared TypeScript (number sets + text similarity, threshold in `cms_config`); the copy-from-book check runs only on the Mac (10 Nov 2026) |
 | — | AI calls (9 Nov 2026) | A Cloudflare Pages Function (`/api/ai/*`) behind Access, holding only the Claude API key; it returns drafts and the browser saves them through `cms_apply_save`. Bulk runs use the Batch API, tracked in `cms_jobs`. No Supabase Edge Function and no database credentials in the cloud. A model per task (generate, tag, extract; default `claude-haiku-5-5`), the refusal-fallback model, per-run limit (20), daily cap ($5), similarity threshold and prices live in `cms_config`; every request stays under 100K tokens (cached fixed rules + the topic's concept cards and relevant calibration cases); tokens and cost are logged per run in `cms_generation_runs` |
 | — | Levels, classes, settings, clones (work queue 12 Nov 2026, D1–D4, D8; migrations 0020–0021) | **Level** (`cms_questions.level`, 1–6): the class a question is written for; not versioned, changed only by the updates importer or (later) the editor, audited as `import_update`. **Topic ↔ classes** (`cms_topic_classes`): the classes a topic is taught in besides its own `class`, with source and evidence. **Display rule:** a question shows in class N when its topic is in N and its level ≤ N (lower levels are revision; a higher level never shows lower); views `cms_question_classes`, `cms_topic_class_stats`. **Prerequisites** (`cms_topic_prereqs`): placeholder. **Setting** (`cms_settings`, SET###; `cms_questions.setting_id` + confidence + note): the story or context, one per question, not versioned. **Pattern rule:** a pattern is the pure maths skeleton plus every skill-changing constraint, never the story (`claude/question-bank/generation-prompt.md`, Generate's fixed rules). **Clone groups** are computed (`cms_question_list.clone_key`: same pattern + authored signature + concepts and involvement), never stored. Hierarchy: Topic → Typical set → Pattern → Clone group → Question (+ setting). The Math data thread's files are imported with `npm run import:updates` (local only) |
+| — | The CMS owns the curriculum (D5, Sambit, 12 Nov 2026, option B; migration 0022) | Replaces "the topic workbooks are the source of truth; the CMS never edits them". See §2A and CLAUDE.md. Add / edit forms for chapters, topics (Achievers rows included), concepts, question types and patterns; IDs automatic and permanent; Retire, never delete; audit before → after; Export to Excel regenerates the three topic workbooks (Read me, Master Chapters, Master Topics, Class View, Achievers; the source-evidence sheets hold book text and are not in the CMS). One-time cut-over with `npm run curriculum:cutover -- --confirm` after the final workbook import; then `import:topics` / `import:sources` refuse. Sources (D7) are registered by every import (book files; chapter imports link the books their questions cite), added by hand on a chapter's Sources tab, and retired, never deleted (`cms_sources.status`); overview under Curriculum → Sources (S2, migration 0023) |
