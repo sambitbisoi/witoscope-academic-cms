@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { topicData, tree, type Chapter, type QuestionRow, type TopicWithStats } from './api';
 import {
-  applyFilters, browseHash, countsLabel, distinctTexts, sameWording, gapLabel, groupBySet, involvementOf, mixLabel, NO_FILTERS, statusCountsLabel, statusLabel,
+  applyFilters, browseHash, classesLabel, cloneGroups, countsLabel, distinctTexts, sameWording, type CloneInfo, gapLabel, groupBySet, involvementOf, mixLabel, NO_FILTERS, statusCountsLabel, statusLabel,
   subjectLabel, SUBJECTS, summarize, type Filters, type Subject,
 } from './logic';
 import { EditForm } from './EditForm';
@@ -192,7 +192,7 @@ function Tree({ chapters, strands, topics, cls, selected, gapsOnly, hideEmpty, o
           return (
             <button key={t.topic_id} className={`tree-topic ${t.topic_id === selected ? 'sel' : ''} ${t.topic_kind === 'achievers' ? 'ach' : ''}`} onClick={() => onPick(t.topic_id)}
               ref={t.topic_id === selected ? (el) => el?.scrollIntoView({ block: 'nearest' }) : undefined}>
-              <span className="tt-name">{t.topic_kind === 'achievers' ? t.name : <>{t.topic_id} {t.name}</>}{cls === 'all' && <span className="cls"> · C{t.class}</span>}</span>
+              <span className="tt-name">{t.topic_kind === 'achievers' ? t.name : <>{t.topic_id} {t.name}</>}{cls === 'all' && <span className="cls"> · C{t.class}</span>}<ClassesPill classes={t.classes} /></span>
               <span className="tt-meta">{countsLabel(t.stats)}{gap && <span className="gap"> · ⚠ {gap}</span>}</span>
             </button>
           );
@@ -226,6 +226,7 @@ function TopicView({ topic, chapter, r, go, reload, onOrder }: { topic: TopicWit
   const [data, setData] = useState<Awaited<ReturnType<typeof topicData>> | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [filters, setFilters] = useState<Filters>(NO_FILTERS);
+  const [setting, setSetting] = useState('all');
   const [nSources, setNSources] = useState<number | null>(null);
   const tab = r.tab === 'concepts' ? 'concepts' : 'types';
   const [open, setOpen] = useOpenGroups(topic.topic_id, tab);
@@ -238,8 +239,21 @@ function TopicView({ topic, chapter, r, go, reload, onOrder }: { topic: TopicWit
   const sources = Object.entries(topic.source_flags ?? {}).map(([k, v]) => `${SOURCE_LABEL[k] ?? k.toUpperCase()} ${v}`).join(' · ');
   const s = topic.stats;
   const filtered = filters.difficulty !== 'all' || filters.status !== 'all' || filters.bank !== 'all';
-  const qs = useMemo(() => (data ? applyFilters(data.questions, filters) : []), [data, filters]);
-  const groups = useMemo(() => (data ? groupBySet(qs, data.sets.filter((x) => x.topic_id === topic.topic_id).map((x) => x.typical_set_id)) : []), [data, qs, topic.topic_id]);
+  // D3: in class N, only questions whose level ≤ N (lower levels are revision here)
+  const inClass = useMemo(() => (data ? data.questions.filter((q) => r.cls === 'all' || q.effective_level <= Number(r.cls)) : []), [data, r.cls]);
+  const qs = useMemo(() => applyFilters(inClass, filters).filter((q) => setting === 'all' || (setting === 'none' ? !q.setting_id : q.setting_id === setting)), [inClass, filters, setting]);
+  // D8c: clones sit together inside each pattern
+  const { groups, clones } = useMemo(() => {
+    const info = new Map<string, CloneInfo>();
+    const gs = data ? groupBySet(qs, data.sets.filter((x) => x.topic_id === topic.topic_id).map((x) => x.typical_set_id)).map((g) => ({
+      ...g, patterns: g.patterns.map((p) => { const c = cloneGroups(p.questions); c.info.forEach((v, k) => info.set(k, v)); return { ...p, questions: c.ordered }; }),
+    })) : [];
+    return { groups: gs, clones: info };
+  }, [data, qs, topic.topic_id]);
+  const nGroups = useMemo(() => new Set(inClass.filter((q) => q.bank === 'production' && !q.retired_at).map((q) => q.clone_key ?? `solo:${q.question_id}`)).size, [inClass]);
+  const nRevision = r.cls === 'all' ? 0 : inClass.filter((q) => q.effective_level < Number(r.cls)).length;
+  const hiddenHigher = r.cls === 'all' || !data ? 0 : data.questions.length - inClass.length;
+  const settingsUsed = useMemo(() => (data ? [...data.settings.values()].sort((a, b) => a.name.localeCompare(b.name)) : []), [data]);
   const conceptGroups = useMemo(() => (data ? conceptLists(data, new Set(qs.map((q) => q.question_id))) : []), [data, qs]);
 
   // the display order (for ↓↑), and the group each question is in (to open it when selected)
@@ -258,7 +272,7 @@ function TopicView({ topic, chapter, r, go, reload, onOrder }: { topic: TopicWit
   return (
     <>
       <div className="topic-head">
-        <h1>{topic.topic_kind === 'achievers' ? topic.name : `${topic.topic_id} · ${topic.name}`}</h1>
+        <h1>{topic.topic_kind === 'achievers' ? topic.name : `${topic.topic_id} · ${topic.name}`}<ClassesPill classes={topic.classes} /></h1>
         <div className="small">
           <span className="chapter-name">Chapter {chapter ? `${chapter.chapter_id} · ${chapter.name}` : topic.chapter_id}</span>
           <span className="muted"> · Class {topic.class}
@@ -267,8 +281,13 @@ function TopicView({ topic, chapter, r, go, reload, onOrder }: { topic: TopicWit
         </div>
         <div className="muted small">
           {data ? `${data.sets.length} question type${data.sets.length === 1 ? '' : 's'} · ` : ''}{countsLabel(s)}
+          {data && <> · <strong>{nGroups} clone group{nGroups === 1 ? '' : 's'}</strong></>}
+          {nRevision > 0 && ` · ${nRevision} revision (lower level)`}
+          {hiddenHigher > 0 && ` · ${hiddenHigher} above Class ${r.cls} not shown`}
           {topic.status !== 'active' && <strong> · {topic.status}</strong>}
         </div>
+        <div className="small prereqs">Prerequisites: {!data ? '…' : data.prereqs.length === 0 ? <span className="muted">—</span>
+          : data.prereqs.map((p, i) => <span key={p.prereq_topic_id}>{i > 0 && ' · '}<a href={browseHash({ subject: r.subject, cls: p.class ? String(p.class) : 'all', ch: p.chapter_id, topic: p.prereq_topic_id })}>{p.prereq_topic_id}{p.name ? ` ${p.name}` : ''}</a></span>)}</div>
         {topic.sub_skills && <div className="muted small subskills">Sub-skills: {topic.sub_skills.replace(/\s*;\s*\n?/g, '; ')}</div>}
       </div>
 
@@ -288,7 +307,9 @@ function TopicView({ topic, chapter, r, go, reload, onOrder }: { topic: TopicWit
         <Select label="Difficulty" value={filters.difficulty} onChange={(v) => setFilters({ ...filters, difficulty: v })} options={[['all', 'Difficulty: all'], ['Simple', 'Simple'], ['Medium', 'Medium'], ['Complex', 'Complex']]} />
         <Select label="Status" value={filters.status} onChange={(v) => setFilters({ ...filters, status: v })} options={[['all', 'Status: all'], ['draft', 'Draft'], ['in_review', 'Needs review'], ['approved', 'Approved'], ['rejected', 'Rejected'], ['retired', 'Retired']]} />
         <Select label="Bank" value={filters.bank} onChange={(v) => setFilters({ ...filters, bank: v })} options={[['all', 'Bank: all'], ['production', 'Production'], ['gold', 'Gold']]} />
-        {data && <span className="muted small">{qs.length} of {data.questions.length} shown</span>}
+        {settingsUsed.length > 0 && <Select label="Setting" value={setting} onChange={setSetting}
+          options={[['all', 'Setting: all'], ...settingsUsed.map((x) => [x.setting_id, x.name] as [string, string]), ['none', 'No setting yet']]} />}
+        {data && <span className="muted small">{qs.length} of {inClass.length} shown</span>}
         <span className="spacer" />
         {data && lists.length > 0 && <>
           <button className="link small" onClick={() => setOpen(new Set(lists.map((l) => l.id)))}>Expand all</button>
@@ -323,7 +344,16 @@ function TopicView({ topic, chapter, r, go, reload, onOrder }: { topic: TopicWit
                     {(p.patternId || g.patterns.length > 1) && (
                       <div className="pattern-head small">{p.patternId ? <>{p.patternId} · {pat?.name ?? ''}<Proposed status={pat?.status} />{pat?.target_misconceptions?.length ? <span className="muted"> · targets {pat.target_misconceptions.join(', ')}</span> : null}</> : <span className="muted">No pattern</span>}</div>
                     )}
-                    {p.questions.map((q) => <QRow key={q.question_id} q={q} shown={textOf.get(q.question_id)} same={sameOf.get(q.question_id)} selected={q.question_id === r.q} onPick={() => go({ q: q.question_id, v: null, edit: false })} />)}
+                    {p.questions.map((q, i) => {
+                      const c = clones.get(q.question_id);
+                      const first = c && c.size > 1 && c.index === 1 && i > 0 ? true : false;
+                      return <div key={q.question_id}>
+                        {c && c.size > 1 && c.index === 1 && <div className={`clone-head small ${first ? 'gap' : ''}`}>Clone group · {c.size} interchangeable</div>}
+                        <QRow q={q} shown={textOf.get(q.question_id)} same={sameOf.get(q.question_id)} clone={c} setting={q.setting_id ? data.settings.get(q.setting_id)?.name : undefined}
+                          revision={r.cls !== 'all' && q.effective_level < Number(r.cls) ? q.effective_level : undefined}
+                          selected={q.question_id === r.q} onPick={() => go({ q: q.question_id, v: null, edit: false })} />
+                      </div>;
+                    })}
                   </div>
                 );
               })}
@@ -388,13 +418,25 @@ function Group({ open, onToggle, title, sub, extra, summary, children }: {
   );
 }
 
-function QRow({ q, shown, same, selected, onPick, extra }: { q: QuestionRow; shown?: string; same?: number; selected: boolean; onPick: () => void; extra?: ReactNode }) {
+/** U15: "Classes 4 · 5 · 6" for a topic taught in several classes (teal: one colour per meaning). */
+export function ClassesPill({ classes }: { classes: number[] }) {
+  const l = classesLabel(classes);
+  return l ? <span className="pill-multi" title="This topic is taught in several classes (D2)">{l}</span> : null;
+}
+
+function QRow({ q, shown, same, clone, setting, revision, selected, onPick, extra }: {
+  q: QuestionRow; shown?: string; same?: number; clone?: CloneInfo; setting?: string; revision?: number; selected: boolean; onPick: () => void; extra?: ReactNode;
+}) {
   return (
     <button className={`qrow ${selected ? 'sel' : ''}`} onClick={onPick} title={q.text}
       ref={selected ? (el) => el?.scrollIntoView({ block: 'nearest' }) : undefined}>
       <span className="qid mono">{q.question_id}</span>
       <span className="qtext">{shown ?? q.text}</span>
-      {same && same > 1 ? <span className="tag same" title="These questions have exactly the same wording; they differ in the figure or the answer">same wording ×{same}</span> : null}
+      {same && same > 1 ? <span className="tag same" title="These questions have exactly the same wording; they differ in the figure or the answer">same wording ×{same}</span>
+        : clone?.nearIdentical ? <span className="tag same" title="A clone with the same wording apart from the numbers (kept; never removed)">near-identical</span> : null}
+      {clone && clone.size > 1 && <span className="muted small nowrap" title="Clones: same pattern, signature and concepts">{clone.index} of {clone.size}</span>}
+      {setting && <span className="tag setting" title="Setting (the story or context)">{setting}</span>}
+      {revision !== undefined && <span className="tag revision" title={`Level ${revision}: revision in this class`}>Revision · L{revision}</span>}
       {q.bank === 'gold' && <span className="tag gold">Gold</span>}
       {extra && <span className="muted small">{extra}</span>}
       <span className={`lvl ${q.math_difficulty ?? ''}`}>{q.math_difficulty ?? '—'}</span>

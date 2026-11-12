@@ -9,6 +9,18 @@ const must = <T>(r: { data: T | null; error: { message: string } | null }): T =>
 };
 const prefixOf = (s: Subject) => `${SUBJECTS.find((x) => x.id === s)!.prefix}C`;
 
+/** PostgREST returns at most 1,000 rows per request: read in pages. */
+export async function all<T>(make: (from: number, to: number) => PromiseLike<{ data: unknown; error: { message: string } | null }>): Promise<T[]> {
+  const out: T[] = [];
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await make(from, from + 999);
+    if (error) throw new Error(error.message);
+    const rows = (data ?? []) as T[];
+    out.push(...rows);
+    if (rows.length < 1000) return out;
+  }
+}
+
 // ---------------------------------------------------------------- Home
 export interface HomeStats { subject: Subject; class: number; chapters: number; topics: number; questions: number; approved: number; draft: number;
   in_review: number; gold: number; topics_with_questions: number; topics_all_levels: number }
@@ -26,37 +38,70 @@ export const lastImport = async () =>
 export interface Chapter { chapter_id: string; name: string; strand_id: string; sort: number; display_code: string | null }
 export interface Topic { topic_id: string; chapter_id: string; class: number; seq: number | null; name: string; topic_kind: 'normal' | 'achievers';
   taught_in_school: boolean; source_flags: Record<string, string>; status: string; sub_skills: string | null }
-export type TopicWithStats = Topic & { stats?: TopicStats };
+export type ClassStats = TopicStats & { n_revision?: number; n_clone_groups?: number };
+/** classes: every class the topic is in (its own + cms_topic_classes, D2). */
+export type TopicWithStats = Topic & { stats?: ClassStats; classes: number[] };
 
+/** The topics of a subject, with every class each is in (D2). Shared by Browse and the curriculum map. */
+export async function topicsWithClasses(subject: Subject) {
+  const pre = `${prefixOf(subject)}*`;
+  const [topics, mapped] = await Promise.all([
+    all<Topic>((a, b) => supabase.from('cms_topics').select('topic_id, chapter_id, class, seq, name, topic_kind, taught_in_school, source_flags, status, sub_skills')
+      .like('chapter_id', pre).order('class').order('seq', { nullsFirst: false }).order('topic_id').range(a, b)),
+    all<{ topic_id: string; class: number }>((a, b) => supabase.from('cms_topic_classes').select('topic_id, class').order('topic_id').order('class').range(a, b)),
+  ]);
+  const extra = new Map<string, number[]>();
+  for (const m of mapped) extra.set(m.topic_id, [...(extra.get(m.topic_id) ?? []), m.class]);
+  return topics.map((t) => ({ ...t, classes: [...new Set([t.class, ...(extra.get(t.topic_id) ?? [])])].sort((a, b) => a - b) }));
+}
+
+/**
+ * The Browse tree. For one class (D3): the topics in that class (own or mapped) and their counts
+ * under the display rule (questions whose level ≤ the class). For all classes: every topic once.
+ */
 export async function tree(subject: Subject, cls: string) {
   const pre = `${prefixOf(subject)}*`;
-  let tq = supabase.from('cms_topics').select('topic_id, chapter_id, class, seq, name, topic_kind, taught_in_school, source_flags, status, sub_skills').like('chapter_id', pre);
-  let sq = supabase.from('cms_topic_stats').select('*').like('chapter_id', pre);
-  if (cls !== 'all') { tq = tq.eq('class', Number(cls)); sq = sq.eq('class', Number(cls)); }
   const [chapters, topics, stats, strands] = await Promise.all([
     supabase.from('cms_chapters').select('chapter_id, name, strand_id, sort, display_code').eq('subject', subject).order('sort'),
-    tq.order('class').order('seq', { nullsFirst: false }).order('topic_id'),
-    sq,
+    topicsWithClasses(subject),
+    cls === 'all' ? all<ClassStats & { topic_id: string }>((a, b) => supabase.from('cms_topic_stats').select('*').like('chapter_id', pre).range(a, b))
+      : all<ClassStats & { topic_id: string }>((a, b) => supabase.from('cms_topic_class_stats').select('*').like('chapter_id', pre).eq('class', Number(cls)).range(a, b)),
     supabase.from('cms_strands').select('strand_id, name, sort').eq('subject', subject).order('sort'),
   ]);
-  const byId = new Map(must<(TopicStats & { topic_id: string })[]>(stats).map((s) => [s.topic_id, s]));
+  const byId = new Map(stats.map((s) => [s.topic_id, s]));
   return {
     chapters: must<Chapter[]>(chapters),
     strands: must<{ strand_id: string; name: string; sort: number }[]>(strands),
-    topics: must<Topic[]>(topics).map((t) => ({ ...t, stats: byId.get(t.topic_id) })) as TopicWithStats[],
+    topics: topics.filter((t) => cls === 'all' || t.classes.includes(Number(cls))).map((t) => ({ ...t, stats: byId.get(t.topic_id) })) as TopicWithStats[],
   };
 }
 
 // ---------------------------------------------------------------- Topic
 export type QuestionRow = ListQuestion & { subject: string; file_key: string | null; chapter_id: string; topic_id: string; class: number;
-  version_id: number; format: string; tier: string | null; gold_use: string | null; clone_batch_id: string | null };
+  version_id: number; format: string; tier: string | null; gold_use: string | null; clone_batch_id: string | null;
+  level: number | null; effective_level: number; setting_id: string | null; clone_key: string | null };
+export interface Setting { setting_id: string; name: string; description: string | null; theme: string | null; status: string }
+export interface Prereq { prereq_topic_id: string; name: string | null; chapter_id: string | null; class: number | null }
+
+/** D4: a topic's prerequisite topics (ID + name). */
+export async function prereqsOf(topicId: string): Promise<Prereq[]> {
+  const rows = must<{ prereq_topic_id: string }[]>(await supabase.from('cms_topic_prereqs').select('prereq_topic_id').eq('topic_id', topicId).order('prereq_topic_id'));
+  if (!rows.length) return [];
+  const t = must<{ topic_id: string; name: string; chapter_id: string; class: number }[]>(await supabase.from('cms_topics').select('topic_id, name, chapter_id, class').in('topic_id', rows.map((r) => r.prereq_topic_id)));
+  return rows.map((r) => { const x = t.find((y) => y.topic_id === r.prereq_topic_id); return { prereq_topic_id: r.prereq_topic_id, name: x?.name ?? null, chapter_id: x?.chapter_id ?? null, class: x?.class ?? null }; });
+}
 export interface TypicalSet { typical_set_id: string; name: string; class: number; instruction_pattern: string | null; variant_note: string | null;
   parent_visible: boolean; status: string; topic_id: string | null }
 export interface Pattern { pattern_id: string; name: string; typical_set_id: string; target_misconceptions: string[]; status: string }
 export interface Concept { concept_id: string; name: string; class: number; type: string | null; status: string; topic_id: string | null; description: string | null }
 
 export async function topicData(topicId: string) {
-  const questions = must<QuestionRow[]>(await supabase.from('cms_question_list').select('*').eq('topic_id', topicId));
+  const questions = await all<QuestionRow>((a, b) => supabase.from('cms_question_list').select('*').eq('topic_id', topicId).order('question_id').range(a, b));
+  const settingIds = [...new Set(questions.map((q) => q.setting_id).filter((x): x is string => !!x))];
+  const [settings, prereqs] = await Promise.all([
+    settingIds.length ? supabase.from('cms_settings').select('setting_id, name, description, theme, status').in('setting_id', settingIds) : Promise.resolve({ data: [], error: null }),
+    prereqsOf(topicId),
+  ]);
   const setIds = [...new Set(questions.map((q) => q.typical_set_id).filter((x): x is string => !!x))];
   const [setsOwn, setsUsed, concepts, versionConcepts] = await Promise.all([
     supabase.from('cms_typical_sets').select('*').eq('topic_id', topicId).order('typical_set_id'),
@@ -85,6 +130,8 @@ export async function topicData(topicId: string) {
     setConcepts: must<{ typical_set_id: string; concept_id: string; role: string }[]>(setConcepts),
     concepts: [...must<Concept[]>(concepts), ...extra],
     versionConcepts: vc,
+    settings: new Map(must<Setting[]>(settings).map((x) => [x.setting_id, x])),
+    prereqs,
   };
 }
 
@@ -116,13 +163,23 @@ export async function questionDetail(questionId: string, versionNo: number | nul
     supabase.from('cms_version_hints').select('*').eq('version_id', vid).order('level'),
     supabase.from('cms_version_source_refs').select('*').eq('version_id', vid),
     supabase.from('cms_gold_meta').select('*').eq('question_id', questionId).maybeSingle(),
-    supabase.from('cms_reviews').select('review_id, target_id, action, reason, field_diff, by_label, at').like('target_id', `${questionId} v%`).order('review_id', { ascending: false }).limit(50),
+    supabase.from('cms_reviews').select('review_id, target_id, action, reason, field_diff, by_label, at').or(`target_id.eq.${questionId},target_id.like.${questionId} v*`).order('review_id', { ascending: false }).limit(50),
   ]);
   const v = must<Version>(version);
   const wa = must<{ part_label: string; value: string; option_position: number | null; tag: string; misconception_id: string | null; target_concept_id: string | null; why: string | null }[]>(wrong);
   const vc = must<{ part_label: string; concept_id: string; involvement: number }[]>(concepts);
   const miscIds = [...new Set(wa.map((w) => w.misconception_id).filter((x): x is string => !!x))];
   const conceptIds = [...new Set([...vc.map((c) => c.concept_id), ...wa.map((w) => w.target_concept_id).filter((x): x is string => !!x)])];
+  const [row, placements, topicClasses] = await Promise.all([
+    supabase.from('cms_question_list').select('level, effective_level, setting_id, clone_key').eq('question_id', questionId).maybeSingle(),
+    supabase.from('cms_question_classes').select('class, is_home').eq('question_id', questionId).order('class'),
+    supabase.from('cms_topic_all_classes').select('class').eq('topic_id', q.topic_id as string),
+  ]);
+  const listRow = must<{ level: number | null; effective_level: number; setting_id: string | null; clone_key: string | null } | null>(row);
+  const [clones, setting] = await Promise.all([
+    listRow?.clone_key ? supabase.from('cms_question_list').select('question_id, file_key, status, retired_at').eq('clone_key', listRow.clone_key).order('question_id').limit(200) : Promise.resolve({ data: [], error: null }),
+    listRow?.setting_id ? supabase.from('cms_settings').select('setting_id, name, description, theme, status').eq('setting_id', listRow.setting_id).maybeSingle() : Promise.resolve({ data: null, error: null }),
+  ]);
   const [miscs, conceptNames, insight, topic, set, pattern] = await Promise.all([
     miscIds.length ? supabase.from('cms_misconceptions').select('misconception_id, description, parent_description, status').in('misconception_id', miscIds) : Promise.resolve({ data: [], error: null }),
     conceptIds.length ? supabase.from('cms_concepts').select('concept_id, name, class, status').in('concept_id', conceptIds) : Promise.resolve({ data: [], error: null }),
@@ -134,7 +191,15 @@ export async function questionDetail(questionId: string, versionNo: number | nul
   return {
     question: q as { question_id: string; bank: string; subject: string; file_key: string | null; chapter_id: string; topic_id: string; class: number;
       class_override: number | null; placement_note: string | null; typical_set_id: string | null; pattern_id: string | null; clone_batch_id: string | null;
-      current_version: number; approved_version: number | null; retired_at: string | null; created_at: string },
+      current_version: number; approved_version: number | null; retired_at: string | null; created_at: string;
+      level: number | null; setting_id: string | null; setting_confidence: string | null; setting_note: string | null },
+    /** D3: the classes the question shows in (home = its level's class; the rest are revision). */
+    placements: must<{ class: number; is_home: boolean }[]>(placements),
+    topicClasses: [...new Set(must<{ class: number }[]>(topicClasses).map((x) => x.class))].sort((a, b) => a - b),
+    effectiveLevel: listRow?.effective_level ?? (q.class as number),
+    /** D8c: the question's clone group (same pattern + signature + concepts), itself included. */
+    clones: must<{ question_id: string; file_key: string | null; status: string; retired_at: string | null }[]>(clones),
+    setting: must<Setting | null>(setting),
     version: v,
     versions,
     parts: must<{ part_label: string; text: string; format: string; correct: string; accepted: string[] }[]>(parts),

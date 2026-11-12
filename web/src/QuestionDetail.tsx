@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { questionDetail, type QuestionDetailData } from './api';
-import { derivedRows, involvementOf, signatureRows, STATUS_LABEL, TAG_LABEL } from './logic';
+import { browseHash, classesLabel, derivedRows, involvementOf, signatureRows, STATUS_LABEL, subjectOfChapter, TAG_LABEL } from './logic';
 import { latestOriginality, officialLink, sourceItems, type OriginalityCheck } from './sourcesApi';
 import { questionFromDb } from '../../shared/fromDb.ts';
 import { structureDiff } from '../../shared/save.ts';
@@ -39,7 +39,8 @@ export function QuestionDetail({ id, versionNo, onVersion, onEdit, reloadKey = 0
     <div className="detail">
       <div className="detail-head">
         <div>
-          <div className="detail-id">{q.question_id}{q.bank === 'gold' && <span className="tag gold">Gold · never published</span>}</div>
+          <div className="detail-id">{q.question_id}{q.bank === 'gold' && <span className="tag gold">Gold · never published</span>}
+            {classesLabel(d.topicClasses) && <span className="pill-multi" title="Its topic is taught in several classes">{classesLabel(d.topicClasses)}</span>}</div>
           <div className="muted small">{q.file_key ? `${q.file_key} · ` : ''}{v.format}</div>
         </div>
         <div className="muted small right">
@@ -129,6 +130,22 @@ export function QuestionDetail({ id, versionNo, onVersion, onEdit, reloadKey = 0
       </Section>
 
       <Section title="Placement">
+        <div className="placement small">
+          <div><span className="muted">Level</span> <strong>{q.level ?? '—'}</strong>{q.level ? ` (written for class ${q.level})` : ` (not set yet; class ${q.class} is used)`}</div>
+          <div><span className="muted">Appears in</span>{' '}
+            {d.placements.length === 0 ? <strong className="error">no class: the level is above every class its topic is in</strong>
+              : d.placements.map((pl, i) => <span key={pl.class}>{i > 0 && ' · '}
+                <a href={browseHash({ subject: subjectOfChapter(q.chapter_id), cls: String(pl.class), ch: q.chapter_id, topic: q.topic_id, q: q.question_id })}>Class {pl.class}</a>
+                <span className="muted"> ({pl.is_home ? 'home' : 'revision'})</span></span>)}
+          </div>
+          <div><span className="muted">Setting</span> {d.setting ? <><strong>{d.setting.name}</strong>{d.setting.status === 'proposed' && <Proposed status="proposed" />}
+            {q.setting_confidence && <span className="muted"> · {q.setting_confidence} confidence</span>}{q.setting_note && <span className="muted"> · {q.setting_note}</span>}</> : <span className="muted">—</span>}</div>
+          <div><span className="muted">Clone group</span>{' '}
+            {d.clones.length > 1 ? <>{d.clones.findIndex((c) => c.question_id === q.question_id) + 1} of {d.clones.length} clones ·{' '}
+              {d.clones.filter((c) => c.question_id !== q.question_id).slice(0, 8).map((c, i) => <span key={c.question_id}>{i > 0 && ', '}<a href={`#/q/${c.question_id}`}>{c.question_id}</a></span>)}
+              {d.clones.length > 9 && ' …'}</>
+              : <span className="muted">{q.pattern_id ? 'no clones (unique signature in its pattern)' : '— (no pattern)'}</span>}</div>
+        </div>
         <KV one rows={[
           { k: 'Topic', v: d.topic ? `${d.topic.topic_id} · ${d.topic.name}` : (v.topic_id ?? q.topic_id) },
           { k: 'Class', v: `${q.class}${q.class_override ? ` (shown in class ${q.class_override})` : ''}` },
@@ -180,7 +197,7 @@ export function QuestionDetail({ id, versionNo, onVersion, onEdit, reloadKey = 0
           <Section title="Audit log">
             {d.reviews.length === 0 ? <div className="muted small">Nothing logged yet.</div> : (
               <ul className="plain small">{d.reviews.map((r) => (
-                <li key={r.review_id}>{new Date(r.at).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })} · {r.target_id.split(' ')[1] ?? ''} · {ACTION_LABEL[r.action] ?? r.action.replace(/_/g, ' ')} · {r.by_label}{r.reason ? <span className="muted"> — {r.reason}</span> : null}</li>
+                <li key={r.review_id}>{new Date(r.at).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })} {r.target_id.split(' ')[1] ? ` · ${r.target_id.split(' ')[1]}` : ''} · {ACTION_LABEL[r.action] ?? r.action.replace(/_/g, ' ')} · {r.by_label}{r.reason ? <span className="muted"> — {r.reason}</span> : null}{r.action === 'import_update' && r.field_diff ? <span className="muted"> ({Object.entries(r.field_diff as Record<string, { before: unknown; after: unknown }>).map(([k, x]) => `${k} ${String(x.before ?? '—')} → ${String(x.after ?? '—')}`).join(', ')})</span> : null}</li>
               ))}</ul>
             )}
           </Section>
@@ -254,7 +271,7 @@ function Tag({ w, d }: { w: QuestionDetailData['wrong'][number]; d: QuestionDeta
   );
 }
 
-const ACTION_LABEL: Record<string, string> = { submit: 'needs review', withdraw: 'review flag cleared', reject: 'rejected', approve: 'approved' };
+const ACTION_LABEL: Record<string, string> = { submit: 'needs review', withdraw: 'review flag cleared', reject: 'rejected', approve: 'approved', import_update: 'updated by import' };
 
 /**
  * D6 (12 Nov 2026): Edit · Needs review · Approve · Reject on the current version. Needs review

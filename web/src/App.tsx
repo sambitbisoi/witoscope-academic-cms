@@ -9,6 +9,7 @@ import { ReviewQueue } from './ReviewQueue';
 import { GenerateScreen, RunScreen } from './Generate';
 import { ModelCheckScreen } from './ModelCheck';
 import { ProposedList } from './Proposed';
+import { CurriculumMap } from './Curriculum';
 import { configError, isAdmin, supabase } from './supabase';
 
 type Access = 'checking' | 'admin' | 'denied' | 'error';
@@ -86,6 +87,7 @@ function Home({ email }: { email?: string }) {
         : route.name === 'browse' ? <Workspace subject={route.subject} cls={route.cls} ch={route.ch} topic={route.topic} q={route.q} v={route.v} tab={route.tab} edit={route.edit} />
         : route.name === 'question' ? <OpenQuestion id={route.id} />
         : route.name === 'review' ? <main className="wide"><ReviewQueue /></main>
+        : route.name === 'map' ? <main className="wide"><CurriculumMap tab={route.tab} cls={route.cls} subject={route.subject} ch={route.ch} show={route.show} q={route.q} /></main>
         : route.name === 'proposed' ? <main className="wide"><ProposedList kind={route.kind} /></main>
         : route.name === 'generate' ? <GenerateScreen questionId={route.q} setId={route.set} topicId={route.topic} />
         : route.name === 'run' ? <RunScreen runId={route.id} />

@@ -385,3 +385,18 @@ button.small-btn { padding: 4px 10px; font-size: 0.82rem; }
 .steps details { border-top: 1px solid var(--row-line); padding: 6px 0; }
 .steps summary { cursor: pointer; font-size: 0.9rem; }
 pre.step-out { max-height: 320px; overflow: auto; background: var(--subtle); border: 1px solid var(--line); border-radius: 6px; padding: 8px; font-size: 0.78rem; white-space: pre-wrap; }
+/* PR B: classes pill (U15), clones (D8c), settings, revision (D3) */
+.pill-multi { display: inline-block; font-size: 0.72rem; font-weight: 600; padding: 1px 8px; border-radius: 10px; background: var(--multi-bg); color: var(--multi); margin-left: 8px; vertical-align: middle; white-space: nowrap; }
+h1 .pill-multi { font-size: 0.78rem; }
+.clone-head { padding: 3px 14px 3px 110px; color: var(--muted); background: var(--subtle); border-top: 1px dashed var(--line); font-size: 0.75rem; }
+.tag.setting { background: var(--chip); color: var(--text); flex: none; white-space: nowrap; }
+.tag.revision { background: var(--multi-bg); color: var(--multi); flex: none; white-space: nowrap; }
+.prereqs { margin-top: 2px; }
+.placement { display: flex; flex-direction: column; gap: 3px; margin-bottom: 8px; }
+/* S1: curriculum map */
+table.map-table tbody tr { cursor: default; }
+table.map-table tr.ach td { font-style: italic; }
+table.map-table .gap { color: var(--warn); }
+.class-badge { display: inline-block; min-width: 20px; text-align: center; font-size: 0.75rem; font-weight: 600; padding: 1px 6px; margin-right: 4px; border-radius: 4px; background: var(--chip); color: var(--text); text-decoration: none; }
+.class-badge:hover { background: var(--multi-bg); }
+main.wide .filters select.chapter-select { max-width: 360px; }
