@@ -233,9 +233,10 @@ async function overrides(sql: Sql, dir: string, dryRun: boolean): Promise<FileRe
   return out;
 }
 
-export async function runUpdates(sql: Sql, dir = UPDATES_DIR, opts: { dryRun?: boolean; only?: string[] } = {}): Promise<FileResult[]> {
+export async function runUpdates(sql: Sql, dir = UPDATES_DIR, opts: { dryRun?: boolean; only?: string[]; goLive?: boolean } = {}): Promise<FileResult[]> {
   const host = new URL(targetUrl()).hostname;
-  if (host !== '127.0.0.1' && host !== 'localhost') throw new Error('import:updates runs against the local database only (queue 12 Nov 2026).');
+  // local only, except at go-live (scripts/golive.ts passes --go-live for the real project, with Sambit's OK)
+  if (host !== '127.0.0.1' && host !== 'localhost' && !opts.goLive) throw new Error('import:updates runs against the local database only (queue 12 Nov 2026); go-live passes --go-live.');
   const want = (n: string) => !opts.only?.length || opts.only.includes(n);
   const out: FileResult[] = [];
   const has = (n: string) => want(n) && existsSync(join(dir, n));
@@ -258,7 +259,7 @@ if (import.meta.filename === process.argv[1]) {
   const sql = connect();
   try {
     await assertCmsOwner(sql);
-    const results = await runUpdates(sql, dir, { dryRun, only });
+    const results = await runUpdates(sql, dir, { dryRun, only, goLive: args.includes('--go-live') });
     if (!results.length) console.log(`Nothing to import in ${short(dir)}.`);
     for (const r of results) {
       console.log(`\n${short(r.file)}${dryRun ? ' (DRY RUN — nothing saved)' : r.importId ? ` · import #${r.importId}` : ''} → ${r.result.toUpperCase()}`);

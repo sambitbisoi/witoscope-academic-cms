@@ -1,4 +1,5 @@
-// npm run db:migrate — applies db/migrations/*.sql in order, as cms_owner only.
+// npm run db:migrate [-- --to 0030_x.sql] — applies db/migrations/*.sql in order, as cms_owner only.
+// --to stops after that file (go-live: 0031 seeds the order from the topics, so it runs after the imports).
 //
 // History is kept in cms.cms_schema_migrations (decision 2). An applied file
 // whose contents changed is an error: write a new migration instead.
@@ -28,7 +29,10 @@ try {
       .map((r) => [r.file_name, r.sha256]),
   );
 
-  const files = readdirSync(MIGRATIONS_DIR).filter((f) => f.endsWith('.sql')).sort();
+  const toArg = process.argv.includes('--to') ? process.argv[process.argv.indexOf('--to') + 1] : null;
+  const all = readdirSync(MIGRATIONS_DIR).filter((f) => f.endsWith('.sql')).sort();
+  if (toArg && !all.includes(toArg)) throw new Error(`--to ${toArg}: no such migration file.`);
+  const files = toArg ? all.filter((f) => f <= toArg) : all;
   let ran = 0;
   for (const file of files) {
     const body = readFileSync(join(MIGRATIONS_DIR, file), 'utf8');
@@ -45,7 +49,7 @@ try {
     console.log(`applied ${file}`);
     ran++;
   }
-  console.log(ran ? `migrate: ${ran} applied.` : 'migrate: up to date.');
+  console.log(ran ? `migrate: ${ran} applied${toArg ? ` (up to ${toArg})` : ''}.` : `migrate: up to date${toArg ? ` (up to ${toArg})` : ''}.`);
 } finally {
   await sql.end();
 }

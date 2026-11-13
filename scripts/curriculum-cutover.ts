@@ -1,5 +1,5 @@
 // npm run curriculum:cutover                 status and checklist only (changes nothing)
-// npm run curriculum:cutover -- --confirm    the one-time switch: the CMS owns chapters and topics
+// npm run curriculum:cutover -- --confirm [--math <xlsx> --science <xlsx> --english <xlsx>]   the one-time switch: the CMS owns chapters and topics
 // npm run curriculum:cutover -- --revert     back to the workbooks (audited; for mistakes only)
 //
 // D5 (docs/curriculum-cutover.md). --confirm refuses unless the LAST successful topic import was
@@ -15,10 +15,12 @@ import { curriculumOwner } from './lib/curriculum.ts';
 import { readWorkbook } from './lib/xlsx.ts';
 
 const CR = join(homedir(), 'WitoScope', 'ContentResearch');
+const flag = (f: string) => { const i = process.argv.indexOf(f); return i >= 0 ? process.argv[i + 1] : undefined; };
+// --math / --science / --english: the workbooks the final import read (e.g. the archived finals at go-live)
 const WORKBOOKS = [
-  join(CR, 'Math', 'WitoScope_Math_Topics_Class1-6.xlsx'),
-  join(CR, 'Science', 'WitoScope_Science_Topics_Class1-6.xlsx'),
-  join(CR, 'English', 'WitoScope_English_Grammar_Topics_Class1-6.xlsx'),
+  flag('--math') ?? join(CR, 'Math', 'WitoScope_Math_Topics_Class1-6.xlsx'),
+  flag('--science') ?? join(CR, 'Science', 'WitoScope_Science_Topics_Class1-6.xlsx'),
+  flag('--english') ?? join(CR, 'English', 'WitoScope_English_Grammar_Topics_Class1-6.xlsx'),
 ];
 
 const args = process.argv.slice(2);
