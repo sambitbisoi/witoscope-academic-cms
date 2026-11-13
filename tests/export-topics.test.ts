@@ -15,7 +15,7 @@ describe('buildSheets', () => {
   });
   it('keeps the workbook column order and adds the new columns at the end', () => {
     expect(by('Class View').columns.slice(0, 10)).toEqual(['Class', 'Seq', 'Strand', 'Chapter ID', 'Chapter', 'Topic ID', 'Topic', 'Level', 'Sub-skills', "Also taught in (other sources' classes)"]);
-    expect(by('Class View').columns.slice(10)).toEqual(['Classes (all)', 'Prerequisites', 'Questions']);
+    expect(by('Class View').columns.slice(10)).toEqual(['Classes (all)', 'Prerequisites', 'Questions', 'No.']);
     expect(by('Master Topics').rows[0]).toEqual(['MT0001', 'MC01', 'Numbers', 'Counting', 'Count to 20', 'a; b', 1, '2', '–', '1–2', '–', null, 2, '2, 3', 'MT0000', 'active', 4]);
   });
   it('Class View lists active topics only; Master Topics keeps retired ones with their status; chapters count active topics', () => {
@@ -71,5 +71,15 @@ describe('publish (after the cut-over)', () => {
     expect(arch).toEqual(['WitoScope_Math_Topics_Class1-6.final-before-cutover-2026-11-12.xlsx']);
     expect(readFileSync(join(m, '..', '_archive', arch[0]!), 'utf8')).toBe('original math');
     vi.doUnmock('node:os');
+  });
+  it('Class View follows the stored order: Seq is the position in the class, No. the 1.2.3 number', () => {
+    const strands2 = [{ strand_id: 'math-NUM', code: 'NUM', name: 'Numbers', sort: 1 }, { strand_id: 'math-OPS', code: 'OPS', name: 'Operations', sort: 2 }];
+    const chapters2 = [{ chapter_id: 'MC01', strand_id: 'math-NUM', name: 'Counting', display_code: null, scope: null, sort: 1, status: 'active' },
+      { chapter_id: 'MC08', strand_id: 'math-OPS', name: 'Addition', display_code: null, scope: null, sort: 8, status: 'active' }];
+    const tp = (topic_id: string, chapter_id: string, seq: number) => ({ topic_id, chapter_id, class: 2, seq, name: topic_id, level: null, sub_skills: null, topic_kind: 'normal', source_flags: {}, notes: null, status: 'active', classes: [2], prereqs: [], questions: 0 });
+    const orders = { strands: [{ class: 2, strand_id: 'math-OPS', position: 1 }, { class: 2, strand_id: 'math-NUM', position: 2 }], chapters: [],
+      topics: [{ class: 2, topic_id: 'B', chapter_id: 'MC01', position: 1 }, { class: 2, topic_id: 'A', chapter_id: 'MC01', position: 2 }] };
+    const cv = buildSheets('math', strands2, chapters2, [tp('A', 'MC01', 1), tp('B', 'MC01', 2), tp('C', 'MC08', 3)], 'x', [], orders).find((x) => x.name === 'Class View')!;
+    expect(cv.rows.map((r) => [r[5], r[1], r[13]])).toEqual([['C', 1, '1.1.1'], ['B', 2, '2.1.1'], ['A', 3, '2.1.2']]);
   });
 });

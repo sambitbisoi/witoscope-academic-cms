@@ -149,3 +149,6 @@ export const setTopicReview = (topicId: string, status: string, note: string | n
 /** Add questions to a topic by hand or from an upload (no AI; status Needs review; flags set by the function). */
 export const addQuestions = (p: { topic_id: string; origin: 'manual' | 'upload'; file_name?: string; file_hash?: string; questions: unknown[]; skipped?: unknown[]; warnings?: unknown[] }) =>
   rpc('cms_add_questions', { p }) as Promise<{ import_id: number | null; added: { row: number | null; question_id: string; file_key: string }[] }>;
+/** Sequencing (13 Nov 2026): save the order of one or more lists (one class + one subject; audited before → after). */
+export const saveOrder = (p: { subject: string; class: number; lists: { level: string; parent_id: string | null; ids: string[] }[] }) =>
+  rpc('cms_save_order', { p }) as Promise<{ lists_changed: number }>;

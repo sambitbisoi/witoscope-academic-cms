@@ -510,3 +510,22 @@ table.map-table tr.warn-row td:first-child { box-shadow: inset 3px 0 0 var(--war
 .upload-preview th:nth-child(1) { width: 44px; } .upload-preview th:nth-child(2) { width: 70px; } .upload-preview th:nth-child(4) { width: 96px; } .upload-preview th:nth-child(5) { width: 84px; } .upload-preview th:nth-child(6) { width: 44px; } .upload-preview th:nth-child(7) { width: 34%; }
 .upload-preview td { overflow-wrap: anywhere; vertical-align: top; }
 .actions .blockers { flex-basis: 100%; }
+.id-muted { font-size: 0.78em; font-weight: 400; color: var(--muted); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; margin-left: 2px; white-space: nowrap; }
+/* Reorder mode (13 Nov 2026) */
+.reorder { padding: 12px 14px; margin: 8px 0 14px; }
+.reorder .ro-head { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; position: sticky; top: 0; background: var(--card); padding: 6px 0; z-index: 2; }
+.reorder .spacer { flex: 1; }
+.ro-group { margin: 8px 0 12px; }
+.ro-strand { font-weight: 700; margin: 6px 0 4px; }
+.ro-chapter { margin: 2px 0 8px 14px; }
+.ro-chapter-name { font-weight: 600; color: var(--navy); margin: 4px 0; }
+.ro-list { list-style: none; margin: 0; padding: 0 0 0 14px; }
+.ro-item { display: flex; gap: 10px; align-items: center; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; margin-bottom: 4px; background: var(--card); cursor: grab; }
+.ro-item.dragging { opacity: 0.5; border-style: dashed; border-color: var(--accent); }
+.ro-item.fixed { cursor: default; background: var(--subtle); color: var(--muted); border-style: dotted; }
+.ro-handle { color: var(--muted); width: 12px; }
+.ro-no { min-width: 48px; font-variant-numeric: tabular-nums; font-weight: 600; }
+.ro-name { flex: 1; min-width: 0; }
+.ro-btns { display: flex; gap: 4px; }
+.ro-btns .link { padding: 0 6px; font-size: 1rem; }
+.reorder.card { width: 100%; max-width: 900px; box-sizing: border-box; }

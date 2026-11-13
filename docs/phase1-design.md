@@ -63,6 +63,8 @@ All IDs are permanent and never reused. Class is a field, never inferred from an
 
 One "Achievers" topic row per chapter-class (topic_kind = achievers) **[guess: ID scheme for these rows; proposed `ACH-MC19-6`]**.
 
+> **Sequencing (Sambit, 13 Nov 2026; migration 0031):** the order of strands, chapters and topics is stored per class, never on the item: `cms_strand_order` (class + subject), `cms_chapter_order` (within its strand, per class), `cms_topic_order` (within its chapter, per class; core topics only). Seeded once from the Class View Seq. A chapter belongs to one strand; a row stored under another strand / chapter than the item's current one is ignored (the item moved, so it goes to the end), as are items with no row. Retired items keep their slot but are hidden; Achievers rows are always last in their chapter; extra rows (from a lower / higher class) come after the core ones, unnumbered. Numbering is computed with no gaps (`shared/sequence.ts`): strand `1.`, chapter `1.2`, topic `1.2.3`, shown in the Curriculum map, the Browse tree and the Excel export (Class View: Seq = position in the class, No. = 1.2.3). Names come first with the ID last, smaller and muted. Reorder mode on the map (one class + one subject; the level follows Show chapter / Show topic) saves through `cms_save_order` (admin only; no crossing; audited `reorder` before → after).
+
 ### B. Catalogues (tagging vocabulary)
 
 | Table | Purpose | Key columns |

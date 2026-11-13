@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { reviewOf, topicData, tree, type Chapter, type QuestionRow, type TopicReview, type TopicWithStats } from './api';
 import { AddQuestionForm, BulkUpload, OriginFlags } from './AddQuestions';
+import { buildSequence, numbered, numbersOf } from '../../shared/sequence.ts';
+import { Id } from './Id';
 import { ReviewControl, ReviewFilterSelect, RollUpIcon, TopicReviewIcon } from './ReviewStatus';
 import {
   applyFilters, browseHash, classesLabel, FLAG_FILTERS, matchesReview, roleOf, rollUp, type ReviewFilter, type RollUp, cloneGroups, countsLabel, distinctTexts, sameWording, type CloneInfo, gapLabel, groupBySet, involvementOf, mixLabel, NO_FILTERS, statusCountsLabel, statusLabel,
@@ -75,13 +77,20 @@ export function Workspace(r: R) {
   const shownTopics = useMemo(() => (data?.topics ?? []).filter((t) => r.cls === 'all' || extra || t.class === Number(r.cls) || t.topic_id === r.topic), [data, r.cls, extra, r.topic]);
   const nExtra = useMemo(() => (r.cls === 'all' ? 0 : (data?.topics ?? []).filter((t) => t.class !== Number(r.cls)).length), [data, r.cls]);
   const chapterOf = useMemo(() => new Map((data?.chapters ?? []).map((c) => [c.chapter_id, c])), [data]);
+  // Sequencing (13 Nov 2026): the class's stored order and its numbers (1. / 1.2 / 1.2.3); none for "All classes"
+  const seq = useMemo(() => (data && r.cls !== 'all'
+    ? numbersOf(buildSequence(Number(r.cls), data.strands, data.chapters, data.topics, data.orders, { includeExtra: true })) : null), [data, r.cls]);
   const { strands, chapters } = useMemo(() => {
     if (!data) return { strands: [], chapters: [] };
     const n = new Map<string, number>();
     for (const t of shownTopics) n.set(t.chapter_id, (n.get(t.chapter_id) ?? 0) + (t.stats?.n_questions ?? 0));
-    const chs = data.chapters.filter((c) => n.has(c.chapter_id)).map((c) => ({ ...c, n: n.get(c.chapter_id)! }));
-    return { strands: data.strands.filter((s) => chs.some((c) => c.strand_id === s.strand_id)), chapters: chs.filter((c) => !r.strand || c.strand_id === r.strand) };
-  }, [data, shownTopics, r.strand]);
+    const rank = (m: Map<string, number> | undefined, id: string) => m?.get(id) ?? 1e9;
+    const chs = data.chapters.filter((c) => n.has(c.chapter_id)).map((c) => ({ ...c, n: n.get(c.chapter_id)! }))
+      .sort((a, b) => rank(seq?.chapterRank, a.chapter_id) - rank(seq?.chapterRank, b.chapter_id) || a.sort - b.sort);
+    const sts = data.strands.filter((s) => chs.some((c) => c.strand_id === s.strand_id))
+      .sort((a, b) => rank(seq?.strandRank, a.strand_id) - rank(seq?.strandRank, b.strand_id) || a.sort - b.sort);
+    return { strands: sts, chapters: chs.filter((c) => !r.strand || c.strand_id === r.strand) };
+  }, [data, shownTopics, r.strand, seq]);
   // Review roll-ups per chapter and strand within this class: core topics only (extra rows ignored)
   const rolls = useMemo(() => {
     const ch = new Map<string, RollUp>(); const st = new Map<string, RollUp>();
@@ -116,7 +125,7 @@ export function Workspace(r: R) {
       {error && <p className="error">Couldn't load topics: {error}</p>}
       {!data && !error && <p className="muted">Loading…</p>}
       {data && <Tree strands={strands.filter((x) => !r.strand || x.strand_id === r.strand)} chapters={chapters.filter((c) => !r.ch || c.chapter_id === r.ch)} topics={shownTopics} cls={r.cls}
-        selected={r.topic} gapsOnly={gapsOnly} reviews={data.reviews} reviewFilter={reviewFilter} rolls={rolls} isOpen={isOpen} onToggle={toggle} onPick={(t) => { setOverlay(false); go({ topic: t, q: null, v: null }); }} />}
+        selected={r.topic} gapsOnly={gapsOnly} seq={seq} reviews={data.reviews} reviewFilter={reviewFilter} rolls={rolls} isOpen={isOpen} onToggle={toggle} onPick={(t) => { setOverlay(false); go({ topic: t, q: null, v: null }); }} />}
     </>
   );
 
@@ -136,13 +145,13 @@ export function Workspace(r: R) {
         <label className="sr-only" htmlFor="ws-strand">Strand</label>
         <select id="ws-strand" className={r.strand ? 'active' : ''} value={r.strand ?? ''} onChange={(e) => go({ strand: e.target.value || null, ch: null, topic: null, q: null, v: null })}>
           <option value="">All strands</option>
-          {strands.map((x) => <option key={x.strand_id} value={x.strand_id}>{x.name}</option>)}
+          {strands.map((x) => <option key={x.strand_id} value={x.strand_id}>{numbered(seq?.strand.get(x.strand_id), x.name, 'strand')}</option>)}
           {r.strand && !strands.some((x) => x.strand_id === r.strand) && <option value={r.strand}>{r.strand} (no topics in this class)</option>}
         </select>
         <label className="sr-only" htmlFor="ws-chapter">Chapter</label>
         <select id="ws-chapter" className={`chapter-select ${r.ch ? 'active' : ''}`} value={r.ch ?? ''} onChange={(e) => go({ ch: e.target.value || null, topic: null, q: null, v: null })}>
           <option value="">All chapters</option>
-          {chapters.map((c) => <option key={c.chapter_id} value={c.chapter_id}>{c.chapter_id} · {c.name} · {c.n} Q{c.n === 1 ? '' : 's'}</option>)}
+          {chapters.map((c) => <option key={c.chapter_id} value={c.chapter_id}>{numbered(seq?.chapter.get(c.chapter_id), c.name)} · {c.chapter_id} · {c.n} Q{c.n === 1 ? '' : 's'}</option>)}
           {r.ch && !chapters.some((c) => c.chapter_id === r.ch) && <option value={r.ch}>{r.ch} (no topics in this class)</option>}
         </select>
         {r.cls !== 'all' && <label className="check small extra-toggle" title="Topics whose home class is another class but that are also taught in this one">
@@ -162,7 +171,7 @@ export function Workspace(r: R) {
             : !r.topic ? <Pick subject={r.subject} cls={r.cls} ch={chapters.find((c) => c.chapter_id === r.ch)} n={data ? shownTopics.filter((t) => (!r.ch || t.chapter_id === r.ch) && (!r.strand || chapterOf.get(t.chapter_id)?.strand_id === r.strand)).length : undefined} />
             : !data ? <p className="muted">Loading…</p>
             : !topic ? <p>Topic {r.topic} isn't in {subjectLabel(r.subject)}{r.cls !== 'all' ? ` class ${r.cls}` : ''}. <a href={browseHash({ ...r, cls: 'all' })}>Look in all classes</a></p>
-            : <TopicView key={topic.topic_id} reload={reload} topic={topic} review={data.reviews.get(topic.topic_id)} chapter={data.chapters.find((c) => c.chapter_id === topic.chapter_id)} r={r} go={go} onOrder={setOrder} onChanged={() => setReload((x) => x + 1)} />}
+            : <TopicView key={topic.topic_id} reload={reload} topic={topic} no={seq?.topic.get(topic.topic_id) ?? null} chapterNo={seq?.chapter.get(topic.chapter_id) ?? null} review={data.reviews.get(topic.topic_id)} chapter={data.chapters.find((c) => c.chapter_id === topic.chapter_id)} r={r} go={go} onOrder={setOrder} onChanged={() => setReload((x) => x + 1)} />}
         </section>
         <Handle side="detail" onDrag={(dx) => setPanes({ ...panes, detail: clamp(panes.detail - dx, 320, 900) })} onReset={() => setPanes({ ...panes, detail: PANES.detail })} />
         <aside className="ws-detail" aria-label="Question detail">
@@ -200,7 +209,7 @@ function Pick({ subject, cls, ch, n }: { subject: Subject; cls: string; ch?: Cha
   return (
     <div className="empty">
       <h1>{subjectLabel(subject)} · {cls === 'all' ? 'all classes' : `Class ${cls}`}</h1>
-      {ch && <div className="chapter-name">Chapter {ch.chapter_id} · {ch.name}</div>}
+      {ch && <div className="chapter-name">Chapter {ch.name} <Id>{ch.chapter_id}</Id></div>}
       <p className="muted">{n === undefined ? 'Loading…' : `${n} topics. Pick one on the left.`}</p>
     </div>
   );
@@ -210,8 +219,8 @@ const topicChapter = (topics: TopicWithStats[] | undefined, id: string | null) =
 const qsLabel = (n: number) => `${n} Q${n === 1 ? '' : 's'}`;
 
 /** R3: Strand ▸ Chapter ▸ Topic; each branch opens and closes with the arrow on its left. */
-function Tree({ strands, chapters, topics, cls, selected, gapsOnly, reviews, reviewFilter, rolls, isOpen, onToggle, onPick }: {
-  strands: { strand_id: string; name: string }[]; chapters: Chapter[]; topics: TopicWithStats[]; cls: string; selected: string | null;
+function Tree({ strands, chapters, topics, cls, selected, gapsOnly, seq, reviews, reviewFilter, rolls, isOpen, onToggle, onPick }: {
+  strands: { strand_id: string; name: string }[]; chapters: Chapter[]; seq: ReturnType<typeof numbersOf> | null; topics: TopicWithStats[]; cls: string; selected: string | null;
   gapsOnly: boolean; reviews: Map<string, TopicReview>; reviewFilter: ReviewFilter; rolls: { ch: Map<string, RollUp>; st: Map<string, RollUp> }; isOpen: (id: string) => boolean; onToggle: (id: string) => void; onPick: (t: string) => void;
 }) {
   const visible = topics.filter((t) => t.status === 'active' || t.topic_id === selected)
@@ -225,13 +234,13 @@ function Tree({ strands, chapters, topics, cls, selected, gapsOnly, reviews, rev
   const meta = (ts: TopicWithStats[]) => `${ts.length} topic${ts.length === 1 ? '' : 's'} · ${qsLabel(total(ts))}`;
   const arrow = (id: string) => <span className="tree-arrow" aria-hidden>{isOpen(id) ? '▾' : '▸'}</span>;
   const chapterEl = (c: Chapter) => {
-    const ts = byChapter.get(c.chapter_id)!.sort((a, b) =>
+    const ts = byChapter.get(c.chapter_id)!.sort((a, b) => (seq ? (seq.topicRank.get(a.topic_id) ?? 1e9) - (seq.topicRank.get(b.topic_id) ?? 1e9) : 0) ||
       (a.topic_kind === 'achievers' ? 1 : 0) - (b.topic_kind === 'achievers' ? 1 : 0) || a.class - b.class || (a.seq ?? 999) - (b.seq ?? 999) || a.topic_id.localeCompare(b.topic_id));
     const open = isOpen(c.chapter_id);
     return (
       <div key={c.chapter_id} className="tree-chapter">
         <button className="tree-branch tree-chapter-name chapter-name" aria-expanded={open} onClick={() => onToggle(c.chapter_id)}>
-          {arrow(c.chapter_id)}<span className="tb-name">{c.chapter_id} · {c.name}<RollUpIcon r={rolls.ch.get(c.chapter_id)} /></span><span className="tb-meta">{meta(ts)}</span>
+          {arrow(c.chapter_id)}<span className="tb-name">{numbered(seq?.chapter.get(c.chapter_id), c.name)} <Id>{c.chapter_id}</Id><RollUpIcon r={rolls.ch.get(c.chapter_id)} /></span><span className="tb-meta">{meta(ts)}</span>
         </button>
         {open && <div className="tree-kids">{ts.map((t) => {
           const gap = gapLabel(t.stats);
@@ -239,7 +248,7 @@ function Tree({ strands, chapters, topics, cls, selected, gapsOnly, reviews, rev
           return (
             <button key={t.topic_id} className={`tree-topic role-${role} ${t.topic_id === selected ? 'sel' : ''} ${t.topic_kind === 'achievers' ? 'ach' : ''}`} onClick={() => onPick(t.topic_id)}
               ref={t.topic_id === selected ? (el) => el?.scrollIntoView({ block: 'nearest' }) : undefined}>
-              <span className="tt-name"><TopicReviewIcon status={reviewOf(reviews, t.topic_id)} />{t.topic_kind === 'achievers' ? t.name : <>{t.topic_id} {t.name}</>}{cls === 'all' && <span className="cls"> · C{t.class}</span>}
+              <span className="tt-name"><TopicReviewIcon status={reviewOf(reviews, t.topic_id)} />{t.topic_kind === 'achievers' ? t.name : <>{numbered(seq?.topic.get(t.topic_id), t.name)} <Id>{t.topic_id}</Id></>}{cls === 'all' && <span className="cls"> · C{t.class}</span>}
                 {role !== 'core' && <span className={`role-tag ${role}`}> from Class {t.class}</span>}<ClassesPill classes={t.classes} /></span>
               <span className="tt-meta">{countsLabel(t.stats)}{gap && <span className="gap"> · ⚠ {gap}</span>}</span>
             </button>
@@ -256,7 +265,7 @@ function Tree({ strands, chapters, topics, cls, selected, gapsOnly, reviews, rev
         return (
           <div key={x.strand_id} className="tree-strand">
             <button className="tree-branch tree-strand-name" aria-expanded={open} onClick={() => onToggle(x.strand_id)}>
-              {arrow(x.strand_id)}<span className="tb-name">{x.name}<RollUpIcon r={rolls.st.get(x.strand_id)} /></span><span className="tb-meta">{meta(chs.flatMap((c) => byChapter.get(c.chapter_id)!))}</span>
+              {arrow(x.strand_id)}<span className="tb-name">{numbered(seq?.strand.get(x.strand_id), x.name, 'strand')}<RollUpIcon r={rolls.st.get(x.strand_id)} /></span><span className="tb-meta">{meta(chs.flatMap((c) => byChapter.get(c.chapter_id)!))}</span>
             </button>
             {open && <div className="tree-kids">{chs.map(chapterEl)}</div>}
           </div>
@@ -275,7 +284,7 @@ function useOpenGroups(topicId: string, tab: string) {
   return [open, setOpen] as const;
 }
 
-function TopicView({ topic, review, chapter, r, go, reload, onOrder, onChanged }: { topic: TopicWithStats; review?: TopicReview; chapter?: Chapter; r: R; go: (p: Partial<R>) => void; reload: number; onOrder: (ids: string[]) => void; onChanged: () => void }) {
+function TopicView({ topic, no, chapterNo, review, chapter, r, go, reload, onOrder, onChanged }: { topic: TopicWithStats; no?: string | null; chapterNo?: string | null; review?: TopicReview; chapter?: Chapter; r: R; go: (p: Partial<R>) => void; reload: number; onOrder: (ids: string[]) => void; onChanged: () => void }) {
   // D5: the add / edit form open on this topic (one at a time)
   const [form, setForm] = useState<{ kind: Kind; id: string | null; fixed?: Record<string, unknown> } | null>(null);
   // 13 Nov 2026: add a question by hand or bulk-upload an Excel file (this topic only; no AI)
@@ -330,9 +339,9 @@ function TopicView({ topic, review, chapter, r, go, reload, onOrder, onChanged }
   return (
     <>
       <div className="topic-head">
-        <h1>{topic.topic_kind === 'achievers' ? topic.name : `${topic.topic_id} · ${topic.name}`}<ClassesPill classes={topic.classes} /></h1>
+        <h1>{topic.topic_kind === 'achievers' ? topic.name : <>{numbered(no, topic.name)} <Id>{topic.topic_id}</Id></>}<ClassesPill classes={topic.classes} /></h1>
         <div className="small">
-          <span className="chapter-name">Chapter {chapter ? `${chapter.chapter_id} · ${chapter.name}` : topic.chapter_id}</span>
+          <span className="chapter-name">Chapter {chapter ? <>{numbered(chapterNo, chapter.name)} <Id>{chapter.chapter_id}</Id></> : topic.chapter_id}</span>
           <span className="muted"> · Class {topic.class}
             {topic.topic_kind === 'achievers' ? ' · Achievers (chapter level)' : topic.taught_in_school ? ' · taught in school' : ' · not in NCERT / DAV'}
             {sources && ` · ${sources}`}</span>
