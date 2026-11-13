@@ -13,7 +13,7 @@ export const subjectOfChapter = (chapterId: string): Subject =>
 // ---------------------------------------------------------------- routes (hash)
 export type Route =
   | { name: 'home'; grade: string | null }
-  | { name: 'browse'; subject: Subject; cls: string; strand: string | null; ch: string | null; topic: string | null; q: string | null; v: number | null; tab: 'types' | 'concepts' | 'sources'; edit: boolean }
+  | { name: 'browse'; subject: Subject; cls: string; strand: string | null; ch: string | null; topic: string | null; q: string | null; v: number | null; tab: 'types' | 'concepts' | 'sources' | 'content'; edit: boolean; row: string | null; chview: boolean }
   | { name: 'review' }
   | { name: 'proposed'; kind: string | null }
   | { name: 'map'; tab: 'topics' | 'sources'; cls: string; subject: string; strand: string | null; ch: string | null; show: MapShow; q: string; chapters: boolean; topics: boolean }
@@ -48,14 +48,16 @@ export function parseRoute(hash: string): Route {
     const v = qs.get('v');
     const ch = qs.get('ch');
     return { name: 'browse', subject: p[1] as Subject, cls, strand: strandParam(qs.get('strand')), ch: ch && /^(MC|SC|GC)[0-9]{2}$/.test(ch) ? ch : null, topic: p[3] ?? null, q: qs.get('q'), v: v && /^\d+$/.test(v) ? Number(v) : null,
-      tab: qs.get('tab') === 'concepts' ? 'concepts' : qs.get('tab') === 'sources' ? 'sources' : 'types', edit: qs.get('edit') === '1' };
+      tab: qs.get('tab') === 'concepts' ? 'concepts' : qs.get('tab') === 'sources' ? 'sources' : qs.get('tab') === 'content' ? 'content' : 'types', edit: qs.get('edit') === '1',
+      // Science (13 Nov 2026): the selected content row, and the chapter view (all topics of a chapter)
+      row: /^C[1-6]-[0-9A-Z]{2,4}-[0-9]{3}$/.test(qs.get('row') ?? '') ? qs.get('row') : null, chview: qs.get('view') === 'chapter' && !!ch && /^SC[0-9]{2}$/.test(ch) };
   }
   return { name: 'notfound' };
 }
 
 const strandParam = (x: string | null) => (x && /^(math|science|grammar)-[A-Z]{2,4}$/.test(x) ? x : null);
 
-export function browseHash(r: { subject: string; cls: string; strand?: string | null; ch?: string | null; topic?: string | null; q?: string | null; v?: number | null; tab?: string; edit?: boolean }): string {
+export function browseHash(r: { subject: string; cls: string; strand?: string | null; ch?: string | null; topic?: string | null; q?: string | null; v?: number | null; tab?: string; edit?: boolean; row?: string | null; chview?: boolean }): string {
   const parts = ['#/browse', r.subject, r.cls, ...(r.topic ? [encodeURIComponent(r.topic)] : [])].join('/');
   const qs = new URLSearchParams();
   if (r.strand) qs.set('strand', r.strand);
@@ -64,6 +66,8 @@ export function browseHash(r: { subject: string; cls: string; strand?: string | 
   if (r.v) qs.set('v', String(r.v));
   if (r.tab && r.tab !== 'types') qs.set('tab', r.tab);
   if (r.edit && r.q) qs.set('edit', '1');
+  if (r.row) qs.set('row', r.row);
+  if (r.chview && r.ch && !r.topic) qs.set('view', 'chapter');
   const s = qs.toString();
   return s ? `${parts}?${s}` : parts;
 }
@@ -228,6 +232,8 @@ export interface NewQuestion {
   row?: number; text: string; format: string; options: string[]; correct: string; level: number | null; picture_needed: boolean | null;
   figure_description?: string; solution?: string; hints?: string[]; wrong_answers?: { value: string; why: string }[]; concepts?: string[];
   typical_set_id?: string; pattern_id?: string; setting_id?: string; math_difficulty?: string; source_refs?: string[]; author_notes?: string;
+  /** Science (13 Nov 2026): content rows the question tests (direct) or uses (supporting) */
+  content_rows?: { row_id: string; role: 'direct' | 'supporting' }[];
 }
 /** Missing or broken MANDATORY fields only (no similarity, duplicate or quality checks). */
 export function mandatoryErrors(q: NewQuestion): string[] {
@@ -271,11 +277,22 @@ export const UPLOAD_COLUMNS: { key: string; header: string; required: boolean; h
   { key: 'difficulty', header: 'Difficulty guess', required: false, help: 'Simple, Medium or Complex (a guess; the attributes are evaluated later).' },
   { key: 'source', header: 'Source citation', required: false, help: 'A citation only (book item ID such as N6-01-004, or book · class · chapter · page · item). Never paste book text.' },
   { key: 'notes', header: 'Notes', required: false, help: 'Anything else for the reviewer.' },
+  { key: 'rows_direct', header: 'Content row IDs (direct)', required: false, help: 'Science only: the content rows the question tests, separated by commas (e.g. C6-04-001). Unknown IDs are left out with a warning.' },
+  { key: 'rows_supporting', header: 'Content row IDs (supporting)', required: false, help: 'Science only: content rows the question only uses (context, set-up, a wrong option), separated by commas.' },
 ];
+/** The template's columns for a subject: the content-row columns are Science only. */
+export const uploadColumns = (science: boolean) => UPLOAD_COLUMNS.filter((c) => science || !c.key.startsWith('rows_'));
+
+/** "C6-04-001, C6-04-014" (direct) + supporting → links; a row in both counts as direct. */
+export function contentRowLinks(direct: string, supporting: string): { row_id: string; role: 'direct' | 'supporting' }[] {
+  const list = (x: string) => [...new Set(x.split(/[,;\s]+/).map((y) => y.trim().toUpperCase()).filter(Boolean))];
+  const d = list(direct);
+  return [...d.map((row_id) => ({ row_id, role: 'direct' as const })), ...list(supporting).filter((x) => !d.includes(x)).map((row_id) => ({ row_id, role: 'supporting' as const }))];
+}
 export const EXAMPLE_MARK = 'EXAMPLE';
 
 /** IDs the topic knows, to check an upload's optional IDs against. */
-export interface UploadLookups { concepts: Set<string>; sets: Set<string>; patterns: Map<string, string>; settings: Set<string>; sourceItems: Set<string> }
+export interface UploadLookups { concepts: Set<string>; sets: Set<string>; patterns: Map<string, string>; settings: Set<string>; sourceItems: Set<string>; contentRows?: Set<string> }
 export interface ParsedRow { row: number; q: NewQuestion | null; errors: string[]; warnings: string[]; example?: boolean }
 const cellText = (v: unknown) => (v === null || v === undefined ? '' : String(v).trim());
 const splitList = (s: string, sep: RegExp) => s.split(sep).map((x) => x.trim()).filter(Boolean);
@@ -315,6 +332,7 @@ export function parseUploadRow(row: number, cells: Record<string, unknown>, look
     figure_description: c('figure') || undefined, solution: c('solution') || undefined, hints: [c('hint1'), c('hint2'), c('hint3')].filter(Boolean),
     wrong_answers, concepts, typical_set_id: setId || undefined, pattern_id: patternId || undefined, setting_id: settingId || undefined,
     math_difficulty, source_refs: isItem ? [src] : [], author_notes: notes || undefined,
+    content_rows: contentRowLinks(c('rows_direct'), c('rows_supporting')).filter((l) => { const ok = !!look.contentRows?.has(l.row_id); if (!ok) warnings.push(`content row ${l.row_id} is not known; left out`); return ok; }),
   };
   let errors = mandatoryErrors(q);
   if (Number.isNaN(level)) errors = [...errors.filter((e) => !e.startsWith('level')), `level "${lv}" is not 1–6`];

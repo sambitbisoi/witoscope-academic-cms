@@ -123,7 +123,7 @@ PRs: **PR A** data + importer + originality (items 1–5, 10); **PR B** screens 
 
 ## 7. Real project (after local is done; not before Sambit's OK)
 
-The real project is still waiting for its own go-live (migrations 0019–0031). Science comes after it: migration 0032, then `import:science --dry-run` against the real project (`.env.real`), with a report of counts and changes. Nothing is written there until Sambit OKs that report.
+Go-live is done: live runs `main` with #12–#21 (migrations 0001–0031). Science follows the order in §9: schema and data reach the real project first, and the UI is merged and deployed only after that.
 
 ### Decisions (Sambit, 13 Nov 2026)
 Q1, Q3, Q4, Q5, Q7, Q8: as proposed. **Q2 changed:** the 12 topic–class links are created as **proposed** links (source "Science master", audited) and appear under Proposed → Topic classes. Approving one there makes the link. Nothing is made active by the importer. **Q6 changed:** all 2,407 content rows get the every-field originality check. On the **real** import, a row at near-copy (≥ 0.85) is held out unless `override_requests.csv` lists that row + field. **Locally** it is imported with an "Originality flagged" badge.
@@ -159,21 +159,22 @@ Q1, Q3, Q4, Q5, Q7, Q8: as proposed. **Q2 changed:** the 12 topic–class links 
 | ST0241 | Characteristics of living things: respiration, excretion and response | 6 | 5 | from a higher class | 4 |
 | ST0301 | Asteroids and comets | 6 | 5 | from a higher class | 5 |
 
-## 9. Real-project dry-run plan (waits for Sambit's OK; nothing has run there)
+## 9. Real-project plan (each step waits for Sambit's OK; nothing has run there)
 
-The real project is still waiting for its own go-live (migrations 0019–0031, imports, cut-over: `docs/queue-2026-11-12.md`). Science comes **after** go-live.
+Go-live is done (13 Nov 2026): the live site runs `main` with #12–#21, and the real project has migrations 0001–0031. The order below makes sure **the live UI never runs ahead of its schema**: PR A (#22) and PR B are merged to `main` and deployed only after 0032 and the Science data are on the real project.
 
-| Step | Command (on the Mac) | Writes to the real project? |
-|---|---|---|
-| 0 | Backup: `pg_dump` of schema `cms` to `~/WitoScope/CMS-backups/real-cms-<date>-pre-science.{dump,sql}` | No |
-| 1 | `npx tsx --env-file=.env.real scripts/migrate.ts` → applies 0032 (4 tables, columns, views, 2 functions). `check-migrations` runs first | **Yes, schema only.** Needs your OK |
-| 2 | `npx tsx --env-file=.env.real scripts/db-verify.ts` | No |
-| 3 | `npm run check:originality -- --science` (Mac only; already done for today's master) | No |
-| 4 | `npx tsx --env-file=.env.real scripts/import-science.ts --dry-run` → report to `.local-import/science-import-real-dry-run-*.json` | No (one rolled-back transaction; only the SQ sequence advances) |
-| 5 | You review the dry-run report. Expected: 33 sources, **2,403 rows** (4 near-copies held out unless `Science/override_requests.csv` lists row + field), 2,636 row citations, 134 questions, 155 + 34 links, 12 proposed links | — |
-| 6 | Only with your OK: `npx tsx --env-file=.env.real scripts/import-science.ts --confirm-real` (the script refuses a real run without `--confirm-real`) | **Yes** |
+| Step | What | Command (on the Mac) | Writes to the real project? |
+|---|---|---|---|
+| a | Sambit OKs the screens (`~/WitoScope/CMS-screens/science/`) → commit the UI on `science-ui` and open **PR B** (base `science`). Neither PR is merged yet | — | No |
+| b | Back up the real DB | `pg_dump` of schema `cms` to `~/WitoScope/CMS-backups/real-cms-<date>-pre-science.{dump,sql}` | No |
+| c | Apply 0032 to the real project, then verify | `npx tsx --env-file=.env.real scripts/migrate.ts` (runs `check-migrations` first; applies only 0032: 4 tables, columns, 2 views, 2 functions), then `npx tsx --env-file=.env.real scripts/db-verify.ts` | **Yes, schema only.** The live UI (still `main`) does not use the new tables or columns, so it keeps working |
+| d | Dry run on the real project → Sambit reviews the report | `npx tsx --env-file=.env.real scripts/import-science.ts --dry-run` → `.local-import/science-import-real-dry-run-*.json`. The originality report must match the master (re-run `npm run check:originality -- --science` on the Mac if the master changed) | No (one rolled-back transaction; only the SQ sequence advances) |
+| e | Real import, only with Sambit's OK on (d) | `npx tsx --env-file=.env.real scripts/import-science.ts --confirm-real` (refused without `--confirm-real`) | **Yes** |
+| f | Only then: merge PR A and PR B to `main` and deploy | GitHub merge (Sambit) → Cloudflare Pages deploy of `main` | No (UI only) |
 
-Expected held-out rows: C5-01-011, C5-01-072, C5-06-009, C6-08-018. None of them is linked to a question, so no question is blocked. To let one in, add a line to `~/WitoScope/ContentResearch/Science/override_requests.csv` (`file_key,field,reason`, e.g. `C5-01-072,content,"<why the wording must stay>"`) or reword the row in the content map and re-run the check.
+Expected in (d): 33 sources, **2,403 content rows** (2,407 minus the 4 held out), 2,636 row citations, 134 questions, 293 question citations, 155 direct + 34 supporting links, 12 proposed topic–class links (approved later in Proposed, by Sambit only).
+
+**Held out (Sambit, 13 Nov 2026): C5-01-011, C5-01-072, C5-06-009, C6-08-018** stay out of the real import. They will be rewritten in the master later; then re-run the originality check and `import:science` (the rows come in as new). No override request is filed for them. None is linked to a question, so no question is blocked. Override requests, when needed, go in `~/WitoScope/ContentResearch/Science/override_requests.csv` (`file_key,field,reason`).
 
 ## 10. Assumptions and guesses (flagged)
 

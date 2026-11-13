@@ -84,7 +84,7 @@ function Home({ email }: { email?: string }) {
   return (
     <Shell email={email} route={route}>
       {route.name === 'home' ? <HomeScreen grade={route.grade} />
-        : route.name === 'browse' ? <Workspace subject={route.subject} cls={route.cls} strand={route.strand} ch={route.ch} topic={route.topic} q={route.q} v={route.v} tab={route.tab} edit={route.edit} />
+        : route.name === 'browse' ? <Workspace subject={route.subject} cls={route.cls} strand={route.strand} ch={route.ch} topic={route.topic} q={route.q} v={route.v} tab={route.tab} edit={route.edit} row={route.row} chview={route.chview} />
         : route.name === 'question' ? <OpenQuestion id={route.id} />
         : route.name === 'review' ? <main className="wide"><ReviewQueue /></main>
         : route.name === 'map' ? <main className="wide"><CurriculumMap {...route} /></main>
