@@ -64,6 +64,11 @@ function run(title: string, script: string, a: string[], { allowFail = false } =
   appendFileSync(LOG, outp.replaceAll(target, '<target>') + `\n  → exit ${r.status}\n`);
   const tail = outp.split('\n').slice(-6).join('\n  ');
   process.stdout.write(`  ${tail}\n  → exit ${r.status}\n`);
+  // 13 Nov 2026: a crash ALWAYS stops the run, allowFail or not: an exit code other than 0/1, a signal,
+  // an uncaught error (stack trace) or an unsettled top-level await. allowFail only lets a content result through
+  // (exit 1 = some questions blocked or a file failed its checks).
+  const crashed = r.status === null || ![0, 1].includes(r.status) || /^\s+at .+:\d+:\d+\)?$/m.test(outp) || /unsettled top-level await/i.test(outp);
+  if (crashed) throw new Error(`${title} CRASHED (exit ${r.status ?? r.signal}); the run stops here. See ${LOG}`);
   if (r.status !== 0 && !allowFail) throw new Error(`${title} failed (exit ${r.status}); see ${LOG}`);
   return { code: r.status ?? 1, out: outp };
 }

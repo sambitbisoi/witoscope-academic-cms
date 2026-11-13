@@ -21,7 +21,7 @@ import { basename, isAbsolute, join, resolve } from 'node:path';
 import { checkChapterFile, checkStoredVersion, reportPathFor } from './check-originality.ts';
 import { ORIGINALITY_TOOL } from '../shared/originality.ts';
 import { runChapter, type ChapterReport } from './import-chapter.ts';
-import { assertCmsOwner, connect, targetUrl } from './lib/db.ts';
+import { assertCmsOwner, connect, freshConnections, targetUrl, type UnitRunner } from './lib/db.ts';
 import { hasPdftotext } from './lib/local-books.ts';
 import { FolderBucket } from './lib/r2-local.ts';
 import { upsertCatalogue } from './lib/upsert.ts';
@@ -63,15 +63,29 @@ async function updateQuestions(tx: Tx, importId: number, rows: { file_key: strin
   const cols = [...new Set(rows.flatMap((r) => Object.keys(r.set)))];
   const existing = new Map((keys.length ? await tx`select question_id, file_key, ${tx(cols)} from cms.cms_questions where file_key in ${tx(keys)}` : []).map((r) => [r.file_key as string, r]));
   const counts = { updated: 0, unchanged: 0, not_in_cms: 0 };
+  const changes: { question_id: string; set: Record<string, unknown>; diff: Record<string, unknown> }[] = [];
   for (const r of rows) {
     const q = existing.get(r.file_key);
     if (!q) { counts.not_in_cms++; problems.push({ level: 'warning', where, message: `${r.file_key} is not in the CMS (not imported yet, or blocked); skipped` }); continue; }
     const diff = Object.fromEntries(Object.entries(r.set).filter(([k, v]) => (q[k] ?? null) !== (v ?? null)).map(([k, v]) => [k, { before: q[k] ?? null, after: v ?? null }]));
     if (!Object.keys(diff).length) { counts.unchanged++; continue; }
-    await tx`update cms.cms_questions set ${tx(Object.fromEntries(Object.keys(diff).map((k) => [k, r.set[k] ?? null])) as never)} where question_id = ${q.question_id}`;
+    changes.push({ question_id: q.question_id as string, set: r.set, diff });
+  }
+  // Set-based (go-live, 13 Nov 2026): per batch of 500, one UPDATE per changed column and one audit INSERT,
+  // instead of two round trips per question. Same values and the same audit rows (before → after) as before.
+  const INT_COLS = new Set(['level']);
+  for (let i = 0; i < changes.length; i += 500) {
+    const batch = changes.slice(i, i + 500);
+    for (const k of cols) {
+      const set = batch.filter((c) => k in c.diff).map((c) => ({ id: c.question_id, v: c.set[k] ?? null }));
+      if (!set.length) continue;
+      if (INT_COLS.has(k)) await tx`update cms.cms_questions q set ${tx(k)} = x.v from jsonb_to_recordset(${tx.json(set as never)}) as x(id text, v int) where q.question_id = x.id`;
+      else await tx`update cms.cms_questions q set ${tx(k)} = x.v from jsonb_to_recordset(${tx.json(set as never)}) as x(id text, v text) where q.question_id = x.id`;
+    }
     await tx`insert into cms.cms_reviews (target, target_table, target_id, action, reason, field_diff, by_label, import_id)
-      values ('question_version', 'cms_questions', ${q.question_id}, 'import_update', ${reason}, ${tx.json(diff as never)}, 'updates importer', ${importId})`;
-    counts.updated++;
+      select 'question_version', 'cms_questions', x.id, 'import_update', ${reason}, x.diff, 'updates importer', ${importId}
+      from jsonb_to_recordset(${tx.json(batch.map((c) => ({ id: c.question_id, diff: c.diff })) as never)}) as x(id text, diff jsonb)`;
+    counts.updated += batch.length;
   }
   return counts;
 }
@@ -83,6 +97,7 @@ async function csvFile(sql: Sql, dir: string, name: typeof CSV_ORDER[number], dr
   let out: FileResult = { file: path, importId: null, result: 'failed', counts: {}, problems: [] };
   try {
     await sql.begin(async (tx) => {
+      await tx`set local statement_timeout = '10min'`; // the pooler's default is 2 min
       const importId = await begin(tx, path, raw, dryRun);
       const problems: Problem[] = []; const counts: Record<string, unknown> = {};
       const reason = `CMS-updates ${name}`;
@@ -147,18 +162,21 @@ async function checkAndImport(sql: Sql, staged: string, dryRun: boolean): Promis
   return { report: await runChapter(sql, staged, dryRun ? 'validate' : 'import', false, { overrideRequests: existsSync(orq) ? overrideAllowList(orq) : undefined }), originality };
 }
 
-async function rewrites(sql: Sql, dir: string, dryRun: boolean): Promise<FileResult[]> {
+async function rewrites(run: UnitRunner, dir: string, dryRun: boolean): Promise<FileResult[]> {
   const rdir = join(dir, 'near_copy_rewrites');
   const out: FileResult[] = [];
-  for (const name of readdirSync(rdir).filter((n) => /^(MC|SC|GC)\d{2}-C\d\.json$/.test(n)).sort()) {
+  for (const name of readdirSync(rdir).filter((n) => /^(MC|SC|GC)\d{2}-C\d\.json$/.test(n)).sort()) out.push(await run(`near_copy_rewrites/${name}`, (sql) => rewriteOne(sql, rdir, name, dryRun)));
+  return out;
+}
+async function rewriteOne(sql: Sql, rdir: string, name: string, dryRun: boolean): Promise<FileResult> {
+  {
     const src = join(rdir, name);
     const s = stageJson(src, JSON.parse(readFileSync(src, 'utf8')), [join(rdir, 'images')], dryRun, 'near_copy_rewrites');
     const { report, originality } = await checkAndImport(sql, s.staged, dryRun);
     const stored = await s.store();
-    out.push({ file: src, importId: report.importId, result: report.result, counts: { ...report.counts, originality, figures_stored: stored },
-      problems: [...s.notes.map((m) => ({ level: 'warning' as const, where: name, message: m })), ...report.problems.map((p) => ({ level: p.level, where: p.key, message: p.message }))] });
+    return { file: src, importId: report.importId, result: report.result, counts: { ...report.counts, originality, figures_stored: stored },
+      problems: [...s.notes.map((m) => ({ level: 'warning' as const, where: name, message: m })), ...report.problems.map((p) => ({ level: p.level, where: p.key, message: p.message }))] };
   }
-  return out;
 }
 
 async function keyFixes(sql: Sql, dir: string, dryRun: boolean): Promise<FileResult[]> {
@@ -238,7 +256,9 @@ async function overrides(sql: Sql, dir: string, dryRun: boolean): Promise<FileRe
   return out;
 }
 
-export async function runUpdates(sql: Sql, dir = UPDATES_DIR, opts: { dryRun?: boolean; only?: string[]; goLive?: boolean } = {}): Promise<FileResult[]> {
+/** opts.run: a unit runner (e.g. freshConnections()) that gives each file its own connection and retries a dropped one once. */
+export async function runUpdates(sql: Sql, dir = UPDATES_DIR, opts: { dryRun?: boolean; only?: string[]; goLive?: boolean; run?: UnitRunner } = {}): Promise<FileResult[]> {
+  const run: UnitRunner = opts.run ?? ((_label, fn) => fn(sql));
   currentDir = dir;
   const host = new URL(targetUrl()).hostname;
   // local only, except at go-live (scripts/golive.ts passes --go-live for the real project, with Sambit's OK)
@@ -247,12 +267,13 @@ export async function runUpdates(sql: Sql, dir = UPDATES_DIR, opts: { dryRun?: b
   const out: FileResult[] = [];
   const has = (n: string) => want(n) && existsSync(join(dir, n));
   if ((has('key_fixes.csv') || has('near_copy_rewrites') || has('override_requests.csv')) && !hasPdftotext()) throw new Error('pdftotext is needed for the originality check (brew install poppler).');
-  for (const name of CSV_ORDER.filter((n) => BEFORE_REWRITES.includes(n))) if (has(name)) out.push(await csvFile(sql, dir, name, !!opts.dryRun));
-  if (has('key_fixes.csv')) { out.push(await csvFile(sql, dir, 'key_fixes.csv', !!opts.dryRun)); out.push(...await keyFixes(sql, dir, !!opts.dryRun)); }
-  if (has('near_copy_rewrites')) out.push(...await rewrites(sql, dir, !!opts.dryRun));
+  const dry = !!opts.dryRun;
+  for (const name of CSV_ORDER.filter((n) => BEFORE_REWRITES.includes(n))) if (has(name)) out.push(await run(name, (c) => csvFile(c, dir, name, dry)));
+  if (has('key_fixes.csv')) { out.push(await run('key_fixes.csv', (c) => csvFile(c, dir, 'key_fixes.csv', dry))); out.push(...await run('key fixes', (c) => keyFixes(c, dir, dry))); }
+  if (has('near_copy_rewrites')) out.push(...await rewrites(run, dir, dry));
   // after the rewrites, so the requests attach to each question's latest version
-  if (has('override_requests.csv')) out.push(await overrides(sql, dir, !!opts.dryRun));
-  for (const name of CSV_ORDER.filter((n) => !BEFORE_REWRITES.includes(n) && n !== 'key_fixes.csv')) if (has(name)) out.push(await csvFile(sql, dir, name, !!opts.dryRun));
+  if (has('override_requests.csv')) out.push(await run('override_requests.csv', (c) => overrides(c, dir, dry)));
+  for (const name of CSV_ORDER.filter((n) => !BEFORE_REWRITES.includes(n) && n !== 'key_fixes.csv')) if (has(name)) out.push(await run(name, (c) => csvFile(c, dir, name, dry)));
   return out;
 }
 
@@ -265,7 +286,10 @@ if (import.meta.filename === process.argv[1]) {
   const sql = connect();
   try {
     await assertCmsOwner(sql);
-    const results = await runUpdates(sql, dir, { dryRun, only, goLive: args.includes('--go-live') });
+    const perFile = args.includes('--go-live') || args.includes('--fresh-connections');
+    if (perFile) await sql.end({ timeout: 5 }); // each file opens its own connection; don't keep this one idle for the whole run
+    // --go-live: a fresh connection per file with keep-alive; a dropped connection is retried once, then the run stops
+    const results = await runUpdates(sql, dir, { dryRun, only, goLive: args.includes('--go-live'), run: perFile ? freshConnections() : undefined });
     if (!results.length) console.log(`Nothing to import in ${short(dir)}.`);
     for (const r of results) {
       console.log(`\n${short(r.file)}${dryRun ? ' (DRY RUN — nothing saved)' : r.importId ? ` · import #${r.importId}` : ''} → ${r.result.toUpperCase()}`);
@@ -276,6 +300,6 @@ if (import.meta.filename === process.argv[1]) {
     }
     process.exitCode = results.some((r) => r.result === 'failed') ? 1 : 0;
   } finally {
-    await sql.end();
+    await sql.end({ timeout: 5 }).catch(() => {});
   }
 }
