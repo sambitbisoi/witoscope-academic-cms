@@ -13,10 +13,10 @@ export const subjectOfChapter = (chapterId: string): Subject =>
 // ---------------------------------------------------------------- routes (hash)
 export type Route =
   | { name: 'home'; grade: string | null }
-  | { name: 'browse'; subject: Subject; cls: string; ch: string | null; topic: string | null; q: string | null; v: number | null; tab: 'types' | 'concepts' | 'sources'; edit: boolean }
+  | { name: 'browse'; subject: Subject; cls: string; strand: string | null; ch: string | null; topic: string | null; q: string | null; v: number | null; tab: 'types' | 'concepts' | 'sources'; edit: boolean }
   | { name: 'review' }
   | { name: 'proposed'; kind: string | null }
-  | { name: 'map'; tab: 'topics' | 'sources'; cls: string; subject: string; ch: string | null; show: MapShow; q: string }
+  | { name: 'map'; tab: 'topics' | 'sources'; cls: string; subject: string; strand: string | null; ch: string | null; show: MapShow; q: string; chapters: boolean; topics: boolean }
   | { name: 'generate'; q: string | null; set: string | null; topic: string | null }
   | { name: 'run'; id: number }
   | { name: 'model-check'; id: number | null }
@@ -37,8 +37,8 @@ export function parseRoute(hash: string): Route {
   if (p[0] === 'map') {
     const show = qs.get('show');
     return { name: 'map', tab: p[1] === 'sources' ? 'sources' : 'topics', cls: /^[1-6]$/.test(qs.get('cls') ?? '') ? qs.get('cls')! : 'all',
-      subject: SUBJECTS.some((x) => x.id === qs.get('subject')) ? qs.get('subject')! : 'all', ch: qs.get('ch'),
-      show: (['all', 'multi', 'gaps', 'empty'] as const).find((x) => x === show) ?? 'all', q: qs.get('q') ?? '' };
+      subject: SUBJECTS.some((x) => x.id === qs.get('subject')) ? qs.get('subject')! : 'all', strand: strandParam(qs.get('strand')), ch: qs.get('ch'),
+      show: MAP_SHOWS.find((x) => x === show) ?? 'all', q: qs.get('q') ?? '', chapters: qs.get('chapters') !== '0', topics: qs.get('topics') !== '0' };
   }
   if (p[0] === 'generate') return { name: 'generate', q: qs.get('q'), set: qs.get('set'), topic: qs.get('topic') };
   if (p[0] === 'run' && p[1] && /^\d+$/.test(p[1])) return { name: 'run', id: Number(p[1]) };
@@ -47,15 +47,18 @@ export function parseRoute(hash: string): Route {
     const cls = p[2] && /^([1-6]|all)$/.test(p[2]) ? p[2] : 'all';
     const v = qs.get('v');
     const ch = qs.get('ch');
-    return { name: 'browse', subject: p[1] as Subject, cls, ch: ch && /^(MC|SC|GC)[0-9]{2}$/.test(ch) ? ch : null, topic: p[3] ?? null, q: qs.get('q'), v: v && /^\d+$/.test(v) ? Number(v) : null,
+    return { name: 'browse', subject: p[1] as Subject, cls, strand: strandParam(qs.get('strand')), ch: ch && /^(MC|SC|GC)[0-9]{2}$/.test(ch) ? ch : null, topic: p[3] ?? null, q: qs.get('q'), v: v && /^\d+$/.test(v) ? Number(v) : null,
       tab: qs.get('tab') === 'concepts' ? 'concepts' : qs.get('tab') === 'sources' ? 'sources' : 'types', edit: qs.get('edit') === '1' };
   }
   return { name: 'notfound' };
 }
 
-export function browseHash(r: { subject: string; cls: string; ch?: string | null; topic?: string | null; q?: string | null; v?: number | null; tab?: string; edit?: boolean }): string {
+const strandParam = (x: string | null) => (x && /^(math|science|grammar)-[A-Z]{2,4}$/.test(x) ? x : null);
+
+export function browseHash(r: { subject: string; cls: string; strand?: string | null; ch?: string | null; topic?: string | null; q?: string | null; v?: number | null; tab?: string; edit?: boolean }): string {
   const parts = ['#/browse', r.subject, r.cls, ...(r.topic ? [encodeURIComponent(r.topic)] : [])].join('/');
   const qs = new URLSearchParams();
+  if (r.strand) qs.set('strand', r.strand);
   if (r.ch) qs.set('ch', r.ch);
   if (r.q) qs.set('q', r.q);
   if (r.v) qs.set('v', String(r.v));
@@ -65,17 +68,30 @@ export function browseHash(r: { subject: string; cls: string; ch?: string | null
   return s ? `${parts}?${s}` : parts;
 }
 
-export type MapShow = 'all' | 'multi' | 'gaps' | 'empty';
-export function mapHash(r: { tab?: string; cls: string; subject: string; ch: string | null; show: string; q: string }): string {
+/** R2: which topic–class links the curriculum map shows (by role, R1). */
+export const MAP_SHOWS = ['all', 'core', 'lower', 'higher', 'extra'] as const;
+export type MapShow = (typeof MAP_SHOWS)[number];
+export function mapHash(r: { tab?: string; cls: string; subject: string; strand?: string | null; ch: string | null; show: string; q: string; chapters?: boolean; topics?: boolean }): string {
   const qs = new URLSearchParams();
   if (r.cls !== 'all') qs.set('cls', r.cls);
   if (r.subject !== 'all') qs.set('subject', r.subject);
+  if (r.strand) qs.set('strand', r.strand);
   if (r.ch) qs.set('ch', r.ch);
   if (r.show !== 'all') qs.set('show', r.show);
   if (r.q) qs.set('q', r.q);
+  if (r.chapters === false) qs.set('chapters', '0');
+  if (r.topics === false) qs.set('topics', '0');
   const s = qs.toString();
   return `#/map${r.tab === 'sources' ? '/sources' : ''}${s ? `?${s}` : ''}`;
 }
+
+// ---------------------------------------------------------------- R1: roles of topic–class links
+/** core = the topic's home class; lower = it comes from a lower class; higher = from a higher class. */
+export type Role = 'core' | 'lower' | 'higher';
+export const roleOf = (homeClass: number, cls: number): Role => (homeClass === cls ? 'core' : homeClass < cls ? 'lower' : 'higher');
+export const roleLabel = (homeClass: number, cls: number) => (homeClass === cls ? 'core' : `from Class ${homeClass}`);
+export const showMatches = (show: MapShow, role: Role) =>
+  show === 'all' || (show === 'extra' ? role !== 'core' : show === role);
 
 // ---------------------------------------------------------------- coverage
 export interface TopicStats { n_questions: number; n_simple: number; n_medium: number; n_complex: number; n_gold: number; n_draft: number; n_in_review: number; n_approved: number }

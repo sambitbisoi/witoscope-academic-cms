@@ -9,6 +9,8 @@
   --navy: #1f2f6b;                      /* U12: chapter names */
   --multi: #0e6e74; --multi-bg: #dff3f2; /* U12/U15: the multi-class pill */
   --sig-bg: #eef3ff; --sig-line: #c9d6f6; --der-bg: #f2f4f7; --der-line: #dde1e8; /* U13 */
+  --lower: #8a5a00; --lower-bg: #fff4dc; --lower-line: #e9b949;   /* R1/R2: from a lower class (amber) */
+  --higher: #1d4fa8; --higher-bg: #e8f0ff; --higher-line: #7ea2e8; /* R1/R2: from a higher class (blue) */
   --shadow: rgba(16, 24, 40, 0.12);
   color-scheme: light;
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: var(--text); background: var(--bg);
@@ -26,6 +28,8 @@
     --navy: #a9bcff;
     --multi: #7fd8d2; --multi-bg: #173a3a;
     --sig-bg: #1b2440; --sig-line: #34457a; --der-bg: #20242d; --der-line: #343a48;
+    --lower: #f0c36b; --lower-bg: #33280f; --lower-line: #7a5e1e;
+    --higher: #9dbcff; --higher-bg: #1a2744; --higher-line: #3c5a99;
     --shadow: rgba(0, 0, 0, 0.45);
     color-scheme: dark;
   }
@@ -297,8 +301,33 @@ kbd { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.
 /* U12: one colour per meaning: navy = chapter, purple = proposed, teal = several classes */
 .chapter-name { color: var(--navy); font-weight: 700; }
 .tree-chapter-name.chapter-name { font-size: 0.84rem; }
-.tree-strand { margin-bottom: 8px; }
-.tree-strand-name { font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); padding: 8px 4px 2px; border-top: 1px solid var(--line); }
+.tree-strand { margin-bottom: 2px; }
+/* R3: Strand ▸ Chapter ▸ Topic */
+.tree-branch { display: flex; align-items: baseline; gap: 6px; width: 100%; text-align: left; background: none; border: none; border-radius: 6px; padding: 6px 4px; color: var(--text); cursor: pointer; }
+.tree-branch:hover { background: var(--hover); }
+.tree-branch .tb-name { flex: 1; min-width: 0; }
+.tree-branch .tb-meta { font-size: 0.74rem; font-weight: 400; color: var(--muted); white-space: nowrap; }
+.tree-arrow { width: 12px; flex: none; color: var(--muted); font-size: 0.8rem; }
+.tree-strand-name { font-size: 0.86rem; font-weight: 700; }
+.tree-chapter-name.tree-branch { font-weight: 600; color: var(--navy); }
+.tree-kids { padding-left: 14px; }
+.tree-strand > .tree-kids .tree-chapter { margin-bottom: 2px; }
+.role-tag { font-size: 0.74rem; font-weight: 600; border-radius: 4px; padding: 0 4px; margin-left: 4px; white-space: nowrap; }
+.role-tag.lower { color: var(--lower); background: var(--lower-bg); }
+.role-tag.higher { color: var(--higher); background: var(--higher-bg); }
+.tree-topic.role-lower:not(.sel) { box-shadow: inset 3px 0 0 var(--lower-line); }
+.tree-topic.role-higher:not(.sel) { box-shadow: inset 3px 0 0 var(--higher-line); }
+.extra-toggle { display: inline-flex; gap: 6px; align-items: center; white-space: nowrap; }
+/* R2: curriculum map rows by role */
+table.map-table tr.role-lower td { background: var(--lower-bg); }
+table.map-table tr.role-higher td { background: var(--higher-bg); }
+.map-legend { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; font-size: 0.8rem; color: var(--muted); margin: 4px 0 8px; }
+.map-legend .sw { display: inline-block; width: 12px; height: 12px; border-radius: 3px; vertical-align: -2px; margin-right: 4px; border: 1px solid var(--line); }
+.map-legend .sw.lower { background: var(--lower-bg); border-color: var(--lower-line); }
+.map-legend .sw.higher { background: var(--higher-bg); border-color: var(--higher-line); }
+.map-legend .sw.core { background: var(--card); }
+.role-split .lower { color: var(--lower); }
+.role-split .higher { color: var(--higher); }
 .tree-toggles { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
 button.pin { background: none; border: 1px solid var(--line); color: var(--muted); padding: 2px 8px; font-size: 0.75rem; border-radius: 12px; }
 button.pin:hover { color: var(--text); }
