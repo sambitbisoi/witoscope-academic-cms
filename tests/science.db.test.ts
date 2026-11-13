@@ -128,6 +128,18 @@ describe('import:science (local, rolled back)', () => {
     });
   });
 
+  it('Science attributes stop being pending on the five Science fields (no working memory, strategy or difficulty needed)', async () => {
+    await inRollback(async (tx) => {
+      const [v] = await tx`select v.version_id from cms.cms_questions q join cms.cms_question_versions v on v.question_id = q.question_id and v.version_no = q.current_version where q.source_qid = 'C6-04-Q002'`;
+      await tx`update cms.cms_question_versions set reading = 2, steps = 1, inhibition = 2 where version_id = ${v!.version_id}`;
+      const [a] = await tx`select attributes_pending from cms.cms_question_versions where version_id = ${v!.version_id}`;
+      expect(a!.attributes_pending).toBe(true);
+      await tx`update cms.cms_question_versions set has_irrelevant_info = false, visual = 0 where version_id = ${v!.version_id}`;
+      const [b] = await tx`select attributes_pending, working_memory, strategy from cms.cms_question_versions where version_id = ${v!.version_id}`;
+      expect(b).toEqual({ attributes_pending: false, working_memory: null, strategy: null });
+    });
+  });
+
   it('refuses a stale originality report', async () => {
     const m = master([R1], []);
     await expect(runScience(sql, m, { ...report(m), master_sha256: 'other' }, { dryRun: true, target: 'local' })).rejects.toThrow(/another version of the master/);
