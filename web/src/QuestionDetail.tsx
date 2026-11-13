@@ -9,7 +9,6 @@ import { bundleOf, retire, setStatus } from './editApi';
 import { supabase } from './supabase';
 import { OriginFlags } from './AddQuestions';
 import { Id } from './Id';
-import { scienceDetail } from './scienceApi';
 
 /** A keyboard review command from Browse (D6): A approve · R reject · F needs review. */
 export interface ReviewCommand { kind: 'approve' | 'reject' | 'flag'; n: number }
@@ -52,8 +51,6 @@ export function QuestionDetail({ id, versionNo, onVersion, onEdit, reloadKey = 0
           {q.retired_at && <strong> · retired</strong>}
         </div>
       </div>
-      {q.subject === 'science' ? <ScienceBody d={d} isCurrent={isCurrent} onVersion={onVersion}
-        actions={isCurrent ? <Actions key={v.version_id} d={d} onEdit={onEdit} onChanged={() => { setTick((t) => t + 1); onChanged?.(); }} command={command} onAdvance={onAdvance} /> : null} /> : <>
       {isCurrent && d.flags && <PendingBanners f={d.flags} gold={q.bank === 'gold'} />}
       {isCurrent && <Actions key={v.version_id} d={d} onEdit={onEdit} onChanged={() => { setTick((t) => t + 1); onChanged?.(); }} command={command} onAdvance={onAdvance} />}
       {!isCurrent && <div className="notice small">You're looking at an older version. <button className="link" onClick={() => onVersion(null)}>Show current (v{q.current_version})</button></div>}
@@ -164,7 +161,6 @@ export function QuestionDetail({ id, versionNo, onVersion, onEdit, reloadKey = 0
         ]} />
       </Section>
 
-      </>}
       <div className="background-divider"><span>Background — tagging, sources, history</span></div>
       <div className="background">
           <Section title={`Tagging${v.tagged_by ? ` (by ${v.tagged_by})` : ''}`}>
@@ -354,7 +350,7 @@ function Actions({ d, onEdit, onChanged, command, onAdvance }: { d: QuestionDeta
       {open && blockers.length > 0 && <span className="muted small blockers">Approve is off until: {blockers.join(' · ')}</span>}
       {v.status === 'approved' && <span className="muted small">Approved. Edit makes a new version (a typo fix keeps this one).</span>}
       {v.status === 'rejected' && <span className="muted small">Rejected. Edit to make a new version.</span>}
-      {q.bank === 'production' && q.subject !== 'science' && <a className="small" href={`#/generate?q=${encodeURIComponent(q.question_id)}`}>Generate similar</a>}
+      {q.bank === 'production' && <a className="small" href={`#/generate?q=${encodeURIComponent(q.question_id)}`}>Generate similar</a>}
       {ask === 'flag' && <Reason label="Needs review: note (optional; shown in the Review tab)" optional value={reason} set={setReason} busy={busy} go={() => run(() => setStatus(q.question_id, v.version_no, 'submit', reason.trim() || null))} cancel={() => { viaKey.current = false; setAsk(null); }} />}
       {ask === 'reject' && <Reason label="Why reject it? (required; kept with the version and shown in the Review tab)" value={reason} set={setReason} busy={busy} go={() => run(() => setStatus(q.question_id, v.version_no, 'reject', reason))} cancel={() => { viaKey.current = false; setAsk(null); }} />}
       {ask === 'override' && (
@@ -458,88 +454,5 @@ function PendingBanners({ f, gold }: { f: NonNullable<QuestionDetailData['flags'
       {!gold && f.image_pending && <div className="banner pending">Image pending: a picture is needed and not added yet (see the figure description), so it can't be approved.</div>}
       {f.originality_pending && <div className="banner pending orig">Originality pending: the book check has not run yet, so it can't be approved. It runs on the Mac: <span className="mono">npm run check:originality -- --pending</span>.</div>}
     </div>
-  );
-}
-
-// ---------------------------------------------------------------- Science (13 Nov 2026; docs/science-plan.md §4)
-const PENDING = <span className="muted">Pending</span>;
-const SCIENCE_ATTRS: { k: string; col: 'reading' | 'steps' | 'inhibition' | 'has_irrelevant_info' | 'visual'; label: string }[] = [
-  { k: 'Reading load', col: 'reading', label: '1–5' }, { k: 'Steps', col: 'steps', label: 'count' }, { k: 'Misconception pull', col: 'inhibition', label: 'inhibition 0–3' },
-  { k: 'Irrelevant info', col: 'has_irrelevant_info', label: 'yes / no' }, { k: 'Visual', col: 'visual', label: '0–3' },
-];
-
-/** Column (c) for a Science question: Linked content first, then attributes, preview, safety, taught in, buttons. */
-function ScienceBody({ d, isCurrent, onVersion, actions }: { d: QuestionDetailData; isCurrent: boolean; onVersion: (v: number | null) => void; actions: ReactNode }) {
-  const [x, setX] = useState<Awaited<ReturnType<typeof scienceDetail>> | null>(null);
-  const [err, setErr] = useState<string | null>(null);
-  const { question: q, version: v } = d;
-  useEffect(() => { setX(null); scienceDetail(v.version_id).then(setX).catch((e) => setErr(e.message)); }, [v.version_id]);
-  const vr = v as unknown as Record<string, unknown>;
-  const attr = (c: (typeof SCIENCE_ATTRS)[number]['col']) => (vr[c] === null || vr[c] === undefined ? PENDING : typeof vr[c] === 'boolean' ? (vr[c] ? 'yes' : 'no') : String(vr[c]));
-  const subj = subjectOfChapter(q.chapter_id);
-  return (
-    <>
-      {!isCurrent && <div className="notice small">You're looking at an older version. <button className="link" onClick={() => onVersion(null)}>Show current (v{q.current_version})</button></div>}
-      {isCurrent && d.flags && <PendingBanners f={d.flags} gold={q.bank === 'gold'} />}
-      {err && <p className="error small">Couldn't load the linked content: {err}</p>}
-
-      <div className="tint-box linked">
-        <div className="tint-title">Linked content{x ? ` · ${x.links.filter((l) => l.role === 'direct').length} direct · ${x.links.filter((l) => l.role === 'supporting').length} supporting` : ''}</div>
-        {!x ? <div className="muted small">Loading…</div> : x.links.length === 0 ? <div className="muted small">No content rows linked.</div> : (
-          <ul className="plain linked-rows">
-            {x.links.map((l) => (
-              <li key={l.row_id} className={`linked-row ${l.role}`}>
-                <div className="small"><span className={`tag role-${l.role}`}>{l.role}</span>
-                  {l.row && <> <span className="muted">{l.row.type} · {l.row.chapter_role} · {l.row.source === 'Claude-added' ? <span className="tag claude">Claude-added</span> : `Book (${l.row.found_in ?? '—'})`}</span>
-                    {l.row.question_use !== 'OK' && <span className="tag use">{l.row.question_use}</span>}</>}
-                  {' '}<a className="small" href={browseHash({ subject: subj, cls: String(l.row?.row_class ?? 'all'), topic: l.row?.topic_id ?? q.topic_id, row: l.row_id, q: q.question_id, tab: 'content' })}><Id>{l.row_id}</Id></a></div>
-                {l.row ? <div className="linked-text">{l.row.content}</div> : <div className="muted small">Row not found.</div>}
-                {l.row?.misconceptions && <div className="small"><span className="muted">Misconception:</span> {l.row.misconceptions}</div>}
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-
-      <div className="tint-box signature">
-        <div className="tint-title">Attributes{d.flags?.attributes_pending ? <span className="muted small"> · pending</span> : ''}</div>
-        <KV rows={[
-          ...SCIENCE_ATTRS.map((a) => ({ k: a.k, v: attr(a.col) })),
-          { k: 'Tier', v: x?.version.level_tier ?? '—' },
-          { k: 'Level (class)', v: q.level ?? '—' },
-        ]} />
-      </div>
-
-      <div className="preview">
-        <div className="eyebrow">Preview (as the child sees it){x?.version.display_format ? ` · ${x.version.display_format}` : ''}</div>
-        <div className="stem">{v.text}</div>
-        {v.image_path && <FigureImage path={v.image_path} alt={v.figure_description ?? 'Figure'} />}
-        {v.figure_description && <div className="figure small prewrap"><span className="tag">{v.image_status === 'has_image' ? 'Image' : 'Image needed'}</span> {v.figure_description}</div>}
-        <div className="options">
-          {d.options.filter((o) => o.part_label === '').map((o) => (
-            <div key={o.position} className={`option ${o.is_correct ? 'correct' : ''}`}><span className="opt-label">{String.fromCharCode(64 + o.position)} · {o.text}{o.is_correct ? ' ✓' : ''}</span></div>
-          ))}
-        </div>
-      </div>
-      {d.solutions[0] && <Section title="Explanation"><div className="small prewrap">{d.solutions[0].text}</div></Section>}
-      {x?.version.misconception_targeted && <Section title="Misconception targeted"><div className="small">{x.version.misconception_targeted}</div></Section>}
-      <Section title="Safety">{x?.version.safety_note ? <div className="small banner safety">{x.version.safety_note}</div> : <div className="muted small">None.</div>}</Section>
-      <Section title="Taught in (citations)">
-        {!x ? <div className="muted small">…</div> : x.citations.length === 0 ? <div className="muted small">None.</div> : (
-          <ul className="plain small">{x.citations.map((c, i) => (
-            <li key={i}>{c.for_row_id && <span className="mono muted">{c.for_row_id}: </span>}{x.sources.get(c.source_id)?.title ?? c.source_id}, p.{c.page_from}{c.page_to !== c.page_from ? `–${c.page_to}` : ''}
-              {/^Claude-added/.test(c.raw) && <span className="muted"> (Claude-added, extends this page)</span>}</li>))}</ul>
-        )}
-        {x?.version.confidence && <div className="muted small">Confidence: {x.version.confidence}</div>}
-      </Section>
-      {actions}
-      <Section title="Placement">
-        <KV one rows={[
-          { k: 'Chapter', v: d.topic ? <>{d.topic.cms_chapters?.name ?? ''} <Id>{d.topic.chapter_id}</Id></> : q.chapter_id },
-          { k: 'Topic', v: d.topic ? <>{d.topic.name} <Id>{d.topic.topic_id}</Id></> : q.topic_id },
-          { k: 'Class', v: String(q.class) },
-        ]} />
-      </Section>
-    </>
   );
 }

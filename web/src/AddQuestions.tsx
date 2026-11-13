@@ -7,9 +7,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { addContext, knownSourceItems, type AddContext } from './api';
 import { addQuestions } from './editApi';
-import { knownContentRows } from './scienceApi';
 import {
-  ADD_FORMATS, contentRowLinks, DIFFICULTIES, EXAMPLE_MARK, mandatoryErrors, parseUploadRow, UPLOAD_COLUMNS, uploadColumns, type NewQuestion, type ParsedRow, type UploadLookups,
+  ADD_FORMATS, DIFFICULTIES, EXAMPLE_MARK, mandatoryErrors, parseUploadRow, UPLOAD_COLUMNS, type NewQuestion, type ParsedRow, type UploadLookups,
 } from './logic';
 
 interface TopicInfo { topic_id: string; name: string; class: number; chapter_id: string }
@@ -45,9 +44,6 @@ export function AddQuestionForm({ topic, onDone }: { topic: TopicInfo; onDone: (
   const [notes, setNotes] = useState('');
   const [busy, setBusy] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
-  const science = topic.chapter_id.startsWith('SC');
-  const [rowsDirect, setRowsDirect] = useState('');
-  const [rowsSupporting, setRowsSupporting] = useState('');
 
   const nOpts = format === 'MCQ-4' ? 4 : format === 'MCQ-3' ? 3 : 0;
   const opts = nOpts ? options.slice(0, nOpts) : format === 'True/False' ? ['True', 'False'] : [];
@@ -68,12 +64,6 @@ export function AddQuestionForm({ topic, onDone }: { topic: TopicInfo; onDone: (
       const q = await build();
       const e = mandatoryErrors(q);
       if (!levelOk) e.push(`confirm the level (Level ${level})`);
-      if (science) {
-        const links = contentRowLinks(rowsDirect, rowsSupporting);
-        const known = await knownContentRows(links.map((l) => l.row_id));
-        for (const l of links) if (!known.has(l.row_id)) e.push(`content row ${l.row_id} does not exist`);
-        q.content_rows = links;
-      }
       if (e.length) { setErrors(e); return; }
       const r = await addQuestions({ topic_id: topic.topic_id, origin: 'manual', questions: [{ ...q, row: null }] });
       onDone(r.added[0]?.question_id ?? null);
@@ -115,10 +105,6 @@ export function AddQuestionForm({ topic, onDone }: { topic: TopicInfo; onDone: (
       {format === 'True/False' && <label className="field"><span>Correct answer <b>*</b></span>
         <select value={correct} onChange={(e) => setCorrect(e.target.value)}><option value="">Choose…</option><option>True</option><option>False</option></select></label>}
       {format && !nOpts && format !== 'True/False' && <label className="field"><span>Correct answer <b>*</b></span><input value={correct} onChange={(e) => setCorrect(e.target.value)} /></label>}
-      {science && <div className="row-fields">
-        <label className="field"><span>Content row IDs · direct <span className="muted">(optional; e.g. C6-04-001, C6-04-014)</span></span><input value={rowsDirect} onChange={(e) => setRowsDirect(e.target.value)} /></label>
-        <label className="field"><span>Content row IDs · supporting <span className="muted">(optional)</span></span><input value={rowsSupporting} onChange={(e) => setRowsSupporting(e.target.value)} /></label>
-      </div>}
 
       <button className="link small" onClick={() => setMore(!more)} aria-expanded={more}>{more ? '▾' : '▸'} More (optional): solution, hints, wrong-answer notes, concepts, typical set, setting, difficulty, source, notes</button>
       {more && (
@@ -180,11 +166,10 @@ async function downloadTemplate(topic: TopicInfo, ctx: AddContext | null) {
   const wb = new ExcelJS.Workbook();
   wb.creator = 'WitoScope CMS';
   const ws = wb.addWorksheet('Questions', { views: [{ state: 'frozen', ySplit: 1 }] });
-  const cols = uploadColumns(topic.chapter_id.startsWith('SC'));
-  ws.columns = cols.map((c) => ({ header: c.required ? `${c.header} *` : c.header, key: c.key, width: c.key === 'text' || c.key === 'solution' || c.key === 'figure' ? 40 : c.key.length <= 2 ? 12 : 20 }));
+  ws.columns = UPLOAD_COLUMNS.map((c) => ({ header: c.required ? `${c.header} *` : c.header, key: c.key, width: c.key === 'text' || c.key === 'solution' || c.key === 'figure' ? 40 : c.key.length <= 2 ? 12 : 20 }));
   const head = ws.getRow(1);
   head.font = { bold: true }; head.alignment = { wrapText: true, vertical: 'top' };
-  cols.forEach((c, i) => {
+  UPLOAD_COLUMNS.forEach((c, i) => {
     const cell = head.getCell(i + 1);
     cell.note = `${c.required ? 'Required. ' : 'Optional. '}${c.help}`;
     cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: c.required ? 'FFFFF3D6' : 'FFEEF0F4' } };
@@ -192,7 +177,7 @@ async function downloadTemplate(topic: TopicInfo, ctx: AddContext | null) {
   ws.addRow({ text: 'Which number is the largest?', format: 'MCQ-4', a: '12', b: '21', c: '102', d: '120', correct: '120', level: topic.class, picture: 'N',
     solution: 'Compare the hundreds first: 120 has 1 hundred and 2 tens.', hint1: 'Look at the hundreds digit first.', wrong: '102: looked at the last digit only',
     difficulty: 'Simple', notes: `${EXAMPLE_MARK} — delete this row (it is never imported)` }).font = { italic: true, color: { argb: 'FF667085' } };
-  const col = (k: string) => cols.findIndex((c) => c.key === k) + 1;
+  const col = (k: string) => UPLOAD_COLUMNS.findIndex((c) => c.key === k) + 1;
   const letter = (k: string) => ws.getColumn(col(k)).letter;
   const lists: [string, string[]][] = [['format', [...ADD_FORMATS]], ['picture', ['Y', 'N']], ['difficulty', [...DIFFICULTIES]], ['level', ['1', '2', '3', '4', '5', '6']]];
   for (const [k, vals] of lists) {
@@ -204,7 +189,7 @@ async function downloadTemplate(topic: TopicInfo, ctx: AddContext | null) {
   help.addRow({ h: 'Topic', r: '', w: `${topic.topic_id} · ${topic.name} (home class ${topic.class}). Upload this file inside that topic in Browse; there is no topic column.` });
   help.addRow({ h: 'Checks on upload', r: '', w: 'Only the required columns are checked. Rows with a missing required field are skipped, with the reason; the rest are imported as Needs review.' });
   help.addRow({});
-  for (const c of cols) help.addRow({ h: c.header, r: c.required ? 'Required' : 'Optional', w: c.help });
+  for (const c of UPLOAD_COLUMNS) help.addRow({ h: c.header, r: c.required ? 'Required' : 'Optional', w: c.help });
   if (ctx) {
     help.addRow({});
     help.addRow({ h: 'IDs you can use here', r: '', w: '' }).font = { bold: true };
@@ -263,10 +248,8 @@ export function BulkUpload({ topic, onDone }: { topic: TopicInfo; onDone: (chang
     try {
       const { rows, unknownHeaders } = await readUpload(f);
       const items = await knownSourceItems(rows.map((r) => r.cells.source ?? ''));
-      const rowIds = rows.flatMap((r) => contentRowLinks(r.cells.rows_direct ?? '', r.cells.rows_supporting ?? '').map((l) => l.row_id));
-      const contentRows = topic.chapter_id.startsWith('SC') ? await knownContentRows(rowIds) : new Set<string>();
       const look: UploadLookups = { concepts: new Set(ctx.concepts.map((c) => c.concept_id)), sets: new Set(ctx.sets.map((x) => x.typical_set_id)),
-        patterns: new Map(ctx.patterns.map((x) => [x.pattern_id, x.typical_set_id])), settings: new Set(ctx.settings.map((x) => x.setting_id)), sourceItems: items, contentRows };
+        patterns: new Map(ctx.patterns.map((x) => [x.pattern_id, x.typical_set_id])), settings: new Set(ctx.settings.map((x) => x.setting_id)), sourceItems: items };
       setParsed(rows.map((r) => parseUploadRow(r.row, r.cells, look)));
       setExtra(unknownHeaders.map((h) => `column "${h}" is not in the template; ignored`));
     } catch (e) { setErr((e as Error).message); } finally { setBusy(false); }

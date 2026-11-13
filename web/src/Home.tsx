@@ -3,7 +3,6 @@ import { activeJobs, homeStats, lastImport, reviewProgress, type HomeStats, type
 import { seedLabel } from './Imports';
 import { browseHash, SUBJECTS, subjectLabel } from './logic';
 import { Jobs } from './Jobs';
-import { contentRowStats } from './scienceApi';
 
 const GRADES = ['all', '1', '2', '3', '4', '5', '6'];
 const GRADE_KEY = 'cms.grade';
@@ -26,7 +25,6 @@ export function Home({ grade: routeGrade }: { grade: string | null }) {
   const [last, setLast] = useState<LastImport | null | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState<Awaited<ReturnType<typeof reviewProgress>> | null>(null);
-  const [rowStats, setRowStats] = useState<Awaited<ReturnType<typeof contentRowStats>> | null>(null);
 
   useEffect(() => {
     homeStats().then(setStats).catch((e) => setError(e.message));
@@ -34,7 +32,6 @@ export function Home({ grade: routeGrade }: { grade: string | null }) {
     activeJobs().then(setJobs).catch(() => setJobs([]));
     lastImport().then(setLast).catch(() => setLast(null));
     reviewProgress().then(setProgress).catch(() => setProgress(null)); // best effort
-    contentRowStats().then(setRowStats).catch(() => setRowStats(null)); // Science content rows (best effort)
   }, []);
   const pick = (g: string) => { try { localStorage.setItem(GRADE_KEY, g); } catch { /* best effort */ } location.hash = g === 'all' ? '#/' : `#/?grade=${g}`; };
 
@@ -58,7 +55,7 @@ export function Home({ grade: routeGrade }: { grade: string | null }) {
           <Jobs />
           {last && (
             <div className="small">
-              Last import: <a href={`#/imports/${last.import_id}`}>#{last.import_id}</a> {last.kind === 'chapter' ? `chapter ${last.chapter_id ?? ''}` : last.kind === 'seed' ? seedLabel(last.file_path) : last.kind === 'topics' ? 'topic lists' : last.kind === 'upload' ? `question upload ${last.file_path}` : last.kind === 'originality' ? 'originality check' : last.kind === 'science' ? 'Science master' : last.kind}
+              Last import: <a href={`#/imports/${last.import_id}`}>#{last.import_id}</a> {last.kind === 'chapter' ? `chapter ${last.chapter_id ?? ''}` : last.kind === 'seed' ? seedLabel(last.file_path) : last.kind === 'topics' ? 'topic lists' : last.kind === 'upload' ? `question upload ${last.file_path}` : last.kind === 'originality' ? 'originality check' : last.kind}
               {' '}<span className={`badge ${last.result ?? 'running'}`}>{last.result === 'ok' ? 'OK' : last.result === 'partial' ? 'Partial' : last.result === 'failed' ? 'Failed' : 'Running'}</span>
             </div>
           )}
@@ -95,12 +92,7 @@ export function Home({ grade: routeGrade }: { grade: string | null }) {
                       return <div className="small review-progress" title="Core topics of the class (Achievers rows not counted); set in Browse, topic by topic">
                         Review progress, {classes} {subjectLabel(s.id)}: <strong>{done} of {total} topics done</strong> · {prog} in progress</div>;
                     })()}
-                    {s.id === 'science' && rowStats && (() => {
-                      const rs = rowStats.filter((r) => grade === 'all' || r.class === Number(grade));
-                      const n = (k: 'n_rows' | 'n_direct' | 'n_supporting' | 'n_not_eligible' | 'n_none') => rs.reduce((x, r) => x + r[k], 0).toLocaleString('en-IN');
-                      return <div className="small" title="Content rows from the Science master, by the class they are written for">Content rows: <strong>{n('n_rows')}</strong> · {n('n_direct')} with direct questions · {n('n_supporting')} supporting only · {n('n_none')} none yet · {n('n_not_eligible')} not eligible</div>;
-                    })()}
-                    {t.questions > 0 && s.id !== 'science' && <span className="chip">All 3 levels: {t.topics_all_levels} of {t.topics_with_questions} topics with questions</span>}
+                    {t.questions > 0 && <span className="chip">All 3 levels: {t.topics_all_levels} of {t.topics_with_questions} topics with questions</span>}
                   </>
                 )}
               </a>

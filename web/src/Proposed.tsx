@@ -9,33 +9,17 @@ import { browseHash, safeSearch } from './logic';
 import { Proposed } from './QuestionDetail';
 import { supabase } from './supabase';
 
-type Kind = 'concept' | 'misconception' | 'typical_set' | 'pattern' | 'topic_class';
+type Kind = 'concept' | 'misconception' | 'typical_set' | 'pattern';
 const KINDS: { id: Kind; label: string; table: string; key: string; cols: string }[] = [
   { id: 'concept', label: 'Concepts', table: 'cms_concepts', key: 'concept_id', cols: 'concept_id, name, class, topic_id, status, description' },
   { id: 'misconception', label: 'Misconceptions', table: 'cms_misconceptions', key: 'misconception_id', cols: 'misconception_id, description, concept_id, status' },
   { id: 'typical_set', label: 'Typical sets', table: 'cms_typical_sets', key: 'typical_set_id', cols: 'typical_set_id, name, class, topic_id, status, instruction_pattern' },
   { id: 'pattern', label: 'Patterns', table: 'cms_patterns', key: 'pattern_id', cols: 'pattern_id, name, typical_set_id, topic_id, status' },
-  // Science (13 Nov 2026): topic–class links the Science master suggests; approving makes the link (audited)
-  { id: 'topic_class', label: 'Topic classes', table: 'cms_topic_class_proposals', key: 'topic_id', cols: 'topic_id, class, source, evidence, suggested_role, status' },
 ];
-const ROLE_TEXT = { lower: 'from a lower class', higher: 'from a higher class' } as Record<string, string>;
-async function loadTopicClasses(show: Show): Promise<Item[]> {
-  const rows = await all<{ topic_id: string; class: number; source: string; evidence: string | null; suggested_role: string; status: string }>((a, b) =>
-    supabase.from('cms_topic_class_proposals').select('topic_id, class, source, evidence, suggested_role, status').eq('status', show).order('topic_id').order('class').range(a, b));
-  const ids = [...new Set(rows.map((r) => r.topic_id))];
-  const topics = ids.length ? ((await supabase.from('cms_topics').select('topic_id, name, class').in('topic_id', ids)).data ?? []) as { topic_id: string; name: string; class: number }[] : [];
-  return rows.map((r) => {
-    const t = topics.find((x) => x.topic_id === r.topic_id);
-    return { kind: 'topic_class', id: `${r.topic_id}·${r.class}`, label: `${t?.name ?? r.topic_id} → also in Class ${r.class}`,
-      detail: `Home class ${t?.class ?? '?'} · row class ${r.class} · suggested role: ${ROLE_TEXT[r.suggested_role] ?? r.suggested_role}${r.evidence ? ` · ${r.evidence}` : ''}`,
-      topic: r.topic_id, status: r.status, proposedBy: [r.source], usedBy: [] };
-  });
-}
 interface Item { kind: Kind; id: string; label: string; detail: string; topic: string | null; status: string; proposedBy: string[]; usedBy: string[] }
 type Show = 'proposed' | 'active' | 'retired';
 
 async function load(kind: Kind, show: Show): Promise<Item[]> {
-  if (kind === 'topic_class') return loadTopicClasses(show);
   const k = KINDS.find((x) => x.id === kind)!;
   const [rows, links] = await Promise.all([
     all<Record<string, unknown>>((a, b) => supabase.from(k.table).select(k.cols).eq('status', show).order(k.key).range(a, b)),
@@ -91,14 +75,7 @@ export function ProposedList({ kind: routeKind }: { kind: string | null }) {
     setBusy(true); setError(null);
     let done = 0;
     try {
-      for (const id of ids) {
-        if (kind === 'topic_class') {
-          const [topic, cls] = id.split('·');
-          const { error } = await supabase.rpc('cms_decide_topic_class', { p_topic_id: topic, p_class: Number(cls), p_status: status });
-          if (error) throw new Error(error.message);
-          done++; continue;
-        }
-        await setCatalogueStatus(kind, id, status, status === 'active' ? 'approved from the Proposed list' : status === 'retired' ? 'retired from the Proposed list' : 'back to proposed'); done++; }
+      for (const id of ids) { await setCatalogueStatus(kind, id, status, status === 'active' ? 'approved from the Proposed list' : status === 'retired' ? 'retired from the Proposed list' : 'back to proposed'); done++; }
       setFlash(`${done} ${status === 'active' ? 'approved' : status === 'retired' ? 'retired' : 'put back to proposed'}.`);
     } catch (e) {
       setError(`${(e as Error).message} (${done} of ${ids.length} done)`);
@@ -118,7 +95,7 @@ export function ProposedList({ kind: routeKind }: { kind: string | null }) {
           ))}
         </div>
       </div>
-      <p className="muted small">{kind === 'topic_class' ? 'Topic–class links the Science master suggests (content rows of a class the topic is not linked to yet). Approving adds the link; the topic then shows in that class as an extra topic. ' : 'Concepts, misconceptions, typical sets and patterns proposed by the book pipeline. They can already be used as tags; approving makes them part of the catalogue. '}
+      <p className="muted small">Concepts, misconceptions, typical sets and patterns proposed by the book pipeline. They can already be used as tags; approving makes them part of the catalogue.
         Nothing is deleted: retire an item you don't want. Every change is logged.</p>
       <div role="tablist" className="tabs">
         {KINDS.map((k) => (
@@ -156,7 +133,7 @@ export function ProposedList({ kind: routeKind }: { kind: string | null }) {
                 <td className="nowrap">
                   {i.status === 'proposed' && <><button className="approve small-btn" disabled={busy} onClick={() => act([i.id], 'active')}>Approve</button>{' '}
                     <button className="link small" disabled={busy} onClick={() => act([i.id], 'retired')}>Retire</button></>}
-                  {i.status !== 'proposed' && !(i.kind === 'topic_class' && i.status === 'active') && <button className="link small" disabled={busy} onClick={() => act([i.id], 'proposed')}>Back to proposed</button>}
+                  {i.status !== 'proposed' && <button className="link small" disabled={busy} onClick={() => act([i.id], 'proposed')}>Back to proposed</button>}
                 </td>
               </tr>
             ))}

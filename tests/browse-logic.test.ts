@@ -17,13 +17,13 @@ describe('routes', () => {
     ['#/generate?q=MQ000010', { name: 'generate', q: 'MQ000010', set: null, topic: null }],
     ['#/generate?set=TS-G6-X&topic=MT0393', { name: 'generate', q: null, set: 'TS-G6-X', topic: 'MT0393' }],
     ['#/run/12', { name: 'run', id: 12 }],
-    ['#/browse/math/6/MT0393?q=MQ000010&edit=1', { name: 'browse', subject: 'math', cls: '6', strand: null, ch: null, topic: 'MT0393', q: 'MQ000010', v: null, tab: 'types', edit: true, row: null, chview: false }],
+    ['#/browse/math/6/MT0393?q=MQ000010&edit=1', { name: 'browse', subject: 'math', cls: '6', strand: null, ch: null, topic: 'MT0393', q: 'MQ000010', v: null, tab: 'types', edit: true }],
     ['#/imports/12', { name: 'import', id: 12 }],
     ['#/q/G5-007', { name: 'question', id: 'G5-007' }],
-    ['#/browse/math/6', { name: 'browse', subject: 'math', cls: '6', strand: null, ch: null, topic: null, q: null, v: null, tab: 'types', edit: false, row: null, chview: false }],
-    ['#/browse/science/all/ST0001?q=SQ000001&v=2&tab=concepts', { name: 'browse', subject: 'science', cls: 'all', strand: null, ch: null, topic: 'ST0001', q: 'SQ000001', v: 2, tab: 'concepts', edit: false, row: null, chview: false }],
-    ['#/browse/math/6/MT0393?tab=sources', { name: 'browse', subject: 'math', cls: '6', strand: null, ch: null, topic: 'MT0393', q: null, v: null, tab: 'sources', edit: false, row: null, chview: false }],
-    ['#/browse/math/9', { name: 'browse', subject: 'math', cls: 'all', strand: null, ch: null, topic: null, q: null, v: null, tab: 'types', edit: false, row: null, chview: false }],
+    ['#/browse/math/6', { name: 'browse', subject: 'math', cls: '6', strand: null, ch: null, topic: null, q: null, v: null, tab: 'types', edit: false }],
+    ['#/browse/science/all/ST0001?q=SQ000001&v=2&tab=concepts', { name: 'browse', subject: 'science', cls: 'all', strand: null, ch: null, topic: 'ST0001', q: 'SQ000001', v: 2, tab: 'concepts', edit: false }],
+    ['#/browse/math/6/MT0393?tab=sources', { name: 'browse', subject: 'math', cls: '6', strand: null, ch: null, topic: 'MT0393', q: null, v: null, tab: 'sources', edit: false }],
+    ['#/browse/math/9', { name: 'browse', subject: 'math', cls: 'all', strand: null, ch: null, topic: null, q: null, v: null, tab: 'types', edit: false }],
     ['#/browse/art/6', { name: 'notfound' }],
   ])('%s', (hash, route) => expect(parseRoute(hash)).toEqual(route));
 
@@ -219,16 +219,5 @@ describe('review status roll-up (chapter / strand within a class)', () => {
     expect(rollUpTitle({ state: 'partial', done: 14, inProgress: 2, total: 18 })).toBe('Reviewed 14 of 18 core topics · 2 in progress');
     expect(rollUpTitle({ state: 'none', done: 0, inProgress: 0, total: 0 })).toBe('No core topics in this class');
     expect(matchesReview('all', 'done') && matchesReview('done', 'done') && !matchesReview('in_progress', 'done')).toBe(true);
-  });
-});
-
-describe('Science routes (13 Nov 2026)', () => {
-  it('keeps the selected content row and opens the chapter view only for a Science chapter without a topic', () => {
-    expect(parseRoute('#/browse/science/6/ST0325?row=C6-04-001&q=SQ000135')).toMatchObject({ topic: 'ST0325', row: 'C6-04-001', q: 'SQ000135', chview: false });
-    expect(parseRoute('#/browse/science/6?ch=SC48&view=chapter')).toMatchObject({ ch: 'SC48', topic: null, chview: true });
-    expect(parseRoute('#/browse/math/6?ch=MC34&view=chapter')).toMatchObject({ chview: false });
-    expect(parseRoute('#/browse/science/6?row=not-a-row')).toMatchObject({ row: null });
-    expect(browseHash({ subject: 'science', cls: '6', ch: 'SC48', chview: true })).toBe('#/browse/science/6?ch=SC48&view=chapter');
-    expect(browseHash({ subject: 'science', cls: '6', ch: 'SC48', topic: 'ST0325', chview: true, row: 'C6-04-001' })).toBe('#/browse/science/6/ST0325?ch=SC48&row=C6-04-001');
   });
 });

@@ -11,24 +11,19 @@ import { Id } from './Id';
 import { ReviewFilterSelect, RollUpIcon, TopicReviewIcon } from './ReviewStatus';
 import { browseHash, gapLabel, mapHash, matchesReview, mixLabel, roleLabel, roleOf, rollUp, safeSearch, showMatches, type ReviewFilter, type ReviewStatus, type RollUp, SUBJECTS, subjectLabel, type MapShow, type Role, type Subject } from './logic';
 import { supabase } from './supabase';
-import { contentRowStats } from './scienceApi';
 import { CurriculumForm, curriculumOwner, type Kind } from './CurriculumForms';
 import { SourcesOverview } from './SourcesOverview';
 
 type R = { tab: 'topics' | 'sources'; cls: string; subject: string; strand: string | null; ch: string | null; show: MapShow; q: string; chapters: boolean; topics: boolean };
 interface ChapterRow { chapter_id: string; name: string; strand_id: string; sort: number; status?: string }
 interface StrandRow { strand_id: string; name: string; sort: number }
-type RowCov = { n_rows: number; n_direct: number; n_supporting: number; n_not_eligible: number; n_none: number };
-interface Row { topic: TopicWithStats; subject: Subject; cls: number; role: Role; review: ReviewStatus; stats?: ClassStats; chapter: ChapterRow | undefined; strand: StrandRow | undefined; content?: RowCov }
+interface Row { topic: TopicWithStats; subject: Subject; cls: number; role: Role; review: ReviewStatus; stats?: ClassStats; chapter: ChapterRow | undefined; strand: StrandRow | undefined }
 /** A rolled-up row (Show topic unticked): one per class · subject · strand (· chapter). */
-interface Group { key: string; cls: number; subject: Subject; strand?: StrandRow; chapter?: ChapterRow; topics: number; questions: number; split: Record<Role, number>; qsplit: Record<Role, number>; rows: number; rowsDirect: number }
+interface Group { key: string; cls: number; subject: Subject; strand?: StrandRow; chapter?: ChapterRow; topics: number; questions: number; split: Record<Role, number>; qsplit: Record<Role, number> }
 
 async function load(subjects: Subject[]) {
   const out: { rows: Row[]; prereqs: Map<string, { id: string; name: string; chapter_id: string; class: number }[]>; chapters: (ChapterRow & { subject: Subject })[]; strands: (StrandRow & { subject: Subject })[];
     seq: Map<Subject, { topics: TopicWithStats[]; chapters: ChapterRow[]; strands: StrandRow[]; orders: SeqOrders }> } = { rows: [], prereqs: new Map(), chapters: [], strands: [], seq: new Map() };
-  // Science (13 Nov 2026): content-row coverage per topic and the class the rows are written for (best effort)
-  const cov = subjects.includes('science') ? await contentRowStats().catch(() => []) : [];
-  const covOf = new Map(cov.map((c) => [`${c.topic_id}|${c.class}`, c]));
   const [pre, names, reviews] = await Promise.all([
     all<{ topic_id: string; prereq_topic_id: string }>((a, b) => supabase.from('cms_topic_prereqs').select('topic_id, prereq_topic_id').order('topic_id').range(a, b)),
     Promise.resolve(new Map<string, TopicWithStats>()),
@@ -54,7 +49,7 @@ async function load(subjects: Subject[]) {
       if (t.status !== 'active') continue;
       const chapter = ch.find((x) => x.chapter_id === t.chapter_id);
       const strand = sts.find((x) => x.strand_id === chapter?.strand_id);
-      for (const c of t.classes) out.rows.push({ topic: t, subject, cls: c, role: roleOf(t.class, c), review: reviewOf(reviews, t.topic_id), stats: st.get(`${t.topic_id}|${c}`), chapter, strand, content: covOf.get(`${t.topic_id}|${c}`) });
+      for (const c of t.classes) out.rows.push({ topic: t, subject, cls: c, role: roleOf(t.class, c), review: reviewOf(reviews, t.topic_id), stats: st.get(`${t.topic_id}|${c}`), chapter, strand });
     }
   }
   for (const x of pre) {
@@ -109,8 +104,8 @@ export function CurriculumMap(r: R) {
     const m = new Map<string, Group>();
     for (const x of rows) {
       const key = `${x.cls}|${x.subject}|${x.strand?.strand_id ?? ''}${r.chapters ? `|${x.topic.chapter_id}` : ''}`;
-      const g = m.get(key) ?? { key, cls: x.cls, subject: x.subject, strand: x.strand, chapter: r.chapters ? x.chapter : undefined, topics: 0, questions: 0, split: { core: 0, lower: 0, higher: 0 }, qsplit: { core: 0, lower: 0, higher: 0 }, rows: 0, rowsDirect: 0 };
-      g.topics++; g.questions += x.stats?.n_questions ?? 0; g.rows += x.content?.n_rows ?? 0; g.rowsDirect += x.content?.n_direct ?? 0; g.split[x.role]++; g.qsplit[x.role] += x.stats?.n_questions ?? 0;
+      const g = m.get(key) ?? { key, cls: x.cls, subject: x.subject, strand: x.strand, chapter: r.chapters ? x.chapter : undefined, topics: 0, questions: 0, split: { core: 0, lower: 0, higher: 0 }, qsplit: { core: 0, lower: 0, higher: 0 } };
+      g.topics++; g.questions += x.stats?.n_questions ?? 0; g.split[x.role]++; g.qsplit[x.role] += x.stats?.n_questions ?? 0;
       m.set(key, g);
     }
     return [...m.values()];
@@ -238,8 +233,7 @@ export function CurriculumMap(r: R) {
                   <td>{strandLink(g.cls, g.subject, g.strand)}</td>
                   {r.chapters && <td>{chapterLink(g.cls, g.subject, g.chapter)}</td>}
                   <td>{g.topics}</td>
-                  <td>{g.questions ? <strong>{g.questions}</strong> : <span className="muted">none</span>}
-                    {g.rows > 0 && <div className="muted small" title="Science content rows of this class">{g.rows} content rows · {g.rowsDirect} with direct questions</div>}</td>
+                  <td>{g.questions ? <strong>{g.questions}</strong> : <span className="muted">none</span>}</td>
                   <td className="nowrap">{reviewedCell(g)}</td>
                   <td>{splitEl(g)}</td>
                 </tr>
@@ -267,10 +261,8 @@ export function CurriculumMap(r: R) {
                     {x.topic.topic_kind !== 'achievers' && <> <Id>{x.topic.topic_id}</Id></>}
                     <button className="link small" title="Edit topic" onClick={() => setForm({ kind: 'topic', id: x.topic.topic_id })}>✎</button></td>
                   <td className="nowrap">{!s || s.n_questions === 0 ? <span className="muted">none</span> : <>
-                    <strong>{s.n_questions}</strong>{x.subject !== 'science' && <> <span className="muted small">{mixLabel({ simple: s.n_simple, medium: s.n_medium, complex: s.n_complex })}</span>
-                    {gap && <div className="gap small">⚠ {gap}</div>}</>}</>}
-                    {x.content && <div className="muted small" title="Science content rows written for this class: with direct questions · supporting only · none yet · not eligible">
-                      {x.content.n_rows} rows · ✓ {x.content.n_direct} · ✓ {x.content.n_supporting} supp. · ⚠ {x.content.n_none} · ○ {x.content.n_not_eligible}</div>}</td>
+                    <strong>{s.n_questions}</strong> <span className="muted small">{mixLabel({ simple: s.n_simple, medium: s.n_medium, complex: s.n_complex })}</span>
+                    {gap && <div className="gap small">⚠ {gap}</div>}</>}</td>
                   <td className="nowrap">{x.role === 'core' ? <span className="muted">core</span> : <span className={`role-tag ${x.role}`}>{roleLabel(x.topic.class, x.cls)}</span>}</td>
                   <td className="small">{pre.length === 0 ? <span className="muted">—</span> : pre.map((p, i) => <span key={p.id}>{i > 0 && ', '}
                     <a href={browseHash({ subject: x.subject, cls: String(p.class || x.cls), ch: p.chapter_id, topic: p.id })}>{p.name}</a> <Id>{p.id}</Id></span>)}</td>
