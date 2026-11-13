@@ -2,6 +2,24 @@
 
 Changes to real (non-test) data that Sambit approved, with what was done and where the audit trail is.
 
+## 14 Nov 2026: Science — real import (step e)
+
+**Approval (Sambit, 14 Nov 2026):** "Dry-run report OK. Run (e), the real import with --confirm-real." Backup before: `~/WitoScope/CMS-backups/real-cms-2026-11-14-pre-science.{dump,sql}` (taken for step b; nothing else changed on the real project since).
+
+`npx tsx --env-file=.env.real scripts/import-science.ts --confirm-real` → **import #357** (result "partial" only because 4 rows were held out, as decided).
+
+| Checked on the real project afterwards | Result |
+|---|---|
+| Content rows | **2,403**; the 4 near-copy rows (C5-01-011, C5-01-072, C5-06-009, C6-08-018) are **not** in the CMS (held out until rewritten in the master) |
+| Science questions | **134**, SQ000135–SQ000268, all Needs review · Import, attributes pending, originality recorded (134 checks: 117 clear, 17 close) |
+| Question ↔ row links | **189** (155 direct, 34 supporting) |
+| Topic–class links | **12 proposed, 0 active** (for Sambit to approve in Proposed) |
+| Sources / citations | 33 sources · 2,636 row citations · 293 question citations |
+| Audit (`cms_reviews`, import #357) | 2,403 `create` (cms_content_rows) · 134 `create` (cms_question_versions) · 12 `create` (cms_topic_class_proposals) |
+| `db:verify` | all checks pass |
+
+Report: `.local-import/science-import-real-2026-11-131900.json` (IDs, counts and citations only). The live UI still runs `main` until #22 + #23 are merged and deployed (step f).
+
 ## 14 Nov 2026: Science — migration 0032 on the REAL project + import:science dry run (no data written)
 
 **Request (Sambit, 14 Nov 2026):** "continue §9 steps (b)–(d): back up the real DB, apply 0032 + db:verify, run import:science --dry-run on real. No real import and no merge yet." (`docs/science-plan.md` §9)
