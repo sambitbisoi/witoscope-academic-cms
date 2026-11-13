@@ -170,7 +170,7 @@ The real project is still waiting for its own go-live (migrations 0019–0031, i
 | 2 | `npx tsx --env-file=.env.real scripts/db-verify.ts` | No |
 | 3 | `npm run check:originality -- --science` (Mac only; already done for today's master) | No |
 | 4 | `npx tsx --env-file=.env.real scripts/import-science.ts --dry-run` → report to `.local-import/science-import-real-dry-run-*.json` | No (one rolled-back transaction; only the SQ sequence advances) |
-| 5 | You review the dry-run report. Expected: 33 sources, **2,403 rows** (4 near-copies held out unless `Science/override_requests.csv` lists row + field), 2,628 row citations, 134 questions, 155 + 34 links, 12 proposed links | — |
+| 5 | You review the dry-run report. Expected: 33 sources, **2,403 rows** (4 near-copies held out unless `Science/override_requests.csv` lists row + field), 2,636 row citations, 134 questions, 155 + 34 links, 12 proposed links | — |
 | 6 | Only with your OK: `npx tsx --env-file=.env.real scripts/import-science.ts --confirm-real` (the script refuses a real run without `--confirm-real`) | **Yes** |
 
 Expected held-out rows: C5-01-011, C5-01-072, C5-06-009, C6-08-018. None of them is linked to a question, so no question is blocked. To let one in, add a line to `~/WitoScope/ContentResearch/Science/override_requests.csv` (`file_key,field,reason`, e.g. `C5-01-072,content,"<why the wording must stay>"`) or reword the row in the content map and re-run the check.
