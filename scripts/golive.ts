@@ -11,7 +11,8 @@
 //   3 sources      import:sources from the same archived workbooks
 //   4 ncert        each NCERT-C5-01…15 / C6-01…10 folder: stage (to .local-import/golive) → proposals → book
 //                  citations → every-field originality check on this Mac (reused if a matching 1.2 report exists)
-//                  → chapter import. MC19-0001 is left out of NCERT-C6-07's MC19-C6.json: key_fixes.csv imports
+//                  → chapter import (a near-copy is let in as a draft only if override_requests.csv lists that
+//                  question + field; Sambit, 13 Nov 2026). MC19-0001 is left out of NCERT-C6-07's MC19-C6.json: key_fixes.csv imports
 //                  it as MC19-0039 in step 5 (as in the local bank, where the worked example held MC19-0001).
 //   5 updates      import:updates from CMS-updates/ (settings, topic classes, key fix, near-copy rewrites
 //                  batches 1–2, override requests → PENDING, levels, question settings)
@@ -100,7 +101,8 @@ const steps: Record<Step, () => void> = {
         const p = join(OUT, f, n);
         if (reportOk(p)) log(`  ${n}: originality report reused (${REPORT_SCHEMA}, same file)`);
         else run(`4 ${f} · originality ${n}`, 'scripts/check-originality.ts', [p]);
-        run(`4 ${f} · import ${n}`, 'scripts/import-chapter.ts', ['import', p], { allowFail: true }); // a blocked question is not a failed run
+        // near-copies listed in CMS-updates/override_requests.csv (that question + field only) come in as drafts, blocked from approval
+        run(`4 ${f} · import ${n}`, 'scripts/import-chapter.ts', ['import', p, '--override-requests', join(UPDATES, 'override_requests.csv')], { allowFail: true }); // a blocked question is not a failed run
       }
     }
   },

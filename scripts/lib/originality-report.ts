@@ -8,7 +8,22 @@ import type { Problem } from '../../shared/types.ts';
 
 export const reportPathFor = (absChapterFile: string) => absChapterFile.replace(/\.json$/i, '') + '.originality.json';
 
-export function readOriginality(absChapterFile: string, fileHash: string): { report: OriginalityReport | null; problems: Problem[] } {
+/**
+ * Go-live decision (Sambit, 13 Nov 2026): a near-copy is let in as a draft (and stays blocked from approval)
+ * ONLY when override_requests.csv has a request for that exact question AND field; otherwise it stays blocked.
+ * Every near-copy field of the question must be covered ("options (a)" is covered by "options").
+ * allow = set of "<file key>|<field>" from override_requests.csv.
+ */
+export function overrideCovers(q: { key: string; result: string; field?: string; fields?: { field: string; result: string }[] }, allow: Set<string> | undefined): boolean {
+  if (!allow?.size || q.result !== 'near_copy') return false;
+  const near = (q.fields ?? []).filter((f) => f.result === 'near_copy').map((f) => f.field);
+  const list = near.length ? near : q.field ? [q.field] : [];
+  if (!list.length) return false;
+  const base = (f: string) => f.replace(/\s*\(.*\)\s*$/, '');
+  return list.every((f) => allow.has(`${q.key}|${f}`) || allow.has(`${q.key}|${base(f)}`));
+}
+
+export function readOriginality(absChapterFile: string, fileHash: string, allow?: Set<string>): { report: OriginalityReport | null; problems: Problem[] } {
   const path = reportPathFor(absChapterFile);
   if (!existsSync(path)) {
     return { report: null, problems: [{ level: 'warning', key: 'file', message: 'not checked for copying from books: run npm run check:originality -- <this file> on this Mac first' }] };
@@ -25,7 +40,8 @@ export function readOriginality(absChapterFile: string, fileHash: string): { rep
   if (rep.missing.length) problems.push({ level: 'warning', key: 'file', message: `originality: no file on this Mac for ${rep.missing.join(', ')}; those sources were not checked` });
   for (const q of rep.questions) {
     const where = q.field && q.field !== 'text' ? ` (in the ${q.field})` : '';
-    if (q.result === 'near_copy') problems.push({ level: 'error', key: q.key, message: `near-copy of a book${where}: ${q.closest_ref} (similarity ${q.similarity}${q.same_numbers ? ', same numbers in the same order' : ''}); rewrite it with new wording and numbers` });
+    if (q.result === 'near_copy' && overrideCovers(q, allow)) problems.push({ level: 'warning', key: q.key, message: `near-copy of a book${where}: ${q.closest_ref} (similarity ${q.similarity}${q.same_numbers ? ', same numbers in the same order' : ''}); let in as a draft because override_requests.csv asks for an override of this field; it can't be approved until that override is approved` });
+    else if (q.result === 'near_copy') problems.push({ level: 'error', key: q.key, message: `near-copy of a book${where}: ${q.closest_ref} (similarity ${q.similarity}${q.same_numbers ? ', same numbers in the same order' : ''}); rewrite it with new wording and numbers` });
     if (q.result === 'flagged') problems.push({ level: 'warning', key: q.key, message: `close to a book${where}: ${q.closest_ref} (similarity ${q.similarity}${q.same_numbers ? ', same numbers' : ''}); check it is original before approving` });
   }
   return { report: rep, problems };
