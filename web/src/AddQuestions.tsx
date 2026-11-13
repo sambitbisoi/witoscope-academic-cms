@@ -314,7 +314,7 @@ export function BulkUpload({ topic, onDone }: { topic: TopicInfo; onDone: (chang
 }
 
 /** 13 Nov 2026: where an added question came from, and what is still pending. */
-export function OriginFlags({ q, compact }: { q: { created_from?: string | null; upload_file?: string | null; uploaded_at?: string | null; attributes_pending?: boolean | null; image_pending?: boolean | null; originality_pending?: boolean | null }; compact?: boolean }) {
+export function OriginFlags({ q, compact }: { q: { bank?: string; created_from?: string | null; upload_file?: string | null; uploaded_at?: string | null; attributes_pending?: boolean | null; image_pending?: boolean | null; originality_pending?: boolean | null }; compact?: boolean }) {
   const when = q.uploaded_at ? new Date(q.uploaded_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '';
   const added = q.created_from === 'manual' || q.created_from === 'upload';
   return (
@@ -322,7 +322,7 @@ export function OriginFlags({ q, compact }: { q: { created_from?: string | null;
       {q.created_from === 'manual' && <span className="tag origin" title="Added by hand in the CMS">Manual</span>}
       {q.created_from === 'upload' && <span className="tag origin" title={`Uploaded from ${q.upload_file ?? 'an Excel file'}${when ? ` on ${when}` : ''}`}>{compact ? 'Uploaded' : `Uploaded · ${q.upload_file ?? 'Excel'}${when ? ` · ${when}` : ''}`}</span>}
       {added && q.attributes_pending && <span className="tag pending" title="Signature and derived fields not evaluated yet">{compact ? 'Attr. pending' : 'Attributes pending'}</span>}
-      {added && q.image_pending && <span className="tag pending" title="A picture is needed and not drawn yet">Image pending</span>}
+      {q.image_pending && q.bank !== 'gold' && <span className="tag pending" title="A picture is needed and not drawn yet">Image pending</span>}
       {q.originality_pending && <span className="tag pending orig" title="The book check runs on the Mac: npm run check:originality -- --pending">{compact ? 'Orig. pending' : 'Originality pending'}</span>}
     </>
   );

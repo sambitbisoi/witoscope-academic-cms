@@ -84,14 +84,25 @@ describe('cms_add_questions', () => {
     expect(l).toMatchObject({ created_from: 'upload', upload_file: 'fractions-week2.xlsx' });
   });
 
-  it('cannot be approved while originality is pending; can once the check has run', async () => {
-    const id = (await add({ topic_id: 'MT9970', origin: 'manual', questions: [mcq()] })).added[0]!.question_id;
+  it('cannot be approved while originality, attributes or the picture is pending; can once all are done', async () => {
+    const id = (await add({ topic_id: 'MT9970', origin: 'manual', questions: [mcq({ picture_needed: true, figure_description: 'Four number cards', math_difficulty: 'Simple' })] })).added[0]!.question_id;
     const approve = () => asAdmin((tx) => tx`select cms.cms_set_status(${id}, 1, 'approve', null, false)`);
     await expect(approve()).rejects.toThrow(/originality check is pending/);
     await owner`update cms.cms_question_versions set originality_pending = false where question_id = ${id}`;
+    await expect(approve()).rejects.toThrow(/picture is pending/);
+    await owner`update cms.cms_question_versions set image_status = 'has_image', image_path = 'figures/test.png' where question_id = ${id}`;
+    await expect(approve()).rejects.toThrow(/attributes are pending/);
+    await owner`update cms.cms_question_versions set reading = 1, steps = 1, working_memory = 1, inhibition = 0, visual = 0, strategy = 0 where question_id = ${id}`;
     await approve();
     const [l] = await owner`select status, approved_version from cms.cms_question_list where question_id = ${id}`;
     expect(l).toMatchObject({ status: 'approved', approved_version: 1 });
+  });
+
+  it('the picture rule holds for any production question, not only added ones', async () => {
+    const id = (await add({ topic_id: 'MT9970', origin: 'manual', questions: [mcq({ math_difficulty: 'Simple' })] })).added[0]!.question_id;
+    await owner`update cms.cms_question_versions set originality_pending = false, created_from = 'import', image_status = 'needs_image',
+      reading = 1, steps = 1, working_memory = 1, inhibition = 0, visual = 0, strategy = 0 where question_id = ${id}`;
+    await expect(asAdmin((tx) => tx`select cms.cms_set_status(${id}, 1, 'approve', null, false)`)).rejects.toThrow(/picture is pending/);
   });
 
   it('attributes stop being pending once the signature is filled; then the question can join a clone group', async () => {
