@@ -79,22 +79,15 @@ export function Workspace(r: R) {
     const chs = data.chapters.filter((c) => n.has(c.chapter_id)).map((c) => ({ ...c, n: n.get(c.chapter_id)! }));
     return { strands: data.strands.filter((s) => chs.some((c) => c.strand_id === s.strand_id)), chapters: chs.filter((c) => !r.strand || c.strand_id === r.strand) };
   }, [data, shownTopics, r.strand]);
-  // R3: open branches = remembered state; the branch of the selected topic (and a chosen strand / chapter) opens by default
+  // R3: every branch is open by default (Sambit, 13 Nov); a branch closed with its arrow stays closed (remembered)
   const selChapter = topicChapter(data?.topics, r.topic);
-  const autoOpen = useMemo(() => {
-    const ids = new Set<string>();
-    const ch = selChapter ?? r.ch;
-    if (ch) { ids.add(ch); const st = chapterOf.get(ch)?.strand_id; if (st) ids.add(st); }
-    if (r.strand) ids.add(r.strand);
-    return ids;
-  }, [selChapter, r.ch, r.strand, chapterOf]);
   // a newly selected topic re-opens its branch even if it was closed before
   useEffect(() => {
     if (!selChapter) return;
     const st = chapterOf.get(selChapter)?.strand_id;
     if (openState[selChapter] === false || (st && openState[st] === false)) setOpenState({ ...openState, [selChapter]: true, ...(st ? { [st]: true } : {}) });
   }, [r.topic, selChapter]); // eslint-disable-line react-hooks/exhaustive-deps
-  const isOpen = (id: string) => openState[id] ?? autoOpen.has(id);
+  const isOpen = (id: string) => openState[id] ?? true;
   const toggle = (id: string) => setOpenState({ ...openState, [id]: !isOpen(id) });
 
   const treeEl = (
