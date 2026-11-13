@@ -57,6 +57,8 @@ All IDs are permanent and never reused. Class is a field, never inferred from an
 | `cms_chapters` | Chapters | chapter_id, subject, strand_id, name, sort |
 | `cms_topics` | Topics with Class View placement | topic_id, chapter_id, class, name, topic_kind (normal / achievers), taught_in_school (has NCERT or DAV source), source_flags (ncert, dav, ixl, imo / iso / ieo), status (active / retired) |
 
+> **Round 2 (Sambit, 13 Nov 2026):** terminology is **strand → chapter → topic**. The child sees strand, then topic; our chapter is an internal grouping. **R1:** every topic–class link has a role from the topic's home class (its Class View class): **core** (home = this class), **from a lower class** (home < this class) or **from a higher class** (home > this class); views `cms_topic_all_classes` and `cms_topic_class_stats` carry `role` and `home_class` (migration 0027). Browse shows core topics by default, with "Include extra topics (lower / higher class)"; the Level ≤ class display rule (D3) is unchanged.
+
 One "Achievers" topic row per chapter-class (topic_kind = achievers) **[guess: ID scheme for these rows; proposed `ACH-MC19-6`]**.
 
 ### B. Catalogues (tagging vocabulary)
