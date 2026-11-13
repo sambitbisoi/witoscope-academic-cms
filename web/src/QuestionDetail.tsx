@@ -7,6 +7,7 @@ import { structureDiff } from '../../shared/save.ts';
 import { textsOf } from '../../shared/version.ts';
 import { bundleOf, retire, setStatus } from './editApi';
 import { supabase } from './supabase';
+import { OriginFlags } from './AddQuestions';
 
 /** A keyboard review command from Browse (D6): A approve · R reject · F needs review. */
 export interface ReviewCommand { kind: 'approve' | 'reject' | 'flag'; n: number }
@@ -49,6 +50,7 @@ export function QuestionDetail({ id, versionNo, onVersion, onEdit, reloadKey = 0
           {q.retired_at && <strong> · retired</strong>}
         </div>
       </div>
+      {isCurrent && d.flags && <PendingBanners f={d.flags} gold={q.bank === 'gold'} />}
       {isCurrent && <Actions key={v.version_id} d={d} onEdit={onEdit} onChanged={() => { setTick((t) => t + 1); onChanged?.(); }} command={command} onAdvance={onAdvance} />}
       {!isCurrent && <div className="notice small">You're looking at an older version. <button className="link" onClick={() => onVersion(null)}>Show current (v{q.current_version})</button></div>}
 
@@ -312,7 +314,10 @@ function Actions({ d, onEdit, onChanged, command, onAdvance }: { d: QuestionDeta
       if (advance) onAdvance?.();
     } catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
   };
-  const approve = () => (nearCopy ? setAsk('override') : run(() => setStatus(q.question_id, v.version_no, 'approve', null)));
+  // 13 Nov 2026: "Approved" means ready for the app: no approval while the book check, the picture
+  // (production only) or the attributes are pending. The SQL trigger enforces the same rules.
+  const blockers = approvalBlockers(d.flags, q.bank);
+  const approve = () => (blockers.length ? setErr(`Can't approve yet: ${blockers.join('; ')}.`) : nearCopy ? setAsk('override') : run(() => setStatus(q.question_id, v.version_no, 'approve', null)));
   useEffect(() => {
     if (!command || command.n < mounted.current || busy || q.retired_at || !open) return;
     viaKey.current = true;
@@ -337,9 +342,10 @@ function Actions({ d, onEdit, onChanged, command, onAdvance }: { d: QuestionDeta
       {v.status === 'draft' && <button className="secondary flag" disabled={busy} onClick={() => { viaKey.current = false; setAsk(ask === 'flag' ? null : 'flag'); }} title="F">Needs review…</button>}
       {v.status === 'in_review' && <button className="secondary flag on" disabled={busy} title="Clear the Needs review flag (back to draft)" onClick={() => run(() => setStatus(q.question_id, v.version_no, 'withdraw', null))}>⚑ Needs review · clear</button>}
       {open && <>
-        <button className="approve" disabled={busy} title="A" onClick={() => { viaKey.current = false; approve(); }}>Approve{nearCopy ? '…' : ''}</button>
+        <button className="approve" disabled={busy || blockers.length > 0} title={blockers.length ? `Can't approve yet: ${blockers.join('; ')}` : 'A'} onClick={() => { viaKey.current = false; approve(); }}>Approve{nearCopy ? '…' : ''}</button>
         <button className="reject" disabled={busy} title="R" onClick={() => { viaKey.current = false; setAsk(ask === 'reject' ? null : 'reject'); }}>Reject…</button>
       </>}
+      {open && blockers.length > 0 && <span className="muted small blockers">Approve is off until: {blockers.join(' · ')}</span>}
       {v.status === 'approved' && <span className="muted small">Approved. Edit makes a new version (a typo fix keeps this one).</span>}
       {v.status === 'rejected' && <span className="muted small">Rejected. Edit to make a new version.</span>}
       {q.bank === 'production' && <a className="small" href={`#/generate?q=${encodeURIComponent(q.question_id)}`}>Generate similar</a>}
@@ -423,4 +429,28 @@ export function Proposed({ status }: { status?: string | null }) {
 
 function KV({ rows, one }: { rows: { k: string; v: string }[]; one?: boolean }) {
   return <dl className={`kv${one ? ' one' : ''}`}>{rows.map((r) => <div key={r.k}><dt>{r.k}</dt><dd>{r.v}</dd></div>)}</dl>;
+}
+
+/** 13 Nov 2026: what is still open on a question added by hand or uploaded. */
+/** Why a version can't be approved yet ("Approved" = ready for the app). Pictures and attributes don't apply to gold. */
+function approvalBlockers(f: QuestionDetailData['flags'], bank: string): string[] {
+  if (!f) return [];
+  const out: string[] = [];
+  if (f.originality_pending) out.push('originality check pending (runs on the Mac)');
+  if (bank === 'production' && f.image_pending) out.push('picture pending');
+  if (bank === 'production' && f.attributes_pending) out.push('attributes pending');
+  return out;
+}
+
+function PendingBanners({ f, gold }: { f: NonNullable<QuestionDetailData['flags']>; gold: boolean }) {
+  const added = f.created_from === 'manual' || f.created_from === 'upload';
+  if (!added && !f.originality_pending && (gold || (!f.image_pending && !f.attributes_pending))) return null;
+  return (
+    <div className="pending-banners small">
+      {added && <div className="origin-line"><OriginFlags q={f} /></div>}
+      {!gold && f.attributes_pending && <div className="banner pending">Attributes pending: the signature and derived fields are not evaluated yet, so this question is left out of clone groups and can't be approved. Edit it and fill in the signature to evaluate them.</div>}
+      {!gold && f.image_pending && <div className="banner pending">Image pending: a picture is needed and not added yet (see the figure description), so it can't be approved.</div>}
+      {f.originality_pending && <div className="banner pending orig">Originality pending: the book check has not run yet, so it can't be approved. It runs on the Mac: <span className="mono">npm run check:originality -- --pending</span>.</div>}
+    </div>
+  );
 }

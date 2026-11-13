@@ -7,6 +7,12 @@
 //       book files) of the chapter's sources and writes <chapter>.originality.json next to
 //       it. import:chapter reads that report and records each result.
 //   npm run check:originality -- --unchecked [--chapter MC27] [--dry-run]
+//   npm run check:originality -- --pending [--dry-run]
+//       Questions added by hand or uploaded in the CMS (13 Nov 2026) whose check is pending. Run on
+//       this Mac against the database in CMS_DATABASE_URL (the real project when it points there):
+//       pulls their text, checks every field against the local book PDFs and book files, records
+//       each result (citations and scores only), clears "originality pending" and logs it. Nothing
+//       from a book is uploaded.
 //   npm run check:originality -- --all [--chapter MC27] [--to-fix <file.csv>]
 //       Every current version in the CMS, every field, LIST ONLY (nothing recorded): what the field
 //       check (12 Nov 2026) flags beyond the old text-only check. CSV to .local-import/.
@@ -134,6 +140,42 @@ async function checkUnchecked(sql: Sql, chapter: string | null, dryRun: boolean)
   });
 }
 
+/** --pending: the questions added or uploaded in the CMS that wait for their book check. */
+export async function checkPending(sql: Sql, dryRun: boolean) {
+  const rows = await sql<DbRow[]>`
+    select v.version_id, q.question_id, v.version_no, q.chapter_id, q.file_key, v.status
+      from cms.cms_questions q join cms.cms_question_versions v on v.question_id = q.question_id and v.version_no = q.current_version
+     where v.originality_pending and q.retired_at is null
+     order by q.chapter_id, q.question_id`;
+  if (!rows.length) { console.log('No questions wait for their originality check.'); return { checked: 0 }; }
+  const results: { row: DbRow; r: FieldResult; checked: unknown; missing: unknown }[] = [];
+  const { th, near } = await checkVersions(sql, rows, (row, res, _old, ctx) => results.push({ row, r: res, ...ctx }));
+  print(results.map((x) => ({ label: `${x.row.chapter_id} ${x.row.question_id} v${x.row.version_no}${x.row.file_key ? ` (${x.row.file_key})` : ''}`, ...x.r })));
+  if (dryRun) { console.log('\nDRY RUN: nothing recorded; the questions stay "originality pending".'); return { checked: results.length }; }
+  await sql.begin(async (tx) => {
+    const counts = Object.fromEntries(['clear', 'flagged', 'near_copy', 'no_sources'].map((k) => [k, results.filter((x) => x.r.result === k).length]));
+    const [imp] = await tx`insert into cms.cms_imports (kind, file_path, file_hash, options, finished_at, result, counts)
+      values ('originality', ${'pending checks (questions added or uploaded in the CMS)'}, ${createHash('sha256').update(results.map((x) => x.row.version_id).join(',')).digest('hex')},
+              ${tx.json({ tool: ORIGINALITY_TOOL, threshold: th, near_copy_threshold: near, mode: 'pending' })}, now(), 'ok', ${tx.json(counts)})
+      returning import_id`;
+    const now = new Date().toISOString();
+    for (const x of results) {
+      const [chk] = await tx`insert into cms.cms_originality_checks ${tx({ version_id: x.row.version_id, checked_at: now, result: x.r.result, similarity: x.r.similarity,
+        same_numbers: x.r.same_numbers, closest_ref: x.r.closest_ref, field: x.r.field, checked: tx.json(x.checked as never), missing: tx.json(x.missing as never),
+        threshold: th, near_copy_threshold: near, tool: ORIGINALITY_TOOL, import_id: imp!.import_id } as never)} returning check_id`;
+      await tx`update cms.cms_question_versions set originality_pending = false where version_id = ${x.row.version_id}`;
+      await tx`insert into cms.cms_reviews (target, target_table, target_id, action, reason, field_diff, by_label, import_id)
+        values ('question_version', 'cms_question_versions', ${`${x.row.question_id} v${x.row.version_no}`}, 'originality_check',
+                ${`originality check on the Mac: ${x.r.result}${x.r.field ? ` (${x.r.field})` : ''}`},
+                ${tx.json({ originality_pending: { before: true, after: false }, check_id: Number(chk!.check_id), result: x.r.result, field: x.r.field,
+                            similarity: x.r.similarity, same_numbers: x.r.same_numbers, closest_ref: x.r.closest_ref, tool: ORIGINALITY_TOOL } as never)},
+                'originality check (Mac)', ${imp!.import_id})`;
+    }
+    console.log(`\nRecorded ${results.length} check${results.length === 1 ? '' : 's'} (import #${imp!.import_id}); "originality pending" cleared on each.`);
+  });
+  return { checked: results.length };
+}
+
 /**
  * --all: every current version in the CMS, every field, LIST ONLY (nothing recorded, no question
  * changed). Reports what the field check flags beyond the old text-only check. Writes a CSV of
@@ -179,8 +221,8 @@ if (import.meta.filename === process.argv[1]) {
   const args = process.argv.slice(2);
   const opt = (name: string) => (args.includes(name) ? args[args.indexOf(name) + 1] ?? null : null);
   const file = args.find((a, i) => !a.startsWith('--') && args[i - 1] !== '--chapter' && args[i - 1] !== '--to-fix');
-  if (!file && !args.includes('--unchecked') && !args.includes('--all')) {
-    console.error('usage: npm run check:originality -- <chapter.json>\n       npm run check:originality -- --unchecked [--chapter MC27] [--dry-run]\n       npm run check:originality -- --all [--chapter MC27]   (list only)');
+  if (!file && !args.includes('--unchecked') && !args.includes('--all') && !args.includes('--pending')) {
+    console.error('usage: npm run check:originality -- <chapter.json>\n       npm run check:originality -- --pending [--dry-run]\n       npm run check:originality -- --unchecked [--chapter MC27] [--dry-run]\n       npm run check:originality -- --all [--chapter MC27]   (list only)');
     process.exit(1);
   }
   if (!hasPdftotext()) { console.error('pdftotext is needed (brew install poppler).'); process.exit(1); }
@@ -196,7 +238,11 @@ if (import.meta.filename === process.argv[1]) {
       print(rep.questions.map((q) => ({ label: q.key, ...q })));
       console.log(`Report: ${out} (citations and scores only; import:chapter records it)`);
     } else {
-      if (args.includes('--all')) await checkAll(sql, opt('--chapter'), opt('--to-fix') ? resolve(opt('--to-fix')!) : null);
+      if (args.includes('--pending')) {
+        const target = new URL(process.env.CMS_DATABASE_URL ?? 'postgres://127.0.0.1').hostname;
+        console.log(`Pending originality checks against ${target === '127.0.0.1' || target === 'localhost' ? 'the LOCAL database' : `the database at ${target}`}${args.includes('--dry-run') ? ' (dry run)' : ''}`);
+        await checkPending(sql, args.includes('--dry-run'));
+      } else if (args.includes('--all')) await checkAll(sql, opt('--chapter'), opt('--to-fix') ? resolve(opt('--to-fix')!) : null);
       else await checkUnchecked(sql, opt('--chapter'), args.includes('--dry-run'));
     }
   } finally {

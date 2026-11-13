@@ -474,3 +474,39 @@ table.map-table tr.warn-row td:first-child { box-shadow: inset 3px 0 0 var(--war
 .review-control .review-note { min-width: 180px; flex: 1 1 180px; max-width: 360px; padding: 4px 8px; }
 .small-select { font-size: 0.8rem; padding: 3px 6px; }
 .review-progress { margin: 4px 0; }
+
+/* Added / uploaded questions (13 Nov 2026) */
+.tag.origin { background: var(--sig-bg); color: var(--accent); border: 1px solid var(--sig-line); }
+.tag.pending { background: var(--warn-bg); color: var(--warn); }
+.tag.pending.orig { background: var(--err-bg); color: var(--error); }
+.pending-banners { display: flex; flex-direction: column; gap: 6px; margin: 8px 0; }
+.pending-banners .banner { border-radius: 6px; padding: 6px 10px; background: var(--notice-bg); border: 1px solid var(--notice-line); }
+.pending-banners .banner.orig { background: var(--err-soft); border-color: var(--err-line); }
+.curriculum-actions .sep { color: var(--line); margin: 0 4px; }
+.link.strong { font-weight: 700; }
+.add-form { margin: 10px 0 14px; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; }
+.add-form .add-head { display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; justify-content: space-between; }
+.add-form h3 { margin: 0; font-size: 1rem; }
+.add-form .field { display: flex; flex-direction: column; gap: 4px; font-size: 0.86rem; border: none; padding: 0; margin: 0; min-width: 0; }
+.add-form .field > span { font-weight: 600; }
+.add-form .field b { color: var(--error); }
+.add-form textarea, .add-form input:not([type=checkbox]):not([type=radio]), .add-form select { font: inherit; padding: 5px 8px; }
+.add-form .row-fields { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end; }
+.add-form .row-fields .field { flex: 1 1 160px; }
+.add-form .yn { flex-direction: row !important; gap: 10px !important; align-items: center; }
+.add-form .confirm { padding-bottom: 6px; }
+.add-form .opt-row { display: flex; gap: 8px; align-items: center; margin-bottom: 4px; }
+.add-form .opt-row input:not([type=radio]) { flex: 1; }
+.add-form .more-fields { display: flex; flex-direction: column; gap: 10px; border-left: 3px solid var(--line); padding-left: 12px; }
+.add-form .concept-picks { display: flex; flex-direction: column; gap: 2px; max-height: 160px; overflow: auto; }
+.add-form .add-errors { margin: 0; padding-left: 18px; }
+.add-form .form-actions { display: flex; gap: 8px; align-items: center; }
+.upload-preview { max-height: 420px; overflow: auto; border: 1px solid var(--line); border-radius: 6px; }
+.upload-preview td.clip { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.upload-preview tr.row-skip td { background: var(--err-soft); }
+.upload-preview .ok { color: var(--ok); font-weight: 600; }
+.add-form.card { width: 100%; max-width: 980px; box-sizing: border-box; }
+.upload-preview table { width: 100%; table-layout: fixed; }
+.upload-preview th:nth-child(1) { width: 44px; } .upload-preview th:nth-child(2) { width: 70px; } .upload-preview th:nth-child(4) { width: 96px; } .upload-preview th:nth-child(5) { width: 84px; } .upload-preview th:nth-child(6) { width: 44px; } .upload-preview th:nth-child(7) { width: 34%; }
+.upload-preview td { overflow-wrap: anywhere; vertical-align: top; }
+.actions .blockers { flex-basis: 100%; }

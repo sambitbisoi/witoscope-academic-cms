@@ -192,13 +192,133 @@ export function groupBySet<Q extends ListQuestion>(questions: Q[], knownSets: st
   });
 }
 
-export interface Filters { difficulty: string; status: string; bank: string }
-export const NO_FILTERS: Filters = { difficulty: 'all', status: 'all', bank: 'all' };
+export interface Filters { difficulty: string; status: string; bank: string; flag?: FlagFilter }
+export const NO_FILTERS: Filters = { difficulty: 'all', status: 'all', bank: 'all', flag: 'all' };
 export function applyFilters<Q extends ListQuestion>(qs: Q[], f: Filters): Q[] {
   return qs.filter((q) =>
     (f.difficulty === 'all' || q.math_difficulty === f.difficulty)
     && (f.status === 'all' || (f.status === 'retired' ? !!q.retired_at : q.status === f.status && !q.retired_at))
-    && (f.bank === 'all' || q.bank === f.bank));
+    && (f.bank === 'all' || q.bank === f.bank)
+    && matchesFlag(f.flag ?? 'all', q as Flagged));
+}
+
+// ---------------------------------------------------------------- added / uploaded questions (13 Nov 2026)
+/** Flags of a question added by hand or uploaded (Browse and Review filter on them). */
+export interface Flagged { created_from?: string | null; attributes_pending?: boolean | null; originality_pending?: boolean | null; image_pending?: boolean | null }
+export type FlagFilter = 'all' | 'manual' | 'upload' | 'attributes' | 'image' | 'originality';
+export const FLAG_FILTERS: [FlagFilter, string][] = [
+  ['all', 'Flags: all'], ['manual', 'Manual'], ['upload', 'Uploaded'], ['attributes', 'Attributes pending'], ['image', 'Image pending'], ['originality', 'Originality pending'],
+];
+export function matchesFlag(f: FlagFilter, q: Flagged): boolean {
+  switch (f) {
+    case 'manual': return q.created_from === 'manual';
+    case 'upload': return q.created_from === 'upload';
+    case 'attributes': return !!q.attributes_pending;
+    case 'image': return !!q.image_pending;
+    case 'originality': return !!q.originality_pending;
+    default: return true;
+  }
+}
+
+/** The formats a question added by hand or uploaded may have (no Multi-part). */
+export const ADD_FORMATS = ['MCQ-4', 'MCQ-3', 'True/False', 'Typed-number', 'Typed-decimal', 'Typed-fraction', 'Typed-text'] as const;
+export const DIFFICULTIES = ['Simple', 'Medium', 'Complex'] as const;
+/** A new question as the form or one Excel row gives it (the topic is fixed by where you are). */
+export interface NewQuestion {
+  row?: number; text: string; format: string; options: string[]; correct: string; level: number | null; picture_needed: boolean | null;
+  figure_description?: string; solution?: string; hints?: string[]; wrong_answers?: { value: string; why: string }[]; concepts?: string[];
+  typical_set_id?: string; pattern_id?: string; setting_id?: string; math_difficulty?: string; source_refs?: string[]; author_notes?: string;
+}
+/** Missing or broken MANDATORY fields only (no similarity, duplicate or quality checks). */
+export function mandatoryErrors(q: NewQuestion): string[] {
+  const e: string[] = [];
+  if (!q.text?.trim()) e.push('question text is missing');
+  if (!q.format?.trim()) e.push('format is missing');
+  else if (!(ADD_FORMATS as readonly string[]).includes(q.format)) e.push(`format "${q.format}" is not allowed (${ADD_FORMATS.join(', ')})`);
+  if (!q.correct?.trim()) e.push('correct answer is missing');
+  const n = q.format === 'MCQ-4' ? 4 : q.format === 'MCQ-3' ? 3 : 0;
+  const opts = q.options.map((o) => o.trim()).filter(Boolean);
+  if (n && opts.length !== n) e.push(`${q.format} needs ${n} options (has ${opts.length})`);
+  if (n && opts.length === n && q.correct?.trim() && !opts.includes(q.correct.trim())) e.push('the correct answer must be one of the options');
+  if (q.format === 'True/False' && q.correct?.trim() && !['True', 'False'].includes(q.correct.trim())) e.push('a True/False answer must be True or False');
+  if (q.level === null || !Number.isInteger(q.level) || q.level < 1 || q.level > 6) e.push('level must be 1–6');
+  if (q.picture_needed === null) e.push('"Picture needed" must be Y or N');
+  if (q.picture_needed && !q.figure_description?.trim()) e.push('a picture is needed, so the figure description is required');
+  return e;
+}
+
+/** The Excel template's columns, in order (the topic is fixed by where you upload, so there is no topic column). */
+export const UPLOAD_COLUMNS: { key: string; header: string; required: boolean; help: string }[] = [
+  { key: 'text', header: 'Question text', required: true, help: 'The question as the child reads it.' },
+  { key: 'format', header: 'Format', required: true, help: `One of: ${'MCQ-4, MCQ-3, True/False, Typed-number, Typed-decimal, Typed-fraction, Typed-text'}.` },
+  { key: 'a', header: 'Option A', required: false, help: 'MCQ only: MCQ-4 needs A–D, MCQ-3 needs A–C. True/False fills its options itself.' },
+  { key: 'b', header: 'Option B', required: false, help: 'MCQ only.' },
+  { key: 'c', header: 'Option C', required: false, help: 'MCQ only.' },
+  { key: 'd', header: 'Option D', required: false, help: 'MCQ-4 only.' },
+  { key: 'correct', header: 'Correct answer', required: true, help: 'MCQ: the text of the right option (or just A, B, C or D). True/False: True or False. Typed: the answer.' },
+  { key: 'level', header: 'Level', required: true, help: 'The class level 1–6 the question is for; the template fills in the topic\'s home class. Check it.' },
+  { key: 'picture', header: 'Picture needed (Y/N)', required: true, help: 'Y if the question needs a picture; then the figure description is required.' },
+  { key: 'figure', header: 'Figure description', required: false, help: 'Required when Picture needed is Y: what the picture shows (our own words).' },
+  { key: 'solution', header: 'Solution', required: false, help: 'The worked solution.' },
+  { key: 'hint1', header: 'Hint 1', required: false, help: 'Up to three hints, gentlest first.' },
+  { key: 'hint2', header: 'Hint 2', required: false, help: '' },
+  { key: 'hint3', header: 'Hint 3', required: false, help: '' },
+  { key: 'wrong', header: 'Wrong-answer notes', required: false, help: 'One per line or separated by ";", as  wrong answer: why  (e.g.  102: compared the last digit only).' },
+  { key: 'concepts', header: 'Concepts', required: false, help: 'Concept IDs of this topic, separated by commas (e.g. G6-FRC-C1). Unknown IDs are left out with a warning.' },
+  { key: 'set', header: 'Typical set', required: false, help: 'Typical set ID of this topic (e.g. TS-G6-FRAC-LEFT). Unknown IDs are left out with a warning.' },
+  { key: 'pattern', header: 'Pattern', required: false, help: 'Pattern ID of that typical set. Unknown IDs are left out with a warning.' },
+  { key: 'setting', header: 'Setting', required: false, help: 'Setting ID (the story or context). Unknown IDs are left out with a warning.' },
+  { key: 'difficulty', header: 'Difficulty guess', required: false, help: 'Simple, Medium or Complex (a guess; the attributes are evaluated later).' },
+  { key: 'source', header: 'Source citation', required: false, help: 'A citation only (book item ID such as N6-01-004, or book · class · chapter · page · item). Never paste book text.' },
+  { key: 'notes', header: 'Notes', required: false, help: 'Anything else for the reviewer.' },
+];
+export const EXAMPLE_MARK = 'EXAMPLE';
+
+/** IDs the topic knows, to check an upload's optional IDs against. */
+export interface UploadLookups { concepts: Set<string>; sets: Set<string>; patterns: Map<string, string>; settings: Set<string>; sourceItems: Set<string> }
+export interface ParsedRow { row: number; q: NewQuestion | null; errors: string[]; warnings: string[]; example?: boolean }
+const cellText = (v: unknown) => (v === null || v === undefined ? '' : String(v).trim());
+const splitList = (s: string, sep: RegExp) => s.split(sep).map((x) => x.trim()).filter(Boolean);
+
+/** One Excel row (values keyed by column key) → a new question, its mandatory-field errors and its warnings. */
+export function parseUploadRow(row: number, cells: Record<string, unknown>, look: UploadLookups): ParsedRow {
+  const c = (k: string) => cellText(cells[k]);
+  if (c('notes').toUpperCase().startsWith(EXAMPLE_MARK)) return { row, q: null, errors: [], warnings: ['the example row; left out'], example: true };
+  const warnings: string[] = [];
+  const format = c('format');
+  const tf = format.toLowerCase() === 'true/false';
+  const fmt = tf ? 'True/False' : (ADD_FORMATS.find((f) => f.toLowerCase() === format.toLowerCase()) ?? format);
+  const options = fmt === 'True/False' ? ['True', 'False'] : fmt === 'MCQ-4' ? ['a', 'b', 'c', 'd'].map(c) : fmt === 'MCQ-3' ? ['a', 'b', 'c'].map(c) : [];
+  if (!fmt.startsWith('MCQ') && ['a', 'b', 'c', 'd'].some((k) => c(k))) warnings.push(`options are ignored for ${fmt || 'this format'}`);
+  let correct = c('correct');
+  if (fmt.startsWith('MCQ') && /^[A-D]$/i.test(correct)) { const i = correct.toUpperCase().charCodeAt(0) - 65; if (options[i]) correct = options[i]!; }
+  if (fmt === 'True/False') correct = /^t(rue)?$/i.test(correct) ? 'True' : /^f(alse)?$/i.test(correct) ? 'False' : correct;
+  const lv = c('level');
+  const level = /^[1-6]$/.test(lv) ? Number(lv) : lv === '' ? null : NaN;
+  const pic = c('picture').toUpperCase();
+  const picture_needed = ['Y', 'YES'].includes(pic) ? true : ['N', 'NO'].includes(pic) ? false : null;
+  const known = <T extends string>(ids: string[], ok: (id: T) => boolean, what: string) => ids.filter((id) => { const good = ok(id as T); if (!good) warnings.push(`${what} ${id} is not known here; left out`); return good; });
+  const concepts = known(splitList(c('concepts'), /[,;\n]/), (id) => look.concepts.has(id), 'concept');
+  const setId = c('set') && known([c('set')], (id) => look.sets.has(id), 'typical set')[0];
+  let patternId = c('pattern') && known([c('pattern')], (id) => look.patterns.has(id), 'pattern')[0];
+  if (patternId && setId && look.patterns.get(patternId) !== setId) { warnings.push(`pattern ${patternId} belongs to another typical set; left out`); patternId = ''; }
+  const settingId = c('setting') && known([c('setting')], (id) => look.settings.has(id), 'setting')[0];
+  const diff = c('difficulty');
+  const math_difficulty = DIFFICULTIES.find((d) => d.toLowerCase() === diff.toLowerCase());
+  if (diff && !math_difficulty) warnings.push(`difficulty guess "${diff}" is not Simple, Medium or Complex; left out`);
+  const src = c('source');
+  const isItem = !!src && look.sourceItems.has(src);
+  const notes = [c('notes'), src && !isItem ? `Source: ${src}` : ''].filter(Boolean).join('\n');
+  const wrong_answers = splitList(c('wrong'), /[;\n]/).map((w) => { const i = w.indexOf(':'); return i > 0 ? { value: w.slice(0, i).trim(), why: w.slice(i + 1).trim() } : { value: w, why: '' }; });
+  const q: NewQuestion = {
+    row, text: c('text'), format: fmt, options, correct, level: Number.isNaN(level) ? null : level, picture_needed,
+    figure_description: c('figure') || undefined, solution: c('solution') || undefined, hints: [c('hint1'), c('hint2'), c('hint3')].filter(Boolean),
+    wrong_answers, concepts, typical_set_id: setId || undefined, pattern_id: patternId || undefined, setting_id: settingId || undefined,
+    math_difficulty, source_refs: isItem ? [src] : [], author_notes: notes || undefined,
+  };
+  let errors = mandatoryErrors(q);
+  if (Number.isNaN(level)) errors = [...errors.filter((e) => !e.startsWith('level')), `level "${lv}" is not 1–6`];
+  return { row, q, errors: [...new Set(errors)], warnings };
 }
 
 // ---------------------------------------------------------------- signature (v10)

@@ -96,7 +96,8 @@ export const retire = (questionId: string, doRetire: boolean, reason: string) =>
 /** The Review tab (D6): flagged ("Needs review") and rejected current versions with their latest note, oldest first. */
 export async function reviewQueue() {
   return must<{ question_id: string; bank: string; subject: string; file_key: string | null; chapter_id: string; topic_id: string; class: number; status: string; text: string;
-    current_version: number; approved_version: number | null; version_created_at: string; math_difficulty: string | null; note: string | null; note_action: string | null; noted_at: string | null }[]>(
+    current_version: number; approved_version: number | null; version_created_at: string; math_difficulty: string | null; note: string | null; note_action: string | null; noted_at: string | null;
+    created_from: string; attributes_pending: boolean; originality_pending: boolean; image_pending: boolean; upload_file: string | null; uploaded_at: string | null }[]>(
     await supabase.from('cms_review_queue').select('*').order('noted_at', { ascending: true, nullsFirst: true }).order('version_created_at').limit(1000));
 }
 
@@ -145,3 +146,6 @@ export async function loadCurrentRuleVersion(): Promise<string> {
 /** Review status per topic (manual only; logged before → after by the function). */
 export const setTopicReview = (topicId: string, status: string, note: string | null) =>
   rpc('cms_set_topic_review', { p_topic_id: topicId, p_status: status, p_note: note }) as Promise<{ changed: boolean }>;
+/** Add questions to a topic by hand or from an upload (no AI; status Needs review; flags set by the function). */
+export const addQuestions = (p: { topic_id: string; origin: 'manual' | 'upload'; file_name?: string; file_hash?: string; questions: unknown[]; skipped?: unknown[]; warnings?: unknown[] }) =>
+  rpc('cms_add_questions', { p }) as Promise<{ import_id: number | null; added: { row: number | null; question_id: string; file_key: string }[] }>;
