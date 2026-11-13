@@ -8,6 +8,8 @@ import { Workspace } from './Workspace';
 import { ReviewQueue } from './ReviewQueue';
 import { GenerateScreen, RunScreen } from './Generate';
 import { ModelCheckScreen } from './ModelCheck';
+import { ProposedList } from './Proposed';
+import { CurriculumMap } from './Curriculum';
 import { configError, isAdmin, supabase } from './supabase';
 
 type Access = 'checking' | 'admin' | 'denied' | 'error';
@@ -82,9 +84,11 @@ function Home({ email }: { email?: string }) {
   return (
     <Shell email={email} route={route}>
       {route.name === 'home' ? <HomeScreen grade={route.grade} />
-        : route.name === 'browse' ? <Workspace subject={route.subject} cls={route.cls} topic={route.topic} q={route.q} v={route.v} tab={route.tab} edit={route.edit} />
+        : route.name === 'browse' ? <Workspace subject={route.subject} cls={route.cls} strand={route.strand} ch={route.ch} topic={route.topic} q={route.q} v={route.v} tab={route.tab} edit={route.edit} />
         : route.name === 'question' ? <OpenQuestion id={route.id} />
         : route.name === 'review' ? <main className="wide"><ReviewQueue /></main>
+        : route.name === 'map' ? <main className="wide"><CurriculumMap {...route} /></main>
+        : route.name === 'proposed' ? <main className="wide"><ProposedList kind={route.kind} /></main>
         : route.name === 'generate' ? <GenerateScreen questionId={route.q} setId={route.set} topicId={route.topic} />
         : route.name === 'run' ? <RunScreen runId={route.id} />
         : route.name === 'model-check' ? <ModelCheckScreen runId={route.id} />

@@ -4,14 +4,15 @@ import { useEffect, useState } from 'react';
 import { supabase } from './supabase';
 
 interface ImportRow {
-  import_id: number; kind: 'chapter' | 'topics' | 'seed'; file_path: string; git_commit: string | null; file_hash: string;
+  import_id: number; kind: 'chapter' | 'topics' | 'seed' | 'sources' | 'book' | 'originality' | 'proposals' | 'figures' | 'updates' | 'upload'; file_path: string; git_commit: string | null; file_hash: string;
   chapter_id: string | null; options: Record<string, unknown>; started_at: string; finished_at: string | null;
   result: 'ok' | 'partial' | 'failed' | null; counts: Record<string, unknown>; error_report: unknown;
 }
 interface Problem { level: 'error' | 'warning'; key?: string; where?: string; message: string }
 interface Outcome { key: string; question_id?: string; result: string; version?: number; note?: string }
 
-const KIND: Record<ImportRow['kind'], string> = { chapter: 'Chapter file', topics: 'Topic lists', seed: 'Rules seed' };
+const KIND: Record<ImportRow['kind'], string> = { chapter: 'Chapter file', topics: 'Topic lists', seed: 'Rules seed', sources: 'Source registry', book: 'Book citations',
+  originality: 'Originality check', proposals: 'Proposed items', figures: 'Figure images', updates: 'CMS updates', upload: 'Question upload (Excel)' };
 /** "v11 seed" from the workbook's file name (…_v11.xlsx). */
 export const seedLabel = (path: string) => `${/_v(\d+)\.xlsx$/.exec(path)?.[0].slice(1, -5) ?? 'rules'} seed`;
 const kindOf = (r: { kind: ImportRow['kind']; file_path: string }) => (r.kind === 'seed' ? seedLabel(r.file_path) : KIND[r.kind]);
@@ -58,7 +59,8 @@ export function ImportsList() {
   return (
     <>
       <h2>Imports</h2>
-      <p className="muted">Every import run, newest first. Imports run from the command line; this page only shows them.</p>
+      <LocalImport />
+      <p className="muted">Every import run, newest first. On the live site this page only shows them; imports run on your Mac.</p>
       {rows.length === 0 ? <p className="muted">No imports yet.</p> : (
         <table className="list">
           <thead><tr><th>#</th><th>When</th><th>What</th><th>File</th><th>Result</th><th>Summary</th></tr></thead>
@@ -142,4 +144,76 @@ function Line({ p, where }: { p: Problem; where?: string }) {
 function Result({ r }: { r: ImportRow['result'] }) {
   const label = r === 'ok' ? 'OK' : r === 'partial' ? 'Partial' : r === 'failed' ? 'Failed' : 'Running';
   return <span className={`badge ${r ?? 'running'}`}>{label}</span>;
+}
+
+// ---------------------------------------------------------------- U3: local mode
+interface LocalFolder { folder: string; files: { name: string; questions: number; modified: string }[]; proposals: boolean; book: boolean; staged: boolean }
+interface Step { label: string; command: string; code: number; output: string }
+
+/**
+ * Local mode only (npm run dev:files on your Mac serves /api/local): pick a pipeline folder
+ * and chapter file → Check (originality on this Mac + validation, nothing saved) → Import.
+ * The live site has no /api/local, so this panel does not appear there.
+ */
+function LocalImport() {
+  const [status, setStatus] = useState<{ root: string; database: string } | null>(null);
+  const [folders, setFolders] = useState<LocalFolder[] | null>(null);
+  const [folder, setFolder] = useState('');
+  const [file, setFile] = useState('');
+  const [steps, setSteps] = useState<{ kind: 'check' | 'import'; steps: Step[] } | null>(null);
+  const [busy, setBusy] = useState<null | 'check' | 'import'>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    fetch('/api/local/status').then(async (r) => {
+      const j = r.ok && (r.headers.get('content-type') ?? '').includes('json') ? await r.json() : null;
+      if (j?.local === true) { setStatus(j); setFolders(await (await fetch('/api/local/folders')).json()); }
+    }).catch(() => setStatus(null));
+  }, []);
+  if (!status) return null;
+  const f = folders?.find((x) => x.folder === folder);
+  const go = async (kind: 'check' | 'import') => {
+    setBusy(kind); setError(null); if (kind === 'check') setSteps(null);
+    try {
+      const r = await fetch(`/api/local/${kind}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ folder, files: file ? [file] : null }) });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`);
+      setSteps({ kind, steps: j.steps });
+    } catch (e) { setError((e as Error).message); } finally { setBusy(null); }
+  };
+  const checked = steps?.kind === 'check' && steps.steps.length > 0 && !steps.steps.some((s) => s.code !== 0 && /^Stage|^Proposed|^Book/.test(s.label));
+  return (
+    <div className="local-import card wide-card">
+      <div className="group-title">Import from this Mac <span className="tag">local mode</span></div>
+      <div className="muted small">Pipeline folders in <span className="mono">{status.root}</span> · database: {status.database}. Book files are read here only; nothing book-derived leaves the Mac.
+        Check first (originality + validation, nothing saved), then Import. A near-copy blocks that question; a close match is a warning.</div>
+      <div className="filters">
+        <select value={folder} onChange={(e) => { setFolder(e.target.value); setFile(''); setSteps(null); }} aria-label="Pipeline folder">
+          <option value="">Pick a pipeline folder…</option>
+          {(folders ?? []).map((x) => <option key={x.folder} value={x.folder}>{x.folder} · {x.files.length} chapter file{x.files.length === 1 ? '' : 's'}</option>)}
+        </select>
+        {f && <select value={file} onChange={(e) => { setFile(e.target.value); setSteps(null); }} aria-label="Chapter file">
+          <option value="">All {f.files.length} chapter files</option>
+          {f.files.map((x) => <option key={x.name} value={x.name}>{x.name} · {x.questions} questions</option>)}
+        </select>}
+        <button className="secondary" disabled={!f || !!busy} onClick={() => go('check')}>{busy === 'check' ? 'Checking…' : '1 · Check'}</button>
+        <button disabled={!f || !!busy || !checked} onClick={() => go('import')} title={checked ? '' : 'Run Check first'}>{busy === 'import' ? 'Importing…' : '2 · Import'}</button>
+        {f && <span className="muted small">{[f.proposals && 'proposals', f.book && 'book citations'].filter(Boolean).join(' + ') || 'questions only'}</span>}
+      </div>
+      {error && <p className="error">{error}</p>}
+      {busy && <p className="muted small">Running on this Mac… (the originality check reads the book PDFs; this can take a minute)</p>}
+      {steps && (
+        <div className="steps">
+          <div className="small"><strong>{steps.kind === 'check' ? 'Check' : 'Import'}</strong> · {steps.steps.filter((s) => s.code === 0).length} of {steps.steps.length} steps OK
+            {steps.kind === 'import' && <> · <a href="#/imports" onClick={() => location.reload()}>refresh the history</a></>}</div>
+          {steps.steps.map((s, i) => (
+            <details key={i} open={s.code !== 0 || /Originality|Validate|Import ·/.test(s.label)}>
+              <summary><span className={`badge ${s.code === 0 ? 'ok' : 'failed'}`}>{s.code === 0 ? 'OK' : `exit ${s.code}`}</span> {s.label}</summary>
+              <div className="mono small muted">{s.command}</div>
+              <pre className="step-out">{s.output || '(no output)'}</pre>
+            </details>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }

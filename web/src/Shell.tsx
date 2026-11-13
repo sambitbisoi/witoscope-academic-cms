@@ -18,7 +18,7 @@ export const rememberBrowse = (hash: string) => { try { localStorage.setItem(LAS
 const lastBrowse = () => { try { return localStorage.getItem(LAST_BROWSE) ?? '#/browse/math/6'; } catch { return '#/browse/math/6'; } };
 
 export function Shell({ email, route, children }: { email?: string; route: Route; children: ReactNode }) {
-  const section = route.name === 'browse' || route.name === 'question' ? 'browse' : route.name === 'imports' || route.name === 'import' ? 'imports' : route.name === 'review' ? 'review' : 'home';
+  const section = route.name === 'browse' || route.name === 'question' ? 'browse' : route.name === 'imports' || route.name === 'import' ? 'imports' : route.name === 'review' ? 'review' : route.name === 'proposed' ? 'proposed' : route.name === 'map' ? 'map' : 'home';
   return (
     <div className="page">
       <header>
@@ -26,7 +26,9 @@ export function Shell({ email, route, children }: { email?: string; route: Route
           <a href="#/" className="brand">WitoScope CMS</a>
           <a href="#/" className={section === 'home' ? 'active' : ''}>Home</a>
           <a href={lastBrowse()} className={section === 'browse' ? 'active' : ''}>Browse</a>
+          <a href="#/map" className={section === 'map' ? 'active' : ''}>Curriculum</a>
           <a href="#/review" className={section === 'review' ? 'active' : ''}>Review</a>
+          <a href="#/proposed" className={section === 'proposed' ? 'active' : ''}>Proposed</a>
           <a href="#/imports" className={section === 'imports' ? 'active' : ''}>Imports</a>
         </nav>
         <div className="header-right">
@@ -46,7 +48,7 @@ export async function openHit(h: SearchHit) {
   if (h.kind === 'question') { location.hash = `#/q/${encodeURIComponent(h.id)}`; return; }
   const t = h.topicId ? await topicHome(h.topicId) : null;
   if (!t) { if (h.chapterId) location.hash = browseHash({ subject: subjectOfChapter(h.chapterId), cls: h.cls ? String(h.cls) : 'all' }); return; }
-  location.hash = browseHash({ subject: subjectOfChapter(t.chapter_id), cls: String(t.class), topic: t.topic_id, tab: h.kind === 'concept' ? 'concepts' : 'types' });
+  location.hash = browseHash({ subject: subjectOfChapter(t.chapter_id), cls: String(t.class), ch: t.chapter_id, topic: t.topic_id, tab: h.kind === 'concept' ? 'concepts' : 'types' });
 }
 
 function Search() {
@@ -98,7 +100,7 @@ export function OpenQuestion({ id }: { id: string }) {
   useEffect(() => {
     locateQuestion(id).then((q) => {
       if (!q) { setMissing(true); return; }
-      location.replace(browseHash({ subject: subjectOfChapter(q.chapter_id), cls: String(q.class), topic: q.topic_id, q: q.question_id }));
+      location.replace(browseHash({ subject: subjectOfChapter(q.chapter_id), cls: String(q.class), ch: q.chapter_id, topic: q.topic_id, q: q.question_id }));
     }).catch(() => setMissing(true));
   }, [id]);
   return <main><p className={missing ? '' : 'muted'}>{missing ? <>Question {id} doesn't exist. <a href="#/">Home</a></> : 'Opening…'}</p></main>;

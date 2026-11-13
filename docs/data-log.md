@@ -2,6 +2,52 @@
 
 Changes to real (non-test) data that Sambit approved, with what was done and where the audit trail is.
 
+## 12 Nov 2026: MC19-5011 originality re-check — LOCAL ONLY
+
+**Request (Sambit, 12 Nov 2026):** replace the stale ui-probe check with a real every-field check (logged); don't delete history.
+
+MC19-5011 (MQ000104 v1, approved) carried check #21 (near-copy 0.91, tool "ui-probe", 10 Nov), left by a UI test. The every-field check (`check-originality 3`, import #2010) recorded check #6188: **clear**. Highest score 0.44 (wrong-answer note 2, closest NCERT-fegp107 p22); no field flagged; numbers rule not triggered. The latest check is the one the CMS uses, so #6188 now decides. Checks #13 and #21 stay in the history. Audit: `cms_reviews` #11554 (`import_update`, before → after). The question was not changed.
+
+## 12 Nov 2026: batch 2 of the Math rewrites + override requests — LOCAL ONLY
+
+**Request (Sambit, 12 Nov 2026):** import batch 2 (field-only rewrites after the every-field originality check) and file `override_requests.csv` as pending overrides for him to approve one by one. Backup before: `pg_dump` of schema `cms` (session scratchpad). The real project was not touched.
+
+| What | Count | Audit trail |
+|---|---|---|
+| Rewrites (`near_copy_rewrites/`, 69 files, 607 questions) | **541 drafts replaced** (unreviewed drafts are replaced in place, logged), 66 unchanged; every-field check: 534 clear, 73 close (the known question-text warnings), 0 near-copy; 214 figure PNGs written to the local file store (192 are unchanged copies) | one `chapter` import per file, `cms_originality_checks` (tool `check-originality 3`) |
+| Question settings | 521 updated: 3 confidence changes, 518 note text only; no setting changed | `cms_imports` #2009, `import_update` rows |
+| Levels, topic classes, settings catalogue, key fix | unchanged | `cms_imports` kind `updates`, #1935–2009 for the whole run |
+| `override_requests.csv` | 7 rows → every-field check recorded for each current version (all 7 near-copy in `options`, by the numbers rule) and **7 PENDING override requests** (`cms_override_requests`, migration 0026). Nothing approved | #2007 |
+
+## 12 Nov 2026: curriculum cut-over (D5) — LOCAL ONLY
+
+**Approval (Sambit, 12 Nov 2026):** "OK for the cut-over. Run the six steps in order." The real project was not touched. Backup before: `pg_dump` of schema `cms` (session scratchpad).
+
+| # | Step | Result | Audit trail |
+|---|---|---|---|
+| 1 | `import:topics` (final workbook import) | +2 topics (MT0516 Painted cube puzzles; ACH-MC32-5), 30 Class 5 Seq shifts; nothing else | `cms_imports` #1552 |
+| 2 | `import:sources` | unchanged (180 NCERT sources, 647 links, 4,771 source-mapping rows) | #1553 |
+| 3 | NCERT-C5-07: proposals, then `MC32-C5.json` | pattern MP0872 added (proposed); MC32-0002…0005 → MQ004764–MQ004767, originality clear | #1556, #1558 |
+| 4 | `import:updates` (levels, settings, topic classes) | MC32-0002…0005: level 5 (as in `question_levels.csv`), setting SET035 (high); MT0516 class 5 row | #1560–1562 |
+| 5 | `curriculum:cutover --confirm` | `curriculum_owner` = `cms`; `import:topics` / `import:sources` refuse from now on | `cms_reviews` #8126 (workbook sha256s recorded) |
+| 6 | `export:topics --publish` | Exports in `ContentResearch/CMS-exports/2026-11-12/`; originals archived to `ContentResearch/{Math,Science,English}/_archive/*.final-before-cutover-2026-11-12.xlsx` (byte-identical to the hashes in #8126; read-only); the exports published at the usual `ContentResearch/{Math,Science,English}/WitoScope_*_Topics_Class1-6.xlsx` paths (read-only) | — |
+
+## 12 Nov 2026: Math data thread's CMS-updates imported — LOCAL ONLY
+
+**Request (Sambit, 12 Nov 2026):** run `import:updates` into the local DB and report the counts. **The real project was not touched.** Source: `~/WitoScope/ContentResearch/CMS-updates/` (see its README). Backup before: a `pg_dump` of schema `cms` in the session scratchpad.
+
+| What | Count | Audit trail |
+|---|---|---|
+| Settings catalogue (`cms_settings`) | 41 new, all proposed | `cms_imports` #1472 (kind `updates`) |
+| Topic ↔ classes (`cms_topic_classes`) | 2,671 rows for 1,051 topics (730 in more than one class); the 1 row for MT0516 is waiting for the topic import | #1473 |
+| Key fix MC19-0001 → **MC19-0039** | imported as MQ004668 (originality clear) | #1474–1475 |
+| Near-copy rewrites (32 files) | 86 questions: **77 new** (the blocked near-copies) + **9 drafts replaced** (the follow-up rewrites; unreviewed drafts are replaced in place and logged); all 86 originality **clear**; 20 new figure PNGs in the local file store | one `chapter` import per file |
+| Question levels | 2,196 set (level 5: 1,271 · level 6: 929 in the file); 4 waiting (MC32-0002…0005) | #1508, one `import_update` audit row per question |
+| Question settings | 2,196 set (high 1,632 · medium 498 · low 70 in the file); 4 waiting (MC32) | #1509 |
+| Source-mapping tabs (`cms_source_map`, migration 0024, by `import:sources`) | 4,771 rows (Math 2,403 · Science 1,327 · English 1,041); evidence columns, notes and scan paths left out (`db:verify` checks) | `cms_imports` kind `sources` |
+
+Waiting for the next `import:topics` (Sambit's OK; `docs/curriculum-cutover.md` step 2): MT0516 (+ ACH-MC32-5), its class row, and MC32-0002…0005 with their level and setting.
+
 ## 12 Nov 2026: NCERT Class 5 and Class 6 Math imported — LOCAL ONLY
 
 **Request (Sambit, 12 Nov 2026):** import NCERT Class 5 (Maths Mela ch 1–15) and Class 6 (Ganita Prakash ch 1–10) Math into the **local** CMS for review; the real project only after his OK. **The real project was not touched.**

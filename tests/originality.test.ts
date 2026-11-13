@@ -1,6 +1,6 @@
 // The local originality check (shared/originality.ts): pure, no database, no book files.
 import { describe, expect, it } from 'vitest';
-import { checkText, containsAll, corpus, distinctive, inOrder, windows } from '../shared/originality.ts';
+import { checkQuestion, checkText, containsAll, corpus, distinctive, inOrder, questionFields, windows } from '../shared/originality.ts';
 
 const page = (text: string, pdf_page = 5) => ({ source_id: 'NCERT-fegp101', pdf_page, text });
 const BOOK = page([
@@ -55,5 +55,30 @@ describe('originality check (local only)', () => {
     const c = corpus([], [{ ref_id: 'N6-01-004', text: 'Rewrite each sequence of odd numbers starting at 21, 23, 25.' }]);
     expect(checkText('Rewrite each sequence of odd numbers starting at 21, 23, 25.', c, 0.6)).toMatchObject({ result: 'near_copy', closest_ref: 'N6-01-004' });
     expect(checkText('anything', corpus([], []), 0.6)).toEqual({ result: 'no_sources', similarity: null, same_numbers: false, closest_ref: null });
+  });
+});
+
+describe('every text field (12 Nov 2026)', () => {
+  const book = corpus([], [{ ref_id: 'N5-09-012', text: 'The needle of the weighing scale points between the two marks after six hundred grams' }]);
+  const base = { text: 'How heavy is the bag of rice?', answer: { format: 'MCQ-4' as const, correct: '700 g', options: ['700 g', '600 g', '7 kg', '70 g'], wrong_answers: [{ value: '600 g', tag: 'misread' as const, why: 'Read the mark before the needle.' }] },
+    solutions: { school: 'Count the small steps after 600 g.' }, hints: ['Look at the needle.'] };
+  it('a figure description copied from a book is caught even when the text is clean (the MC39 gap)', () => {
+    const q = { ...base, figure: { description: 'The needle of the weighing scale points between the two marks after six hundred grams', image_status: 'has_image' as const } };
+    const r = checkQuestion(q, book, 0.6, 0.85);
+    expect([r.result, r.field, r.closest_ref]).toEqual(['near_copy', 'figure description', 'N5-09-012']);
+    expect(checkText(q.text, book, 0.6, 0.85).result).toBe('clear'); // the old check missed it
+  });
+  it('lists every field, labelled; the question text keeps the old reading (text + parts)', () => {
+    expect(questionFields({ ...base, parts: [{ part_label: 'a', text: 'Part a?', answer: { format: 'Typed-number', correct: '3' }, concepts: [] }] }).map((f) => f.field))
+      .toEqual(['text', 'options', 'wrong-answer note 1', 'solution', 'hint 1']);
+  });
+  it('the numbers rule applies to the text, figure description and options only (option a); hints get the wording test only', () => {
+    const nums = corpus([], [{ ref_id: 'N5-01-001', text: 'Add 23, 45 and 67 together.' }]);
+    const hint = checkQuestion({ ...base, hints: ['23, 45, 67'] }, nums, 0.6, 0.85);
+    expect(hint.fields).toEqual([]);
+    const opts = checkQuestion({ ...base, answer: { ...base.answer, options: ['23', '45', '67'] } }, nums, 0.6, 0.85);
+    expect([opts.result, opts.field, opts.same_numbers]).toEqual(['near_copy', 'options', true]);
+    const short = checkQuestion({ ...base, hints: ['Look at the needle.'] }, corpus([], [{ ref_id: 'X', text: 'Look at the needle.' }]), 0.6, 0.85);
+    expect(short.fields.map((f) => f.field)).toEqual([]); // 4 words: no wording test
   });
 });

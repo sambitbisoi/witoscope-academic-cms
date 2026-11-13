@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  applyFilters, browseHash, countsLabel, gapLabel, groupBySet, NO_FILTERS, parseRoute, safeSearch, signatureRows, derivedRows, statusLabel,
+  applyFilters, browseHash, countsLabel, sameWording, cloneGroups, classesLabel, distinctTexts, involvementOf, summarize, statusCountsLabel, gapLabel, groupBySet, NO_FILTERS, parseRoute, mapHash, roleOf, roleLabel, showMatches, rollUp, rollUpTitle, matchesReview, safeSearch, signatureRows, derivedRows, statusLabel,
   subjectOfChapter, type ListQuestion, type TopicStats, type VersionRow,
 } from '../web/src/logic.ts';
 
@@ -17,15 +17,40 @@ describe('routes', () => {
     ['#/generate?q=MQ000010', { name: 'generate', q: 'MQ000010', set: null, topic: null }],
     ['#/generate?set=TS-G6-X&topic=MT0393', { name: 'generate', q: null, set: 'TS-G6-X', topic: 'MT0393' }],
     ['#/run/12', { name: 'run', id: 12 }],
-    ['#/browse/math/6/MT0393?q=MQ000010&edit=1', { name: 'browse', subject: 'math', cls: '6', topic: 'MT0393', q: 'MQ000010', v: null, tab: 'types', edit: true }],
+    ['#/browse/math/6/MT0393?q=MQ000010&edit=1', { name: 'browse', subject: 'math', cls: '6', strand: null, ch: null, topic: 'MT0393', q: 'MQ000010', v: null, tab: 'types', edit: true }],
     ['#/imports/12', { name: 'import', id: 12 }],
     ['#/q/G5-007', { name: 'question', id: 'G5-007' }],
-    ['#/browse/math/6', { name: 'browse', subject: 'math', cls: '6', topic: null, q: null, v: null, tab: 'types', edit: false }],
-    ['#/browse/science/all/ST0001?q=SQ000001&v=2&tab=concepts', { name: 'browse', subject: 'science', cls: 'all', topic: 'ST0001', q: 'SQ000001', v: 2, tab: 'concepts', edit: false }],
-    ['#/browse/math/6/MT0393?tab=sources', { name: 'browse', subject: 'math', cls: '6', topic: 'MT0393', q: null, v: null, tab: 'sources', edit: false }],
-    ['#/browse/math/9', { name: 'browse', subject: 'math', cls: 'all', topic: null, q: null, v: null, tab: 'types', edit: false }],
+    ['#/browse/math/6', { name: 'browse', subject: 'math', cls: '6', strand: null, ch: null, topic: null, q: null, v: null, tab: 'types', edit: false }],
+    ['#/browse/science/all/ST0001?q=SQ000001&v=2&tab=concepts', { name: 'browse', subject: 'science', cls: 'all', strand: null, ch: null, topic: 'ST0001', q: 'SQ000001', v: 2, tab: 'concepts', edit: false }],
+    ['#/browse/math/6/MT0393?tab=sources', { name: 'browse', subject: 'math', cls: '6', strand: null, ch: null, topic: 'MT0393', q: null, v: null, tab: 'sources', edit: false }],
+    ['#/browse/math/9', { name: 'browse', subject: 'math', cls: 'all', strand: null, ch: null, topic: null, q: null, v: null, tab: 'types', edit: false }],
     ['#/browse/art/6', { name: 'notfound' }],
   ])('%s', (hash, route) => expect(parseRoute(hash)).toEqual(route));
+
+  it('R3: strand in Browse round-trips; a bad strand is dropped', () => {
+    const h = browseHash({ subject: 'math', cls: '6', strand: 'math-OPS', ch: 'MC10' });
+    expect(h).toBe('#/browse/math/6?strand=math-OPS&ch=MC10');
+    expect(parseRoute(h)).toMatchObject({ strand: 'math-OPS', ch: 'MC10' });
+    expect(parseRoute('#/browse/math/6?strand=x%27y')).toMatchObject({ strand: null });
+  });
+
+  it('R2: map route keeps strand, show and the chapter / topic checkboxes', () => {
+    expect(parseRoute('#/map')).toMatchObject({ name: 'map', strand: null, show: 'all', chapters: true, topics: true });
+    const h = mapHash({ cls: '6', subject: 'math', strand: 'math-OPS', ch: null, show: 'extra', q: '', chapters: false, topics: false });
+    expect(h).toBe('#/map?cls=6&subject=math&strand=math-OPS&show=extra&chapters=0&topics=0');
+    expect(parseRoute(h)).toMatchObject({ cls: '6', subject: 'math', strand: 'math-OPS', show: 'extra', chapters: false, topics: false });
+    expect(parseRoute('#/map?show=gaps')).toMatchObject({ show: 'all' }); // old values fall back to all
+  });
+
+  it('R1: role of a topic–class link from the home class', () => {
+    expect(roleOf(6, 6)).toBe('core');
+    expect(roleOf(1, 6)).toBe('lower');
+    expect(roleOf(6, 4)).toBe('higher');
+    expect(roleLabel(6, 6)).toBe('core');
+    expect(roleLabel(3, 6)).toBe('from Class 3');
+    expect(['core', 'lower', 'higher'].filter((r) => showMatches('extra', r as never))).toEqual(['lower', 'higher']);
+    expect(showMatches('all', 'higher') && showMatches('core', 'core') && !showMatches('lower', 'higher')).toBe(true);
+  });
 
   it('browseHash round-trips', () => {
     const h = browseHash({ subject: 'math', cls: '6', topic: 'ACH-MC19-6', q: 'MQ000010', v: 2, tab: 'concepts', edit: false });
@@ -42,8 +67,8 @@ describe('coverage labels', () => {
   it('counts: production only, gold separately', () => {
     expect(countsLabel(stats({}))).toBe('no questions');
     expect(countsLabel(stats({ n_gold: 3 }))).toBe('no questions · gold 3');
-    expect(countsLabel(stats({ n_questions: 1, n_medium: 1 }))).toBe('1 Q · S0 M1 C0');
-    expect(countsLabel(stats({ n_questions: 12, n_simple: 4, n_medium: 6, n_complex: 2, n_gold: 1 }))).toBe('12 Qs · S4 M6 C2 · gold 1');
+    expect(countsLabel(stats({ n_questions: 1, n_medium: 1 }))).toBe('1 Q · Simple 0 · Medium 1 · Complex 0');
+    expect(countsLabel(stats({ n_questions: 12, n_simple: 4, n_medium: 6, n_complex: 2, n_gold: 1 }))).toBe('12 Qs · Simple 4 · Medium 6 · Complex 2 · gold 1');
   });
   it('gap: only for topics that have questions [guess]', () => {
     expect(gapLabel(stats({}))).toBeNull();
@@ -104,5 +129,95 @@ describe('v10 signature', () => {
   it('search input is made safe for PostgREST filters', () => {
     expect(safeSearch('MT0393),or(x.eq.1')).toBe('MT0393 or x.eq.1');
     expect(safeSearch('  unlike   fractions ')).toBe('unlike fractions');
+  });
+});
+
+describe('queue 12 Nov 2026 (PR A)', () => {
+  it('U4: the chapter is kept in the browse URL', () => {
+    const h = browseHash({ subject: 'math', cls: '5', ch: 'MC34', topic: 'MT0429', q: 'MQ000001' });
+    expect(h).toBe('#/browse/math/5/MT0429?ch=MC34&q=MQ000001');
+    expect(parseRoute(h)).toMatchObject({ name: 'browse', ch: 'MC34', topic: 'MT0429', q: 'MQ000001' });
+    expect(parseRoute('#/browse/math/5?ch=bad')).toMatchObject({ ch: null });
+  });
+  it('U2: the proposed list route', () => {
+    expect(parseRoute('#/proposed?kind=pattern')).toEqual({ name: 'proposed', kind: 'pattern' });
+  });
+  it('U8: texts that share a long opening show the part that differs', () => {
+    const a = 'A fish made a quarter turn. Look at it before and after. Did it turn clockwise or anti-clockwise? (red fish)';
+    const b = 'A fish made a quarter turn. Look at it before and after. Did it turn clockwise or anti-clockwise? (blue fish)';
+    const [x, y, z] = distinctTexts([a, b, 'Something else entirely']);
+    expect(x!.startsWith('…')).toBe(true);
+    expect(x).toContain('(red fish)');
+    expect(y).toContain('(blue fish)');
+    expect(z).toBe('Something else entirely');
+    expect(distinctTexts([a, a])).toEqual([a, a]); // identical texts: nothing differs, keep them
+  });
+  it('U9 / U7: involvement labels and group summaries', () => {
+    expect(involvementOf(1).label).toBe('main');
+    expect(involvementOf(0.5).label).toBe('secondary');
+    expect(involvementOf(0.2).label).toBe('minor');
+    const s = summarize([
+      { math_difficulty: 'Simple', status: 'draft', retired_at: null },
+      { math_difficulty: 'Complex', status: 'approved', retired_at: null },
+      { math_difficulty: 'Simple', status: 'in_review', retired_at: null },
+    ]);
+    expect(s).toEqual({ count: 3, simple: 2, medium: 0, complex: 1, byStatus: { draft: 1, approved: 1, in_review: 1 } });
+    expect(statusCountsLabel(s.byStatus)).toBe('1 approved · 1 needs review · 1 draft');
+  });
+});
+
+describe('U8 same wording', () => {
+  it('counts identical texts', () => {
+    expect(sameWording(['a', 'b', 'a', 'a'])).toEqual([3, 1, 3, 3]);
+  });
+});
+
+describe('PR B helpers', () => {
+  it('D8c: clones sit together, biggest group first, with n of size and near-identical wording', () => {
+    const qs = [
+      { question_id: 'Q1', clone_key: 'a', text: 'A lift is on floor 3. It goes down 5 floors.' },
+      { question_id: 'Q2', clone_key: 'b', text: 'Something else' },
+      { question_id: 'Q3', clone_key: 'a', text: 'A lift is on floor 4. It goes down 7 floors.' },
+      { question_id: 'Q4', clone_key: 'a', text: 'The temperature is 2 °C and falls by 6 degrees.' },
+      { question_id: 'Q5', clone_key: null, text: 'No pattern' },
+    ];
+    const g = cloneGroups(qs);
+    expect(g.ordered.map((q) => q.question_id)).toEqual(['Q1', 'Q3', 'Q4', 'Q2', 'Q5']);
+    expect(g.groups).toBe(3);
+    expect(g.info.get('Q3')).toMatchObject({ size: 3, index: 2, nearIdentical: true });
+    expect(g.info.get('Q4')!.nearIdentical).toBe(false);
+    expect(g.info.get('Q2')).toMatchObject({ size: 1, nearIdentical: false });
+  });
+  it('U15: the multi-class label', () => {
+    expect(classesLabel([5, 4, 6, 5])).toBe('Classes 4 · 5 · 6');
+    expect(classesLabel([5])).toBeNull();
+  });
+});
+
+describe('review status roll-up (chapter / strand within a class)', () => {
+  const t = (status: 'not_started' | 'in_progress' | 'done', o: { core?: boolean; active?: boolean; achievers?: boolean } = {}) =>
+    ({ status, core: o.core ?? true, active: o.active ?? true, achievers: o.achievers ?? false });
+  it('green when every core topic is done', () => {
+    expect(rollUp([t('done'), t('done')])).toEqual({ state: 'done', done: 2, inProgress: 0, total: 2 });
+  });
+  it('orange when at least one is in progress or done but not all are done', () => {
+    expect(rollUp([t('done'), t('not_started')]).state).toBe('partial');
+    expect(rollUp([t('in_progress'), t('not_started')]).state).toBe('partial');
+    expect(rollUp([t('in_progress'), t('in_progress')]).state).toBe('partial');
+  });
+  it('no icon when nothing has started, or there are no core topics', () => {
+    expect(rollUp([t('not_started'), t('not_started')]).state).toBe('none');
+    expect(rollUp([]).state).toBe('none');
+  });
+  it('ignores extra rows (lower / higher class), retired topics and Achievers rows', () => {
+    expect(rollUp([t('done'), t('not_started', { core: false }), t('in_progress', { core: false })])).toEqual({ state: 'done', done: 1, inProgress: 0, total: 1 });
+    expect(rollUp([t('done'), t('not_started', { active: false })]).state).toBe('done');
+    expect(rollUp([t('done'), t('not_started', { achievers: true })]).state).toBe('done');
+    expect(rollUp([t('done', { core: false })]).state).toBe('none'); // only extra rows done → nothing started here
+  });
+  it('tooltip and filter', () => {
+    expect(rollUpTitle({ state: 'partial', done: 14, inProgress: 2, total: 18 })).toBe('Reviewed 14 of 18 core topics · 2 in progress');
+    expect(rollUpTitle({ state: 'none', done: 0, inProgress: 0, total: 0 })).toBe('No core topics in this class');
+    expect(matchesReview('all', 'done') && matchesReview('done', 'done') && !matchesReview('in_progress', 'done')).toBe(true);
   });
 });

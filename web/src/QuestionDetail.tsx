@@ -1,19 +1,24 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { questionDetail, type QuestionDetailData } from './api';
-import { derivedRows, signatureRows, STATUS_LABEL, TAG_LABEL } from './logic';
+import { browseHash, classesLabel, derivedRows, involvementOf, signatureRows, STATUS_LABEL, subjectOfChapter, TAG_LABEL } from './logic';
 import { latestOriginality, officialLink, sourceItems, type OriginalityCheck } from './sourcesApi';
 import { questionFromDb } from '../../shared/fromDb.ts';
 import { structureDiff } from '../../shared/save.ts';
 import { textsOf } from '../../shared/version.ts';
 import { bundleOf, retire, setStatus } from './editApi';
 import { supabase } from './supabase';
+import { OriginFlags } from './AddQuestions';
+import { Id } from './Id';
 
-export function QuestionDetail({ id, versionNo, onVersion, onEdit, reloadKey = 0, onChanged }: {
+/** A keyboard review command from Browse (D6): A approve · R reject · F needs review. */
+export interface ReviewCommand { kind: 'approve' | 'reject' | 'flag'; n: number }
+
+export function QuestionDetail({ id, versionNo, onVersion, onEdit, reloadKey = 0, onChanged, command, onAdvance }: {
   id: string; versionNo: number | null; onVersion: (v: number | null) => void; onEdit?: () => void; reloadKey?: number; onChanged?: () => void;
+  command?: ReviewCommand | null; onAdvance?: () => void;
 }) {
   const [d, setD] = useState<QuestionDetailData | null | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
-  const [more, setMore] = useState(false);
   const [tick, setTick] = useState(0);
   const [compare, setCompare] = useState<number | null>(null);
   useEffect(() => {
@@ -36,7 +41,8 @@ export function QuestionDetail({ id, versionNo, onVersion, onEdit, reloadKey = 0
     <div className="detail">
       <div className="detail-head">
         <div>
-          <div className="detail-id">{q.question_id}{q.bank === 'gold' && <span className="tag gold">Gold · never published</span>}</div>
+          <div className="detail-id">{q.question_id}{q.bank === 'gold' && <span className="tag gold">Gold · never published</span>}
+            {classesLabel(d.topicClasses) && <span className="pill-multi" title="Its topic is taught in several classes">{classesLabel(d.topicClasses)}</span>}</div>
           <div className="muted small">{q.file_key ? `${q.file_key} · ` : ''}{v.format}</div>
         </div>
         <div className="muted small right">
@@ -45,12 +51,14 @@ export function QuestionDetail({ id, versionNo, onVersion, onEdit, reloadKey = 0
           {q.retired_at && <strong> · retired</strong>}
         </div>
       </div>
-      {isCurrent && <Actions d={d} onEdit={onEdit} onChanged={() => { setTick((t) => t + 1); onChanged?.(); }} />}
+      {isCurrent && d.flags && <PendingBanners f={d.flags} gold={q.bank === 'gold'} />}
+      {isCurrent && <Actions key={v.version_id} d={d} onEdit={onEdit} onChanged={() => { setTick((t) => t + 1); onChanged?.(); }} command={command} onAdvance={onAdvance} />}
       {!isCurrent && <div className="notice small">You're looking at an older version. <button className="link" onClick={() => onVersion(null)}>Show current (v{q.current_version})</button></div>}
 
       <div className="preview">
         <div className="eyebrow">Preview (as the child sees it)</div>
         <div className="stem">{v.text}</div>
+        {v.image_path && <FigureImage path={v.image_path} alt={v.figure_description ?? 'Figure'} />}
         {v.figure_description && (
           <div className="figure small">
             <span className="tag">{v.image_status === 'has_image' ? 'Image' : 'Image needed'}</span> {v.figure_description}
@@ -101,20 +109,23 @@ export function QuestionDetail({ id, versionNo, onVersion, onEdit, reloadKey = 0
         </Section>
       )}
 
-      <Section title="Signature">
+      <div className="tint-box signature">
+        <div className="tint-title">Signature — review</div>
         <KV rows={signatureRows(v, d.insightName)} />
-      </Section>
-      <Section title="Derived">
+      </div>
+      <div className="tint-box derived">
+        <div className="tint-title">Derived <span className="muted small">(computed on save)</span></div>
         <KV rows={derivedRows(v)} />
-      </Section>
+      </div>
 
-      <Section title="Concepts">
+      <Section title="Concepts · involvement (main 1.0 · secondary 0.5 · minor 0.2)">
         {d.concepts.length === 0 ? <div className="muted small">None.</div> : (
           <ul className="plain small">
             {[...d.concepts].sort((a, b) => a.part_label.localeCompare(b.part_label) || b.involvement - a.involvement).map((c) => (
               <li key={`${c.part_label}-${c.concept_id}`}>
                 {c.part_label && <span className="muted">({c.part_label}) </span>}
-                <span className="mono">{c.concept_id}</span> {d.conceptNames.get(c.concept_id)?.name ?? ''}<Proposed status={d.conceptNames.get(c.concept_id)?.status} /> <span className="muted">× {Number(c.involvement).toFixed(1)}</span>
+                <span className="mono">{c.concept_id}</span> {d.conceptNames.get(c.concept_id)?.name ?? ''}<Proposed status={d.conceptNames.get(c.concept_id)?.status} />{' '}
+                <span className="muted inv" title={involvementOf(c.involvement).title}>{involvementOf(c.involvement).label} {Number(c.involvement).toFixed(1)}</span>
               </li>
             ))}
           </ul>
@@ -122,8 +133,25 @@ export function QuestionDetail({ id, versionNo, onVersion, onEdit, reloadKey = 0
       </Section>
 
       <Section title="Placement">
+        <div className="placement small">
+          <div><span className="muted">Level</span> <strong>{q.level ?? '—'}</strong>{q.level ? ` (written for class ${q.level})` : ` (not set yet; class ${q.class} is used)`}</div>
+          <div><span className="muted">Appears in</span>{' '}
+            {d.placements.length === 0 ? <strong className="error">no class: the level is above every class its topic is in</strong>
+              : d.placements.map((pl, i) => <span key={pl.class}>{i > 0 && ' · '}
+                <a href={browseHash({ subject: subjectOfChapter(q.chapter_id), cls: String(pl.class), ch: q.chapter_id, topic: q.topic_id, q: q.question_id })}>Class {pl.class}</a>
+                <span className="muted"> ({pl.is_home ? 'home' : 'revision'})</span></span>)}
+          </div>
+          <div><span className="muted">Setting</span> {d.setting ? <><strong>{d.setting.name}</strong>{d.setting.status === 'proposed' && <Proposed status="proposed" />}
+            {q.setting_confidence && <span className="muted"> · {q.setting_confidence} confidence</span>}{q.setting_note && <span className="muted"> · {q.setting_note}</span>}</> : <span className="muted">—</span>}</div>
+          <div><span className="muted">Clone group</span>{' '}
+            {d.clones.length > 1 ? <>{d.clones.findIndex((c) => c.question_id === q.question_id) + 1} of {d.clones.length} clones ·{' '}
+              {d.clones.filter((c) => c.question_id !== q.question_id).slice(0, 8).map((c, i) => <span key={c.question_id}>{i > 0 && ', '}<a href={`#/q/${c.question_id}`}>{c.question_id}</a></span>)}
+              {d.clones.length > 9 && ' …'}</>
+              : <span className="muted">{q.pattern_id ? 'no clones (unique signature in its pattern)' : '— (no pattern)'}</span>}</div>
+        </div>
         <KV one rows={[
-          { k: 'Topic', v: d.topic ? `${d.topic.topic_id} · ${d.topic.name}` : (v.topic_id ?? q.topic_id) },
+          { k: 'Chapter', v: d.topic ? <>{d.topic.cms_chapters?.name ?? ''} <Id>{d.topic.chapter_id}</Id></> : q.chapter_id },
+          { k: 'Topic', v: d.topic ? <>{d.topic.name} <Id>{d.topic.topic_id}</Id></> : (v.topic_id ?? q.topic_id) },
           { k: 'Class', v: `${q.class}${q.class_override ? ` (shown in class ${q.class_override})` : ''}` },
           { k: 'Typical set', v: d.set ? `${d.set.typical_set_id} · ${d.set.name}${d.set.status === 'proposed' ? ' · PROPOSED (not approved)' : ''}` : '—' },
           { k: 'Pattern', v: d.pattern ? `${d.pattern.pattern_id} · ${d.pattern.name}${d.pattern.status === 'proposed' ? ' · PROPOSED (not approved)' : ''}` : '—' },
@@ -133,9 +161,8 @@ export function QuestionDetail({ id, versionNo, onVersion, onEdit, reloadKey = 0
         ]} />
       </Section>
 
-      <button className="link more" aria-expanded={more} onClick={() => setMore(!more)}>{more ? 'Less' : 'More'}: tagging notes, sources, history</button>
-      {more && (
-        <>
+      <div className="background-divider"><span>Background — tagging, sources, history</span></div>
+      <div className="background">
           <Section title={`Tagging${v.tagged_by ? ` (by ${v.tagged_by})` : ''}`}>
             {v.tagging_summary && <div className="small prewrap">{v.tagging_summary}</div>}
             {v.tagging_why && Object.keys(v.tagging_why).length > 0 ? (
@@ -171,15 +198,14 @@ export function QuestionDetail({ id, versionNo, onVersion, onEdit, reloadKey = 0
             </ul>
             {compare !== null && <Compare id={q.question_id} a={compare} b={v.version_no} />}
           </Section>
-          {d.reviews.length > 0 && (
-            <Section title="Audit log">
+          <Section title="Audit log">
+            {d.reviews.length === 0 ? <div className="muted small">Nothing logged yet.</div> : (
               <ul className="plain small">{d.reviews.map((r) => (
-                <li key={r.review_id}>{new Date(r.at).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })} · {r.target_id.split(' ')[1]} · {r.action.replace(/_/g, ' ')} · {r.by_label}{r.reason ? <span className="muted"> — {r.reason}</span> : null}</li>
+                <li key={r.review_id}>{new Date(r.at).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })} {r.target_id.split(' ')[1] ? ` · ${r.target_id.split(' ')[1]}` : ''} · {ACTION_LABEL[r.action] ?? r.action.replace(/_/g, ' ')} · {r.by_label}{r.reason ? <span className="muted"> — {r.reason}</span> : null}{r.action === 'import_update' && r.field_diff ? <span className="muted"> ({Object.entries(r.field_diff as Record<string, { before: unknown; after: unknown }>).map(([k, x]) => `${k} ${String(x.before ?? '—')} → ${String(x.after ?? '—')}`).join(', ')})</span> : null}</li>
               ))}</ul>
-            </Section>
-          )}
-        </>
-      )}
+            )}
+          </Section>
+      </div>
     </div>
   );
 }
@@ -222,16 +248,21 @@ function Refs({ refs }: { refs: QuestionDetailData['refs'] }) {
 /** The local originality check of this version (run on Sambit's Mac; citations and scores only). */
 function BookCheck({ versionId, bank }: { versionId: number; bank: string }) {
   const [c, setC] = useState<OriginalityCheck | null | undefined>(undefined);
-  useEffect(() => { latestOriginality(versionId).then(setC).catch(() => setC(undefined)); }, [versionId]);
+  const [ov, setOv] = useState<{ field: string; status: string; reason: string }[]>([]);
+  useEffect(() => {
+    latestOriginality(versionId).then(setC).catch(() => setC(undefined));
+    supabase.from('cms_override_requests').select('field, status, reason').eq('version_id', versionId).order('request_id').then(({ data }) => setOv(data ?? []));
+  }, [versionId]);
   if (bank === 'gold' || c === undefined) return null; // best-effort; gold is never published
   const when = c ? new Date(c.checked_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '';
   return (
     <div className={`small book-check ${c?.result ?? 'none'}`}>
       Book check: {!c ? <span className="muted">not run yet · on your Mac: <span className="mono">npm run check:originality -- --unchecked</span></span>
         : c.result === 'clear' ? <>clear ({when}; closest {c.closest_ref}, {c.similarity})</>
-        : c.result === 'near_copy' ? <strong>near-copy of {c.closest_ref} (similarity {c.similarity}{c.same_numbers ? ', same numbers in the same order' : ''}; {when}) · rewrite it before approving</strong>
-        : c.result === 'flagged' ? <strong>close to {c.closest_ref} (similarity {c.similarity}{c.same_numbers ? ', same numbers' : ''}; {when}) · make sure it is original</strong>
+        : c.result === 'near_copy' ? <strong>near-copy{c.field && c.field !== 'text' ? ` (${c.field})` : ''} of {c.closest_ref} (similarity {c.similarity}{c.same_numbers ? ', same numbers in the same order' : ''}; {when}) · rewrite it before approving</strong>
+        : c.result === 'flagged' ? <strong>close{c.field && c.field !== 'text' ? ` (${c.field})` : ''} to {c.closest_ref} (similarity {c.similarity}{c.same_numbers ? ', same numbers' : ''}; {when}) · make sure it is original</strong>
         : <span className="muted">no book for this chapter on your Mac ({when})</span>}
+      {ov.map((o, i) => <div key={i}>Override of the {o.field}: <strong>{o.status === 'pending' ? 'requested, waiting for you (Review → Overrides)' : o.status}</strong> <span className="muted">— {o.reason}</span></div>)}
     </div>
   );
 }
@@ -249,25 +280,58 @@ function Tag({ w, d }: { w: QuestionDetailData['wrong'][number]; d: QuestionDeta
   );
 }
 
-/** Review and retire actions for the current version (Phase 5). Reasons are typed inline. */
-function Actions({ d, onEdit, onChanged }: { d: QuestionDetailData; onEdit?: () => void; onChanged: () => void }) {
-  const [ask, setAsk] = useState<null | 'reject' | 'retire' | 'restore' | 'override'>(null);
+const ACTION_LABEL: Record<string, string> = { submit: 'needs review', withdraw: 'review flag cleared', reject: 'rejected', approve: 'approved', import_update: 'updated by import' };
+
+/**
+ * D6 (12 Nov 2026): Edit · Needs review · Approve · Reject on the current version. Needs review
+ * takes an optional note; Reject needs a comment; both show in the Review tab. Nothing is
+ * deleted and there is no Retire button here (a question retired earlier can be restored).
+ * Keyboard (from Browse): A / R / F; after a keyboard action Browse moves to the next question.
+ */
+function Actions({ d, onEdit, onChanged, command, onAdvance }: { d: QuestionDetailData; onEdit?: () => void; onChanged: () => void; command?: ReviewCommand | null; onAdvance?: () => void }) {
+  const [ask, setAsk] = useState<null | 'reject' | 'flag' | 'restore' | 'override'>(null);
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [override, setOverride] = useState(false);
   const [check, setCheck] = useState<OriginalityCheck | null>(null);
+  const viaKey = useRef(false);
+  const mounted = useRef(Date.now());
   const q = d.question, v = d.version;
-  useEffect(() => { setCheck(null); setOverride(false); latestOriginality(v.version_id).then(setCheck).catch(() => setCheck(null)); }, [v.version_id]);
-  const nearCopy = check?.result === 'near_copy';
+  const [overrides, setOverrides] = useState<{ field: string; status: string }[]>([]);
+  useEffect(() => {
+    setCheck(null); setOverride(false); latestOriginality(v.version_id).then(setCheck).catch(() => setCheck(null));
+    supabase.from('cms_override_requests').select('field, status').eq('version_id', v.version_id).then(({ data }) => setOverrides(data ?? []));
+  }, [v.version_id]);
+  // an override approved one by one in Review → Overrides covers the near-copy (the SQL checks it too)
+  const overridden = overrides.some((o) => o.status === 'approved' && (!check?.field || o.field === check.field));
+  const nearCopy = check?.result === 'near_copy' && !overridden;
+  const open = v.status === 'draft' || v.status === 'in_review';
   const run = async (f: () => Promise<unknown>) => {
     setBusy(true); setErr(null);
-    try { await f(); setAsk(null); setReason(''); onChanged(); } catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
+    try {
+      await f(); setAsk(null); setReason('');
+      const advance = viaKey.current; viaKey.current = false;
+      onChanged();
+      if (advance) onAdvance?.();
+    } catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
   };
+  // 13 Nov 2026: "Approved" means ready for the app: no approval while the book check, the picture
+  // (production only) or the attributes are pending. The SQL trigger enforces the same rules.
+  const blockers = approvalBlockers(d.flags, q.bank);
+  const approve = () => (blockers.length ? setErr(`Can't approve yet: ${blockers.join('; ')}.`) : nearCopy ? setAsk('override') : run(() => setStatus(q.question_id, v.version_no, 'approve', null)));
+  useEffect(() => {
+    if (!command || command.n < mounted.current || busy || q.retired_at || !open) return;
+    viaKey.current = true;
+    if (command.kind === 'approve') approve();
+    else if (command.kind === 'reject') { setReason(''); setAsk('reject'); }
+    else if (command.kind === 'flag' && v.status === 'draft') { setReason(''); setAsk('flag'); }
+  }, [command?.n]); // eslint-disable-line react-hooks/exhaustive-deps
+
   if (q.retired_at) {
     return (
       <div className="actions">
-        <span className="muted small">Retired.</span>
+        <span className="muted small">Retired (hidden from coverage and Publish; nothing is deleted).</span>
         {ask === 'restore' ? null : <button className="secondary" onClick={() => setAsk('restore')}>Restore…</button>}
         {ask === 'restore' && <Reason label="Why restore it?" value={reason} set={setReason} busy={busy} go={() => run(() => retire(q.question_id, false, reason))} cancel={() => setAsk(null)} />}
         {err && <div className="error small">{err}</div>}
@@ -276,38 +340,59 @@ function Actions({ d, onEdit, onChanged }: { d: QuestionDetailData; onEdit?: () 
   }
   return (
     <div className="actions">
-      {v.status !== 'in_review' && onEdit && <button onClick={onEdit}>Edit</button>}
-      {v.status === 'draft' && <button className="secondary" disabled={busy} onClick={() => run(() => setStatus(q.question_id, v.version_no, 'submit', null))}>Submit for review</button>}
-      {v.status === 'in_review' && <button className="secondary" disabled={busy} onClick={() => run(() => setStatus(q.question_id, v.version_no, 'withdraw', null))}>Back to draft</button>}
-      {(v.status === 'draft' || v.status === 'in_review') && <>
-        <button className="approve" disabled={busy} onClick={() => (nearCopy ? setAsk('override') : run(() => setStatus(q.question_id, v.version_no, 'approve', null)))}>Approve{nearCopy ? '…' : ''}</button>
-        <button className="secondary" disabled={busy} onClick={() => setAsk('reject')}>Reject…</button>
+      {onEdit && <button className="secondary" onClick={onEdit}>Edit</button>}
+      {v.status === 'draft' && <button className="secondary flag" disabled={busy} onClick={() => { viaKey.current = false; setAsk(ask === 'flag' ? null : 'flag'); }} title="F">Needs review…</button>}
+      {v.status === 'in_review' && <button className="secondary flag on" disabled={busy} title="Clear the Needs review flag (back to draft)" onClick={() => run(() => setStatus(q.question_id, v.version_no, 'withdraw', null))}>⚑ Needs review · clear</button>}
+      {open && <>
+        <button className="approve" disabled={busy || blockers.length > 0} title={blockers.length ? `Can't approve yet: ${blockers.join('; ')}` : 'A'} onClick={() => { viaKey.current = false; approve(); }}>Approve{nearCopy ? '…' : ''}</button>
+        <button className="reject" disabled={busy} title="R" onClick={() => { viaKey.current = false; setAsk(ask === 'reject' ? null : 'reject'); }}>Reject…</button>
       </>}
-      {q.bank === 'production' && <a href={`#/generate?q=${encodeURIComponent(q.question_id)}`}>Generate similar</a>}
-      <button className="link" onClick={() => setAsk('retire')}>Retire…</button>
-      {ask === 'reject' && <Reason label="Why reject it? (kept with the version)" value={reason} set={setReason} busy={busy} go={() => run(() => setStatus(q.question_id, v.version_no, 'reject', reason))} cancel={() => setAsk(null)} />}
+      {open && blockers.length > 0 && <span className="muted small blockers">Approve is off until: {blockers.join(' · ')}</span>}
+      {v.status === 'approved' && <span className="muted small">Approved. Edit makes a new version (a typo fix keeps this one).</span>}
+      {v.status === 'rejected' && <span className="muted small">Rejected. Edit to make a new version.</span>}
+      {q.bank === 'production' && <a className="small" href={`#/generate?q=${encodeURIComponent(q.question_id)}`}>Generate similar</a>}
+      {ask === 'flag' && <Reason label="Needs review: note (optional; shown in the Review tab)" optional value={reason} set={setReason} busy={busy} go={() => run(() => setStatus(q.question_id, v.version_no, 'submit', reason.trim() || null))} cancel={() => { viaKey.current = false; setAsk(null); }} />}
+      {ask === 'reject' && <Reason label="Why reject it? (required; kept with the version and shown in the Review tab)" value={reason} set={setReason} busy={busy} go={() => run(() => setStatus(q.question_id, v.version_no, 'reject', reason))} cancel={() => { viaKey.current = false; setAsk(null); }} />}
       {ask === 'override' && (
         <div className="reason override">
           <div className="small error">Near-copy of {check?.closest_ref} (similarity {check?.similarity}{check?.same_numbers ? ', same numbers in the same order' : ''}). Approve only if you have compared it with the book yourself.</div>
           <label className="check small"><input type="checkbox" checked={override} onChange={(e) => setOverride(e.target.checked)} /> override: reviewed, not a copy</label>
           <label className="small">Why is it not a copy? (logged)<input value={reason} onChange={(e) => setReason(e.target.value)} /></label>
           <button className="approve" disabled={busy || !override || !reason.trim()} onClick={() => run(() => setStatus(q.question_id, v.version_no, 'approve', reason, true))}>Approve with override</button>{' '}
-          <button className="link" onClick={() => { setAsk(null); setOverride(false); }}>Cancel</button>
+          <button className="link" onClick={() => { viaKey.current = false; setAsk(null); setOverride(false); }}>Cancel</button>
         </div>
       )}
-      {ask === 'retire' && <Reason label="Why retire it? (hidden from coverage and Publish; never deleted)" value={reason} set={setReason} busy={busy} go={() => run(() => retire(q.question_id, true, reason))} cancel={() => setAsk(null)} />}
       {err && <div className="error small">{err}</div>}
     </div>
   );
 }
 
-function Reason({ label, value, set, busy, go, cancel }: { label: string; value: string; set: (s: string) => void; busy: boolean; go: () => void; cancel: () => void }) {
+function Reason({ label, value, set, busy, go, cancel, optional }: { label: string; value: string; set: (s: string) => void; busy: boolean; go: () => void; cancel: () => void; optional?: boolean }) {
+  const ok = optional || !!value.trim();
   return (
     <div className="reason">
-      <label className="small">{label}<input autoFocus value={value} onChange={(e) => set(e.target.value)} /></label>
-      <button disabled={busy || !value.trim()} onClick={go}>Confirm</button> <button className="link" onClick={cancel}>Cancel</button>
+      <label className="small">{label}<input autoFocus value={value} onChange={(e) => set(e.target.value)}
+        onKeyDown={(e) => { if (e.key === 'Enter' && ok && !busy) { e.preventDefault(); go(); } if (e.key === 'Escape') { e.preventDefault(); cancel(); } }} /></label>
+      <button disabled={busy || !ok} onClick={go}>Confirm</button> <button className="link" onClick={cancel}>Cancel</button>
+      <span className="muted small">Enter to confirm · Esc to cancel</span>
     </div>
   );
+}
+
+/** U1: our own figure image, through /api/files (a 5-minute signed link). Best effort. */
+function FigureImage({ path, alt }: { path: string; alt: string }) {
+  const [src, setSrc] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    setSrc(null); setFailed(false);
+    if (!path.startsWith('figures/')) { setFailed(true); return; }
+    fetch(`/api/files/sign?key=${encodeURIComponent(path)}`, { credentials: 'same-origin' })
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+      .then((j: { url: string }) => setSrc(j.url)).catch(() => setFailed(true));
+  }, [path]);
+  if (failed) return <div className="figure-img missing small muted">Figure image {path} isn't available here{import.meta.env.DEV ? ' (start the local file service: npm run dev:files)' : ''}.</div>;
+  if (!src) return <div className="figure-img small muted">Loading the figure…</div>;
+  return <div className="figure-img"><img src={src} alt={alt} onError={() => setFailed(true)} /></div>;
 }
 
 /** Field-by-field comparison of two versions, using the shared structure and texts. */
@@ -344,6 +429,30 @@ export function Proposed({ status }: { status?: string | null }) {
   return status === 'proposed' ? <span className="tag proposed" title="Proposed by the book pipeline; not approved yet">Proposed</span> : null;
 }
 
-function KV({ rows, one }: { rows: { k: string; v: string }[]; one?: boolean }) {
+function KV({ rows, one }: { rows: { k: string; v: ReactNode }[]; one?: boolean }) {
   return <dl className={`kv${one ? ' one' : ''}`}>{rows.map((r) => <div key={r.k}><dt>{r.k}</dt><dd>{r.v}</dd></div>)}</dl>;
+}
+
+/** 13 Nov 2026: what is still open on a question added by hand or uploaded. */
+/** Why a version can't be approved yet ("Approved" = ready for the app). Pictures and attributes don't apply to gold. */
+function approvalBlockers(f: QuestionDetailData['flags'], bank: string): string[] {
+  if (!f) return [];
+  const out: string[] = [];
+  if (f.originality_pending) out.push('originality check pending (runs on the Mac)');
+  if (bank === 'production' && f.image_pending) out.push('picture pending');
+  if (bank === 'production' && f.attributes_pending) out.push('attributes pending');
+  return out;
+}
+
+function PendingBanners({ f, gold }: { f: NonNullable<QuestionDetailData['flags']>; gold: boolean }) {
+  const added = f.created_from === 'manual' || f.created_from === 'upload';
+  if (!added && !f.originality_pending && (gold || (!f.image_pending && !f.attributes_pending))) return null;
+  return (
+    <div className="pending-banners small">
+      {added && <div className="origin-line"><OriginFlags q={f} /></div>}
+      {!gold && f.attributes_pending && <div className="banner pending">Attributes pending: the signature and derived fields are not evaluated yet, so this question is left out of clone groups and can't be approved. Edit it and fill in the signature to evaluate them.</div>}
+      {!gold && f.image_pending && <div className="banner pending">Image pending: a picture is needed and not added yet (see the figure description), so it can't be approved.</div>}
+      {f.originality_pending && <div className="banner pending orig">Originality pending: the book check has not run yet, so it can't be approved. It runs on the Mac: <span className="mono">npm run check:originality -- --pending</span>.</div>}
+    </div>
+  );
 }

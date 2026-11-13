@@ -71,6 +71,9 @@ const GENERATE_RULES = [
   '- Every wrong MCQ option is a believable mistake and is tagged; a misconception tag names a misconception ID from the request.',
   '- The correct answer must be exactly one of the options for MCQ and True/False.',
   '- Use Indian context (₹, Indian names) and simple English for the class.',
+  // D8b (Sambit, 12 Nov 2026): the pattern rule, same text as claude/question-bank/generation-prompt.md
+  '- A pattern is the pure maths skeleton plus every constraint that changes the skill (signs, crossing zero, carrying or borrowing, like or unlike denominators, remainders, the position of the unknown). Keep every one of those constraints of the requested pattern.',
+  '- A pattern never includes the story. The story or context (the setting: a lift, a thermometer, a bank balance, or a bare calculation) may change between drafts; the skill may not.',
 ];
 const TAG_RULES = [
   '## Rules for tagging',
@@ -194,14 +197,17 @@ export function toQuestion(d: RawDraft, ctx: { key: string; topic_id: string; ty
 // Against our own questions only. Copying from books is checked on Sambit's Mac
 // (shared/originality.ts via scripts/check-originality.ts): book text is never in the cloud.
 const norm = (s: string) => s.toLowerCase().normalize('NFKD').replace(/[^\p{L}\p{N}/.]+/gu, ' ').trim();
-function trigrams(s: string): Map<string, number> {
+export function trigrams(s: string): Map<string, number> {
   const t = ` ${norm(s)} `, m = new Map<string, number>();
   for (let i = 0; i + 3 <= t.length; i++) { const g = t.slice(i, i + 3); m.set(g, (m.get(g) ?? 0) + 1); }
   return m;
 }
 /** Dice coefficient on character trigrams, 0…1. */
 export function similarity(a: string, b: string): number {
-  const x = trigrams(a), y = trigrams(b);
+  return dice(trigrams(a), trigrams(b));
+}
+/** Dice coefficient of two trigram maps (precompute them when comparing one text with many). */
+export function dice(x: Map<string, number>, y: Map<string, number>): number {
   let inter = 0, nx = 0, ny = 0;
   for (const [, v] of x) nx += v;
   for (const [, v] of y) ny += v;

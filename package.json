@@ -26,7 +26,10 @@
     "rehash": "tsx scripts/rehash.ts",
     "import:proposals": "tsx scripts/import-proposals.ts",
     "stage:pipeline": "tsx scripts/stage-pipeline.ts",
-    "import:figures": "tsx scripts/import-figures.ts"
+    "import:figures": "tsx scripts/import-figures.ts",
+    "import:updates": "tsx scripts/import-updates.ts",
+    "export:topics": "tsx scripts/export-topics.ts",
+    "curriculum:cutover": "tsx scripts/curriculum-cutover.ts"
   },
   "devDependencies": {
     "@types/node": "22.9.0",

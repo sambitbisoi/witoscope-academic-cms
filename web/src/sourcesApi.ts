@@ -12,7 +12,7 @@ const must = <T>(r: { data: T | null; error: { message: string } | null }): T =>
 export interface ChapterSource {
   chapter_id: string; page_from: number | null; page_to: number | null; source_id: string; kind: 'pdf' | 'scanned_pdf' | 'web';
   title: string; publisher: string; class: number | null; url: string | null; page_offset: number;
-  captured_at: string | null; n_items: number; n_items_in_chapter: number;
+  captured_at: string | null; n_items: number; n_items_in_chapter: number; status?: string;
 }
 export interface Jump { jump_id: number; source_id: string; chapter_id: string; label: string; pdf_page: number }
 
@@ -28,6 +28,14 @@ export const chapterSourceCount = async (chapterId: string) => {
   if (error) throw new Error(error.message);
   return count ?? 0;
 };
+
+/** U17: citations per source for one topic. */
+export async function topicSourceCounts(topicId: string) {
+  const rows = must<{ source_id: string }[]>(await supabase.from('cms_source_items').select('source_id').eq('topic_id', topicId).limit(1000));
+  const m = new Map<string, number>();
+  for (const r of rows) m.set(r.source_id, (m.get(r.source_id) ?? 0) + 1);
+  return m;
+}
 
 const PUBLISHER_ORDER = ['NCERT', 'DAV', 'IXL', 'SOF', 'other'];
 /** NCERT, DAV, IXL, SOF, other; within a publisher, the topic's class first, then by class and title. */
@@ -109,7 +117,7 @@ export async function sourceItems(refIds: string[]) {
 }
 
 /** The latest local originality check of a version (citations and scores only). */
-export interface OriginalityCheck { checked_at: string; result: 'clear' | 'flagged' | 'near_copy' | 'no_sources'; similarity: number | null; same_numbers: boolean; closest_ref: string | null; missing: string[] }
+export interface OriginalityCheck { checked_at: string; result: 'clear' | 'flagged' | 'near_copy' | 'no_sources'; similarity: number | null; same_numbers: boolean; closest_ref: string | null; missing: string[]; field?: string | null }
 /** Latest check per version, for several versions (e.g. a Generate run's drafts). */
 export async function latestOriginalityMany(versionIds: number[]): Promise<Map<number, OriginalityCheck>> {
   if (!versionIds.length) return new Map();
@@ -120,7 +128,7 @@ export async function latestOriginalityMany(versionIds: number[]): Promise<Map<n
   return m;
 }
 export async function latestOriginality(versionId: number): Promise<OriginalityCheck | null> {
-  const rows = must<OriginalityCheck[]>(await supabase.from('cms_originality_checks').select('checked_at, result, similarity, same_numbers, closest_ref, missing')
+  const rows = must<OriginalityCheck[]>(await supabase.from('cms_originality_checks').select('checked_at, result, similarity, same_numbers, closest_ref, missing, field')
     .eq('version_id', versionId).order('check_id', { ascending: false }).limit(1));
   return rows[0] ?? null;
 }

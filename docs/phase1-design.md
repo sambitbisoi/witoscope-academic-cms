@@ -28,15 +28,15 @@ Items marked **[guess]** are inferred and need your check.
 
 | Thing | ID | Example | Who assigns |
 |---|---|---|---|
-| Chapter / topic | MC##/MT####, SC##/ST####, GC##/GT#### | MC19, MT0393 | Master topic lists |
+| Chapter / topic | MC##/MT####, SC##/ST####, GC##/GT#### | MC19, MT0393 | Master topic lists until the cut-over; then the CMS (next free number, D5, 12 Nov 2026) |
 | Strand | `<subject>-<name>` **[guess: the topic lists may already have strand IDs]** | math-logical-reasoning | Topic import |
 | Question | MQ######, SQ######, GQ###### | MQ000001 | CMS, on first import |
 | File key | `<chapter>-####` | MC19-0001 | Generation thread; permanent, links the file row to its MQ ID |
 | Gold question | G6-001 … | G5-007-a | Gold set only |
-| Concept | `G{class}-{area}-C#` / `-A#` | G6-FRC-C1 | Author |
+| Concept | `G{class}-{area}-C#` / `-A#` | G6-FRC-C1 | Author; in the CMS the next free number for the code (D5) |
 | Misconception | `G{class}-M-{area}#`; legacy MM### in `alias` | G6-M-FRC1 | Author |
-| Typical set | `TS-G{class}-…` | TS-G6-FRAC-ADD-UNLIKE | Author |
-| Pattern | MP####, SP####, GP#### | MP0007 | Author / generation |
+| Typical set | `TS-G{class}-…` | TS-G6-FRAC-ADD-UNLIKE | Author; in the CMS made from the name (D5) |
+| Pattern | MP####, SP####, GP#### | MP0007 | Author / generation; in the CMS the next free number (D5) |
 | Insight | INS-… | INS-LAST-STEP | Author |
 | Source item | N7-###, D5-### … | N7-031 | Source extraction |
 | Release | integer, rising | 1, 2, 3 | Publish step |
@@ -47,7 +47,9 @@ All IDs are permanent and never reused. Class is a field, never inferred from an
 
 ## 2. Tables (all in schema `cms`)
 
-### A. Curriculum (from the master topic lists)
+### A. Curriculum (owned by the CMS after the one-time cut-over; until then from the master topic lists)
+
+> **Changed 12 Nov 2026 (D5, Sambit, option B):** the CMS owns the curriculum. Chapters, topics, concepts, typical sets and patterns are added and edited in the CMS (`cms_save_curriculum`: automatic permanent IDs, Retire instead of delete, every change audited, new catalogue items Proposed). The topic workbooks become read-only exports (`npm run export:topics`). Until the cut-over (`docs/curriculum-cutover.md`, `cms_config.curriculum_owner`), `import:topics` still owns chapters and topics. Topic ↔ classes (`cms_topic_classes`) and prerequisites (`cms_topic_prereqs`) are CMS data from the start.
 
 | Table | Purpose | Key columns |
 |---|---|---|
@@ -55,7 +57,13 @@ All IDs are permanent and never reused. Class is a field, never inferred from an
 | `cms_chapters` | Chapters | chapter_id, subject, strand_id, name, sort |
 | `cms_topics` | Topics with Class View placement | topic_id, chapter_id, class, name, topic_kind (normal / achievers), taught_in_school (has NCERT or DAV source), source_flags (ncert, dav, ixl, imo / iso / ieo), status (active / retired) |
 
+> **Round 2 (Sambit, 13 Nov 2026):** terminology is **strand → chapter → topic**. The child sees strand, then topic; our chapter is an internal grouping. **R1:** every topic–class link has a role from the topic's home class (its Class View class): **core** (home = this class), **from a lower class** (home < this class) or **from a higher class** (home > this class); views `cms_topic_all_classes` and `cms_topic_class_stats` carry `role` and `home_class` (migration 0027). Browse shows core topics by default, with "Include extra topics (lower / higher class)"; the Level ≤ class display rule (D3) is unchanged.
+
+> **Review status per topic (Sambit, 13 Nov 2026):** `cms_topic_reviews` (topic_id, status not_started / in_progress / done, note, updated_at, updated_by; migration 0028). One status per topic, shared by every class it appears in; manual only, set in Browse with an explicit Save through `cms_set_topic_review` (admin only, logged `review_status` before → after). A chapter or strand within a class rolls up its **core** topics for that class (extra rows, retired topics and Achievers rows are not counted): all done = green ✓, some started = orange ◐, none = no icon.
+
 One "Achievers" topic row per chapter-class (topic_kind = achievers) **[guess: ID scheme for these rows; proposed `ACH-MC19-6`]**.
+
+> **Sequencing (Sambit, 13 Nov 2026; migration 0031):** the order of strands, chapters and topics is stored per class, never on the item: `cms_strand_order` (class + subject), `cms_chapter_order` (within its strand, per class), `cms_topic_order` (within its chapter, per class; core topics only). Seeded once from the Class View Seq. A chapter belongs to one strand; a row stored under another strand / chapter than the item's current one is ignored (the item moved, so it goes to the end), as are items with no row. Retired items keep their slot but are hidden; Achievers rows are always last in their chapter; extra rows (from a lower / higher class) come after the core ones, unnumbered. Numbering is computed with no gaps (`shared/sequence.ts`): strand `1.`, chapter `1.2`, topic `1.2.3`, shown in the Curriculum map, the Browse tree and the Excel export (Class View: Seq = position in the class, No. = 1.2.3). Names come first with the ID last, smaller and muted. Reorder mode on the map (one class + one subject; the level follows Show chapter / Show topic) saves through `cms_save_order` (admin only; no crossing; audited `reorder` before → after).
 
 ### B. Catalogues (tagging vocabulary)
 
@@ -92,6 +100,8 @@ Catalogue rows are edited in place with an audit row in `cms_reviews` (they're v
 | Table | Key columns |
 |---|---|
 | `cms_gold_meta` | question_id, use (prompt_example / test_only), old_qid, final_reasoning, review_verdict, review_notes |
+
+> **Add and bulk-upload questions (Sambit, 13 Nov 2026; migration 0029; no AI):** inside a topic in Browse, "+ Add question" (form) and "Bulk upload (Excel)" (Download template → upload → preview with per-row errors for missing mandatory fields only → import valid rows, skip the rest with reasons → summary). The topic is fixed by where you are. Mandatory: text, format (MCQ-4, MCQ-3, True/False, Typed-number / -decimal / -fraction / -text), correct answer, options for MCQ (True/False automatic), Level (pre-filled with the topic's home class, confirmed), Picture needed Y/N (Y needs a figure description). Saved through `cms_add_questions` (admin only; logged `create`) as **Needs review**, `created_from` manual / upload (an upload is a `cms_imports` row, kind `upload`), with `attributes_pending` (left out of clone groups; cleared once the signature is filled), `image_status = needs_image` when a picture is needed, and `originality_pending`. A version can't be approved while its originality check, its picture (`needs_image`) or its attributes are pending, so "Approved" always means ready for the app (trigger `cms_version_flags`, migrations 0029–0030; picture and attributes apply to production questions, not gold); `npm run check:originality -- --pending` on the Mac records the check (logged `originality_check`) and clears the flag. No similarity, duplicate or quality checks at upload.
 
 ### D. Tagging rules (versioned)
 
@@ -196,7 +206,7 @@ If a config value changes, a one-click "recompute" refreshes these without creat
 
 | Source (v10 CSV / sheet) | Into |
 |---|---|
-| Master topic lists (Mac) | cms_strands, cms_chapters, cms_topics |
+| Master topic lists (Mac), until the D5 cut-over | cms_strands, cms_chapters, cms_topics |
 | gold_concepts | cms_concepts, cms_concept_links, cms_concept_prereq_topics |
 | misconceptions | cms_misconceptions |
 | typical_sets | cms_typical_sets, cms_typical_set_concepts |
@@ -247,3 +257,5 @@ Errors are listed per question key, in plain words.
 | — | Files (9 Nov 2026; narrowed 10 Nov) | ~~All files (PDFs, scans, screenshots, figure images)~~ Only our own figure images (`figures/…`, PNG/JPEG/WebP) live in R2; Supabase keeps text, metadata and each file's R2 key (`storage_path`, `image_path`). Files are served only by the Pages Function `/api/files`: `sign` and `put` require a valid Cloudflare Access JWT (team keys, AUD, issuer, expiry, allowed email); `get` serves a file only with a 5-minute HMAC-signed link. The bucket is private and reached through an R2 binding (no R2 API keys); no list, no delete. Dev uses a local stand-in running the same code |
 | — | pgvector | ~~Phase 6, installed into `cms`~~ → **not used** (Sambit, 9 Nov 2026): duplicate and copy checks are shared TypeScript (number sets + text similarity, threshold in `cms_config`); the copy-from-book check runs only on the Mac (10 Nov 2026) |
 | — | AI calls (9 Nov 2026) | A Cloudflare Pages Function (`/api/ai/*`) behind Access, holding only the Claude API key; it returns drafts and the browser saves them through `cms_apply_save`. Bulk runs use the Batch API, tracked in `cms_jobs`. No Supabase Edge Function and no database credentials in the cloud. A model per task (generate, tag, extract; default `claude-haiku-5-5`), the refusal-fallback model, per-run limit (20), daily cap ($5), similarity threshold and prices live in `cms_config`; every request stays under 100K tokens (cached fixed rules + the topic's concept cards and relevant calibration cases); tokens and cost are logged per run in `cms_generation_runs` |
+| — | Levels, classes, settings, clones (work queue 12 Nov 2026, D1–D4, D8; migrations 0020–0021) | **Level** (`cms_questions.level`, 1–6): the class a question is written for; not versioned, changed only by the updates importer or (later) the editor, audited as `import_update`. **Topic ↔ classes** (`cms_topic_classes`): the classes a topic is taught in besides its own `class`, with source and evidence. **Display rule:** a question shows in class N when its topic is in N and its level ≤ N (lower levels are revision; a higher level never shows lower); views `cms_question_classes`, `cms_topic_class_stats`. **Prerequisites** (`cms_topic_prereqs`): placeholder. **Setting** (`cms_settings`, SET###; `cms_questions.setting_id` + confidence + note): the story or context, one per question, not versioned. **Pattern rule:** a pattern is the pure maths skeleton plus every skill-changing constraint, never the story (`claude/question-bank/generation-prompt.md`, Generate's fixed rules). **Clone groups** are computed (`cms_question_list.clone_key`: same pattern + authored signature + concepts and involvement), never stored. Hierarchy: Topic → Typical set → Pattern → Clone group → Question (+ setting). The Math data thread's files are imported with `npm run import:updates` (local only) |
+| — | The CMS owns the curriculum (D5, Sambit, 12 Nov 2026, option B; migration 0022) | Replaces "the topic workbooks are the source of truth; the CMS never edits them". See §2A and CLAUDE.md. Add / edit forms for chapters, topics (Achievers rows included), concepts, question types and patterns; IDs automatic and permanent; Retire, never delete; audit before → after; Export to Excel regenerates the three topic workbooks (Read me, Master Chapters, Master Topics, Class View, Achievers; the source-evidence sheets hold book text and are not in the CMS). One-time cut-over with `npm run curriculum:cutover -- --confirm` after the final workbook import; then `import:topics` / `import:sources` refuse. Sources (D7) are registered by every import (book files; chapter imports link the books their questions cite), added by hand on a chapter's Sources tab, and retired, never deleted (`cms_sources.status`); overview under Curriculum → Sources (S2, migration 0023) |
