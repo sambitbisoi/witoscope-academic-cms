@@ -109,6 +109,7 @@ describe('catalog: every table is locked the same way', () => {
       from pg_proc p join pg_namespace n on n.oid = p.pronamespace
       where n.nspname = 'cms' order by p.proname`;
     expect(fns).toEqual([
+      { proname: 'cms_add_questions', prosecdef: true, provolatile: 'v', proconfig: ['search_path=""'], auth_exec: true, anon_exec: false, public_exec: false },
       { proname: 'cms_apply_save', prosecdef: true, provolatile: 'v', proconfig: ['search_path=""'], auth_exec: true, anon_exec: false, public_exec: false },
       { proname: 'cms_current_uid', prosecdef: false, provolatile: 's', proconfig: ['search_path=""'], auth_exec: true, anon_exec: false, public_exec: false },
       { proname: 'cms_decide_override', prosecdef: true, provolatile: 'v', proconfig: ['search_path=""'], auth_exec: true, anon_exec: false, public_exec: false },
@@ -120,6 +121,8 @@ describe('catalog: every table is locked the same way', () => {
       { proname: 'cms_set_catalogue_status', prosecdef: true, provolatile: 'v', proconfig: ['search_path=""'], auth_exec: true, anon_exec: false, public_exec: false },
       { proname: 'cms_set_status', prosecdef: true, provolatile: 'v', proconfig: ['search_path=""'], auth_exec: true, anon_exec: false, public_exec: false },
       { proname: 'cms_set_topic_review', prosecdef: true, provolatile: 'v', proconfig: ['search_path=""'], auth_exec: true, anon_exec: false, public_exec: false },
+      // trigger function (not callable by anyone; runs on every version write)
+      { proname: 'cms_version_flags', prosecdef: false, provolatile: 'v', proconfig: ['search_path=""'], auth_exec: false, anon_exec: false, public_exec: false },
     ]);
   });
 });
