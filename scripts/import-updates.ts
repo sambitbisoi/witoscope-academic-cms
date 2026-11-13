@@ -63,15 +63,29 @@ async function updateQuestions(tx: Tx, importId: number, rows: { file_key: strin
   const cols = [...new Set(rows.flatMap((r) => Object.keys(r.set)))];
   const existing = new Map((keys.length ? await tx`select question_id, file_key, ${tx(cols)} from cms.cms_questions where file_key in ${tx(keys)}` : []).map((r) => [r.file_key as string, r]));
   const counts = { updated: 0, unchanged: 0, not_in_cms: 0 };
+  const changes: { question_id: string; set: Record<string, unknown>; diff: Record<string, unknown> }[] = [];
   for (const r of rows) {
     const q = existing.get(r.file_key);
     if (!q) { counts.not_in_cms++; problems.push({ level: 'warning', where, message: `${r.file_key} is not in the CMS (not imported yet, or blocked); skipped` }); continue; }
     const diff = Object.fromEntries(Object.entries(r.set).filter(([k, v]) => (q[k] ?? null) !== (v ?? null)).map(([k, v]) => [k, { before: q[k] ?? null, after: v ?? null }]));
     if (!Object.keys(diff).length) { counts.unchanged++; continue; }
-    await tx`update cms.cms_questions set ${tx(Object.fromEntries(Object.keys(diff).map((k) => [k, r.set[k] ?? null])) as never)} where question_id = ${q.question_id}`;
+    changes.push({ question_id: q.question_id as string, set: r.set, diff });
+  }
+  // Set-based (go-live, 13 Nov 2026): per batch of 500, one UPDATE per changed column and one audit INSERT,
+  // instead of two round trips per question. Same values and the same audit rows (before → after) as before.
+  const INT_COLS = new Set(['level']);
+  for (let i = 0; i < changes.length; i += 500) {
+    const batch = changes.slice(i, i + 500);
+    for (const k of cols) {
+      const set = batch.filter((c) => k in c.diff).map((c) => ({ id: c.question_id, v: c.set[k] ?? null }));
+      if (!set.length) continue;
+      if (INT_COLS.has(k)) await tx`update cms.cms_questions q set ${tx(k)} = x.v from jsonb_to_recordset(${tx.json(set as never)}) as x(id text, v int) where q.question_id = x.id`;
+      else await tx`update cms.cms_questions q set ${tx(k)} = x.v from jsonb_to_recordset(${tx.json(set as never)}) as x(id text, v text) where q.question_id = x.id`;
+    }
     await tx`insert into cms.cms_reviews (target, target_table, target_id, action, reason, field_diff, by_label, import_id)
-      values ('question_version', 'cms_questions', ${q.question_id}, 'import_update', ${reason}, ${tx.json(diff as never)}, 'updates importer', ${importId})`;
-    counts.updated++;
+      select 'question_version', 'cms_questions', x.id, 'import_update', ${reason}, x.diff, 'updates importer', ${importId}
+      from jsonb_to_recordset(${tx.json(batch.map((c) => ({ id: c.question_id, diff: c.diff })) as never)}) as x(id text, diff jsonb)`;
+    counts.updated += batch.length;
   }
   return counts;
 }
@@ -83,6 +97,7 @@ async function csvFile(sql: Sql, dir: string, name: typeof CSV_ORDER[number], dr
   let out: FileResult = { file: path, importId: null, result: 'failed', counts: {}, problems: [] };
   try {
     await sql.begin(async (tx) => {
+      await tx`set local statement_timeout = '10min'`; // the pooler's default is 2 min
       const importId = await begin(tx, path, raw, dryRun);
       const problems: Problem[] = []; const counts: Record<string, unknown> = {};
       const reason = `CMS-updates ${name}`;
