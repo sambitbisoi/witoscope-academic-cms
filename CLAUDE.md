@@ -24,6 +24,7 @@ Design source of truth: `docs/phase1-design.md` (approved 8 Nov 2026). Question 
 - Book questions (NCERT, DAV, IXL, SOF) are internal references only; they never reach the app.
 
 ## Content rules
+- Terminology (Sambit, 13 Nov 2026): **strand → chapter → topic**. The child sees strand then topic; our chapter is an internal grouping. A topic–class link is **core** (the topic's home class) or extra (**from a lower / higher class**); Browse shows core by default.
 - Gold questions (`bank = 'gold'`) are never publishable.
 - IDs are permanent and never reused. Class is a field, never derived from an ID.
 - Versioning: typo fix = same version (logged); any change to numbers, options, answers, format, parts, concepts, tags, signature, topic/set/pattern or image = new version.

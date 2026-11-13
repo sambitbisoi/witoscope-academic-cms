@@ -142,3 +142,6 @@ export async function loadCurrentRuleVersion(): Promise<string> {
   if (!v) throw new Error('No rule version is loaded (run the seed).');
   return v;
 }
+/** Review status per topic (manual only; logged before → after by the function). */
+export const setTopicReview = (topicId: string, status: string, note: string | null) =>
+  rpc('cms_set_topic_review', { p_topic_id: topicId, p_status: status, p_note: note }) as Promise<{ changed: boolean }>;

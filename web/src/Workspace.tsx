@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
-import { topicData, tree, type Chapter, type QuestionRow, type TopicWithStats } from './api';
+import { reviewOf, topicData, tree, type Chapter, type QuestionRow, type TopicReview, type TopicWithStats } from './api';
+import { ReviewControl, ReviewFilterSelect, RollUpIcon, TopicReviewIcon } from './ReviewStatus';
 import {
-  applyFilters, browseHash, classesLabel, cloneGroups, countsLabel, distinctTexts, sameWording, type CloneInfo, gapLabel, groupBySet, involvementOf, mixLabel, NO_FILTERS, statusCountsLabel, statusLabel,
+  applyFilters, browseHash, classesLabel, matchesReview, roleOf, rollUp, type ReviewFilter, type RollUp, cloneGroups, countsLabel, distinctTexts, sameWording, type CloneInfo, gapLabel, groupBySet, involvementOf, mixLabel, NO_FILTERS, statusCountsLabel, statusLabel,
   subjectLabel, SUBJECTS, summarize, type Filters, type Subject,
 } from './logic';
 import { EditForm } from './EditForm';
@@ -11,7 +12,7 @@ import { SourcesTab } from './Sources';
 import { chapterSourceCount } from './sourcesApi';
 import { rememberBrowse } from './Shell';
 
-type R = { subject: Subject; cls: string; ch: string | null; topic: string | null; q: string | null; v: number | null; tab: 'types' | 'concepts' | 'sources'; edit: boolean };
+type R = { subject: Subject; cls: string; strand: string | null; ch: string | null; topic: string | null; q: string | null; v: number | null; tab: 'types' | 'concepts' | 'sources'; edit: boolean };
 const SOURCE_LABEL: Record<string, string> = { ncert: 'NCERT', dav: 'DAV', ixl: 'IXL', imo: 'IMO', iso: 'ISO', ieo: 'IEO' };
 
 // ---------------------------------------------------------------- small persisted preferences (best effort)
@@ -29,8 +30,10 @@ export function Workspace(r: R) {
   const [data, setData] = useState<Awaited<ReturnType<typeof tree>> | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [gapsOnly, setGapsOnly] = useState(false);
-  const [hideEmpty, setHideEmpty] = usePref('cms.hideEmpty', false);
-  const [byStrand, setByStrand] = usePref('cms.byStrand', false);
+  const [reviewFilter, setReviewFilter] = useState<ReviewFilter>('all');
+  // R1: core topics only unless extra ones (from a lower / higher class) are asked for
+  const [extra, setExtra] = usePref('cms.extraTopics', false);
+  const [openState, setOpenState] = usePref<Record<string, boolean>>('cms.treeOpen', {});
   const [panes, setPanes] = usePref('cms.panes', { tree: PANES.tree, detail: PANES.detail, pinned: true });
   const [overlay, setOverlay] = useState(false);
   const [reload, setReload] = useState(0);
@@ -43,7 +46,7 @@ export function Workspace(r: R) {
   }, [r.subject, r.cls]);
   useEffect(() => { if (reload) tree(r.subject, r.cls).then(setData).catch(() => {}); }, [reload]); // refresh counts quietly
 
-  const go = useCallback((patch: Partial<R>) => { location.hash = browseHash({ ...r, ...patch }); }, [r.subject, r.cls, r.ch, r.topic, r.q, r.v, r.tab, r.edit]);
+  const go = useCallback((patch: Partial<R>) => { location.hash = browseHash({ ...r, ...patch }); }, [r.subject, r.cls, r.strand, r.ch, r.topic, r.q, r.v, r.tab, r.edit]);
   const topic = data?.topics.find((t) => t.topic_id === r.topic) ?? null;
   const step = useCallback((d: 1 | -1) => {
     if (!order.length) return;
@@ -67,29 +70,52 @@ export function Workspace(r: R) {
     return () => window.removeEventListener('keydown', on);
   }, [step, r.q, r.v, r.edit, panes, setPanes]);
 
-  const chapters = useMemo(() => {
-    if (!data) return [];
+  // R1: the topics this class shows (core, plus extra ones when asked); the selected topic always shows
+  const shownTopics = useMemo(() => (data?.topics ?? []).filter((t) => r.cls === 'all' || extra || t.class === Number(r.cls) || t.topic_id === r.topic), [data, r.cls, extra, r.topic]);
+  const nExtra = useMemo(() => (r.cls === 'all' ? 0 : (data?.topics ?? []).filter((t) => t.class !== Number(r.cls)).length), [data, r.cls]);
+  const chapterOf = useMemo(() => new Map((data?.chapters ?? []).map((c) => [c.chapter_id, c])), [data]);
+  const { strands, chapters } = useMemo(() => {
+    if (!data) return { strands: [], chapters: [] };
     const n = new Map<string, number>();
-    for (const t of data.topics) n.set(t.chapter_id, (n.get(t.chapter_id) ?? 0) + (t.stats?.n_questions ?? 0));
-    return data.chapters.filter((c) => n.has(c.chapter_id)).map((c) => ({ ...c, n: n.get(c.chapter_id)! }));
-  }, [data]);
+    for (const t of shownTopics) n.set(t.chapter_id, (n.get(t.chapter_id) ?? 0) + (t.stats?.n_questions ?? 0));
+    const chs = data.chapters.filter((c) => n.has(c.chapter_id)).map((c) => ({ ...c, n: n.get(c.chapter_id)! }));
+    return { strands: data.strands.filter((s) => chs.some((c) => c.strand_id === s.strand_id)), chapters: chs.filter((c) => !r.strand || c.strand_id === r.strand) };
+  }, [data, shownTopics, r.strand]);
+  // Review roll-ups per chapter and strand within this class: core topics only (extra rows ignored)
+  const rolls = useMemo(() => {
+    const ch = new Map<string, RollUp>(); const st = new Map<string, RollUp>();
+    if (!data) return { ch, st };
+    const items = data.topics.map((t) => ({ t, x: { status: reviewOf(data.reviews, t.topic_id), core: r.cls === 'all' || t.class === Number(r.cls), active: t.status === 'active', achievers: t.topic_kind === 'achievers' } }));
+    for (const c of data.chapters) ch.set(c.chapter_id, rollUp(items.filter((i) => i.t.chapter_id === c.chapter_id).map((i) => i.x)));
+    for (const x of data.strands) { const ids = new Set(data.chapters.filter((c) => c.strand_id === x.strand_id).map((c) => c.chapter_id)); st.set(x.strand_id, rollUp(items.filter((i) => ids.has(i.t.chapter_id)).map((i) => i.x))); }
+    return { ch, st };
+  }, [data, r.cls]);
+  // R3: every branch is open by default (Sambit, 13 Nov); a branch closed with its arrow stays closed (remembered)
+  const selChapter = topicChapter(data?.topics, r.topic);
+  // a newly selected topic re-opens its branch even if it was closed before
+  useEffect(() => {
+    if (!selChapter) return;
+    const st = chapterOf.get(selChapter)?.strand_id;
+    if (openState[selChapter] === false || (st && openState[st] === false)) setOpenState({ ...openState, [selChapter]: true, ...(st ? { [st]: true } : {}) });
+  }, [r.topic, selChapter]); // eslint-disable-line react-hooks/exhaustive-deps
+  const isOpen = (id: string) => openState[id] ?? true;
+  const toggle = (id: string) => setOpenState({ ...openState, [id]: !isOpen(id) });
 
   const treeEl = (
     <>
       <div className="tree-head">
-        <span className="eyebrow">Chapters · topics</span>
+        <span className="eyebrow">Strands · chapters · topics</span>
         <button className="pin" title={panes.pinned ? 'Unpin: fold the tree into a rail ([)' : 'Pin the tree open ([)'} aria-pressed={panes.pinned}
           onClick={() => { setPanes({ ...panes, pinned: !panes.pinned }); setOverlay(false); }}>{panes.pinned ? '⇤ Unpin' : '📌 Pin'}</button>
       </div>
       <div className="tree-toggles">
         <button className={`pill small ${gapsOnly ? 'on' : ''}`} aria-pressed={gapsOnly} onClick={() => setGapsOnly(!gapsOnly)}>Gaps only</button>
-        <button className={`pill small ${hideEmpty ? 'on' : ''}`} aria-pressed={hideEmpty} onClick={() => setHideEmpty(!hideEmpty)}>Hide empty topics</button>
-        <button className={`pill small ${byStrand ? 'on' : ''}`} aria-pressed={byStrand} onClick={() => setByStrand(!byStrand)}>By strand</button>
+        <ReviewFilterSelect value={reviewFilter} onChange={setReviewFilter} />
       </div>
       {error && <p className="error">Couldn't load topics: {error}</p>}
       {!data && !error && <p className="muted">Loading…</p>}
-      {data && <Tree chapters={data.chapters.filter((c) => !r.ch || c.chapter_id === r.ch)} strands={byStrand ? data.strands : null} topics={data.topics} cls={r.cls}
-        selected={r.topic} gapsOnly={gapsOnly} hideEmpty={hideEmpty} onPick={(t) => { setOverlay(false); go({ topic: t, q: null, v: null }); }} />}
+      {data && <Tree strands={strands.filter((x) => !r.strand || x.strand_id === r.strand)} chapters={chapters.filter((c) => !r.ch || c.chapter_id === r.ch)} topics={shownTopics} cls={r.cls}
+        selected={r.topic} gapsOnly={gapsOnly} reviews={data.reviews} reviewFilter={reviewFilter} rolls={rolls} isOpen={isOpen} onToggle={toggle} onPick={(t) => { setOverlay(false); go({ topic: t, q: null, v: null }); }} />}
     </>
   );
 
@@ -106,12 +132,20 @@ export function Workspace(r: R) {
         <select id="ws-subject" value={r.subject} onChange={(e) => go({ subject: e.target.value as Subject, ch: null, topic: null, q: null, v: null })}>
           {SUBJECTS.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
         </select>
+        <label className="sr-only" htmlFor="ws-strand">Strand</label>
+        <select id="ws-strand" className={r.strand ? 'active' : ''} value={r.strand ?? ''} onChange={(e) => go({ strand: e.target.value || null, ch: null, topic: null, q: null, v: null })}>
+          <option value="">All strands</option>
+          {strands.map((x) => <option key={x.strand_id} value={x.strand_id}>{x.name}</option>)}
+          {r.strand && !strands.some((x) => x.strand_id === r.strand) && <option value={r.strand}>{r.strand} (no topics in this class)</option>}
+        </select>
         <label className="sr-only" htmlFor="ws-chapter">Chapter</label>
         <select id="ws-chapter" className={`chapter-select ${r.ch ? 'active' : ''}`} value={r.ch ?? ''} onChange={(e) => go({ ch: e.target.value || null, topic: null, q: null, v: null })}>
           <option value="">All chapters</option>
           {chapters.map((c) => <option key={c.chapter_id} value={c.chapter_id}>{c.chapter_id} · {c.name} · {c.n} Q{c.n === 1 ? '' : 's'}</option>)}
           {r.ch && !chapters.some((c) => c.chapter_id === r.ch) && <option value={r.ch}>{r.ch} (no topics in this class)</option>}
         </select>
+        {r.cls !== 'all' && <label className="check small extra-toggle" title="Topics whose home class is another class but that are also taught in this one">
+          <input type="checkbox" checked={extra} onChange={(e) => setExtra(e.target.checked)} /> Include extra topics (lower / higher class){nExtra ? <span className="muted"> · {nExtra}</span> : null}</label>}
         <span className="muted small keys" title="Keyboard shortcuts in Browse">Keys: <kbd>A</kbd> approve · <kbd>R</kbd> reject · <kbd>F</kbd> needs review · <kbd>↓</kbd><kbd>↑</kbd> next / previous · <kbd>[</kbd> tree</span>
       </div>
       <div className={`ws-cols ${panes.pinned ? '' : 'unpinned'}`} style={style}>
@@ -124,10 +158,10 @@ export function Workspace(r: R) {
         <Handle side="tree" disabled={!panes.pinned} onDrag={(dx) => setPanes({ ...panes, tree: clamp(panes.tree + dx, 200, 560) })} onReset={() => setPanes({ ...panes, tree: PANES.tree })} />
         <section className="ws-main" aria-label="Questions">
           {r.edit && r.q ? <EditForm key={r.q} questionId={r.q} onDone={(saved) => { go({ edit: false, v: null }); if (saved) setReload((x) => x + 1); }} />
-            : !r.topic ? <Pick subject={r.subject} cls={r.cls} ch={chapters.find((c) => c.chapter_id === r.ch)} n={data ? data.topics.filter((t) => !r.ch || t.chapter_id === r.ch).length : undefined} />
+            : !r.topic ? <Pick subject={r.subject} cls={r.cls} ch={chapters.find((c) => c.chapter_id === r.ch)} n={data ? shownTopics.filter((t) => (!r.ch || t.chapter_id === r.ch) && (!r.strand || chapterOf.get(t.chapter_id)?.strand_id === r.strand)).length : undefined} />
             : !data ? <p className="muted">Loading…</p>
             : !topic ? <p>Topic {r.topic} isn't in {subjectLabel(r.subject)}{r.cls !== 'all' ? ` class ${r.cls}` : ''}. <a href={browseHash({ ...r, cls: 'all' })}>Look in all classes</a></p>
-            : <TopicView key={topic.topic_id} reload={reload} topic={topic} chapter={data.chapters.find((c) => c.chapter_id === topic.chapter_id)} r={r} go={go} onOrder={setOrder} onChanged={() => setReload((x) => x + 1)} />}
+            : <TopicView key={topic.topic_id} reload={reload} topic={topic} review={data.reviews.get(topic.topic_id)} chapter={data.chapters.find((c) => c.chapter_id === topic.chapter_id)} r={r} go={go} onOrder={setOrder} onChanged={() => setReload((x) => x + 1)} />}
         </section>
         <Handle side="detail" onDrag={(dx) => setPanes({ ...panes, detail: clamp(panes.detail - dx, 320, 900) })} onReset={() => setPanes({ ...panes, detail: PANES.detail })} />
         <aside className="ws-detail" aria-label="Question detail">
@@ -171,45 +205,62 @@ function Pick({ subject, cls, ch, n }: { subject: Subject; cls: string; ch?: Cha
   );
 }
 
-function Tree({ chapters, strands, topics, cls, selected, gapsOnly, hideEmpty, onPick }: {
-  chapters: Chapter[]; strands: { strand_id: string; name: string }[] | null; topics: TopicWithStats[]; cls: string; selected: string | null;
-  gapsOnly: boolean; hideEmpty: boolean; onPick: (t: string) => void;
+const topicChapter = (topics: TopicWithStats[] | undefined, id: string | null) => (id ? topics?.find((t) => t.topic_id === id)?.chapter_id ?? null : null);
+const qsLabel = (n: number) => `${n} Q${n === 1 ? '' : 's'}`;
+
+/** R3: Strand ▸ Chapter ▸ Topic; each branch opens and closes with the arrow on its left. */
+function Tree({ strands, chapters, topics, cls, selected, gapsOnly, reviews, reviewFilter, rolls, isOpen, onToggle, onPick }: {
+  strands: { strand_id: string; name: string }[]; chapters: Chapter[]; topics: TopicWithStats[]; cls: string; selected: string | null;
+  gapsOnly: boolean; reviews: Map<string, TopicReview>; reviewFilter: ReviewFilter; rolls: { ch: Map<string, RollUp>; st: Map<string, RollUp> }; isOpen: (id: string) => boolean; onToggle: (id: string) => void; onPick: (t: string) => void;
 }) {
   const visible = topics.filter((t) => t.status === 'active' || t.topic_id === selected)
     .filter((t) => !gapsOnly || gapLabel(t.stats) || t.topic_id === selected)
-    .filter((t) => !hideEmpty || (t.stats?.n_questions ?? 0) > 0 || (t.stats?.n_gold ?? 0) > 0 || t.topic_id === selected);
+    .filter((t) => matchesReview(reviewFilter, reviewOf(reviews, t.topic_id)) || t.topic_id === selected);
   const byChapter = new Map<string, TopicWithStats[]>();
   for (const t of visible) byChapter.set(t.chapter_id, [...(byChapter.get(t.chapter_id) ?? []), t]);
   const shown = chapters.filter((c) => byChapter.has(c.chapter_id));
-  if (!shown.length) return <p className="muted">{gapsOnly ? 'No gaps: every topic with questions has all 3 levels.' : hideEmpty ? 'No topics with questions.' : 'No topics.'}</p>;
+  if (!shown.length) return <p className="muted">{reviewFilter !== 'all' ? 'No topics with this review status.' : gapsOnly ? 'No gaps: every topic with questions has all 3 levels.' : 'No topics.'}</p>;
+  const total = (ts: TopicWithStats[]) => ts.reduce((n, t) => n + (t.stats?.n_questions ?? 0), 0);
+  const meta = (ts: TopicWithStats[]) => `${ts.length} topic${ts.length === 1 ? '' : 's'} · ${qsLabel(total(ts))}`;
+  const arrow = (id: string) => <span className="tree-arrow" aria-hidden>{isOpen(id) ? '▾' : '▸'}</span>;
   const chapterEl = (c: Chapter) => {
     const ts = byChapter.get(c.chapter_id)!.sort((a, b) =>
       (a.topic_kind === 'achievers' ? 1 : 0) - (b.topic_kind === 'achievers' ? 1 : 0) || a.class - b.class || (a.seq ?? 999) - (b.seq ?? 999) || a.topic_id.localeCompare(b.topic_id));
+    const open = isOpen(c.chapter_id);
     return (
       <div key={c.chapter_id} className="tree-chapter">
-        <div className="tree-chapter-name chapter-name">Chapter {c.chapter_id} · {c.name}</div>
-        {ts.map((t) => {
+        <button className="tree-branch tree-chapter-name chapter-name" aria-expanded={open} onClick={() => onToggle(c.chapter_id)}>
+          {arrow(c.chapter_id)}<span className="tb-name">{c.chapter_id} · {c.name}<RollUpIcon r={rolls.ch.get(c.chapter_id)} /></span><span className="tb-meta">{meta(ts)}</span>
+        </button>
+        {open && <div className="tree-kids">{ts.map((t) => {
           const gap = gapLabel(t.stats);
+          const role = cls === 'all' ? 'core' : roleOf(t.class, Number(cls));
           return (
-            <button key={t.topic_id} className={`tree-topic ${t.topic_id === selected ? 'sel' : ''} ${t.topic_kind === 'achievers' ? 'ach' : ''}`} onClick={() => onPick(t.topic_id)}
+            <button key={t.topic_id} className={`tree-topic role-${role} ${t.topic_id === selected ? 'sel' : ''} ${t.topic_kind === 'achievers' ? 'ach' : ''}`} onClick={() => onPick(t.topic_id)}
               ref={t.topic_id === selected ? (el) => el?.scrollIntoView({ block: 'nearest' }) : undefined}>
-              <span className="tt-name">{t.topic_kind === 'achievers' ? t.name : <>{t.topic_id} {t.name}</>}{cls === 'all' && <span className="cls"> · C{t.class}</span>}<ClassesPill classes={t.classes} /></span>
+              <span className="tt-name"><TopicReviewIcon status={reviewOf(reviews, t.topic_id)} />{t.topic_kind === 'achievers' ? t.name : <>{t.topic_id} {t.name}</>}{cls === 'all' && <span className="cls"> · C{t.class}</span>}
+                {role !== 'core' && <span className={`role-tag ${role}`}> from Class {t.class}</span>}<ClassesPill classes={t.classes} /></span>
               <span className="tt-meta">{countsLabel(t.stats)}{gap && <span className="gap"> · ⚠ {gap}</span>}</span>
             </button>
           );
-        })}
+        })}</div>}
       </div>
     );
   };
-  if (!strands) return <>{shown.map(chapterEl)}</>;
   return (
     <>
-      {strands.filter((s) => shown.some((c) => c.strand_id === s.strand_id)).map((s) => (
-        <div key={s.strand_id} className="tree-strand">
-          <div className="tree-strand-name">{s.name}</div>
-          {shown.filter((c) => c.strand_id === s.strand_id).map(chapterEl)}
-        </div>
-      ))}
+      {strands.filter((x) => shown.some((c) => c.strand_id === x.strand_id)).map((x) => {
+        const chs = shown.filter((c) => c.strand_id === x.strand_id);
+        const open = isOpen(x.strand_id);
+        return (
+          <div key={x.strand_id} className="tree-strand">
+            <button className="tree-branch tree-strand-name" aria-expanded={open} onClick={() => onToggle(x.strand_id)}>
+              {arrow(x.strand_id)}<span className="tb-name">{x.name}<RollUpIcon r={rolls.st.get(x.strand_id)} /></span><span className="tb-meta">{meta(chs.flatMap((c) => byChapter.get(c.chapter_id)!))}</span>
+            </button>
+            {open && <div className="tree-kids">{chs.map(chapterEl)}</div>}
+          </div>
+        );
+      })}
     </>
   );
 }
@@ -223,7 +274,7 @@ function useOpenGroups(topicId: string, tab: string) {
   return [open, setOpen] as const;
 }
 
-function TopicView({ topic, chapter, r, go, reload, onOrder, onChanged }: { topic: TopicWithStats; chapter?: Chapter; r: R; go: (p: Partial<R>) => void; reload: number; onOrder: (ids: string[]) => void; onChanged: () => void }) {
+function TopicView({ topic, review, chapter, r, go, reload, onOrder, onChanged }: { topic: TopicWithStats; review?: TopicReview; chapter?: Chapter; r: R; go: (p: Partial<R>) => void; reload: number; onOrder: (ids: string[]) => void; onChanged: () => void }) {
   // D5: the add / edit form open on this topic (one at a time)
   const [form, setForm] = useState<{ kind: Kind; id: string | null; fixed?: Record<string, unknown> } | null>(null);
   const edit = (kind: Kind, id: string | null, fixed?: Record<string, unknown>) => (e?: { stopPropagation: () => void }) => { e?.stopPropagation(); setForm({ kind, id, fixed }); };
@@ -293,6 +344,7 @@ function TopicView({ topic, chapter, r, go, reload, onOrder, onChanged }: { topi
         <div className="small prereqs">Prerequisites: {!data ? '…' : data.prereqs.length === 0 ? <span className="muted">—</span>
           : data.prereqs.map((p, i) => <span key={p.prereq_topic_id}>{i > 0 && ' · '}<a href={browseHash({ subject: r.subject, cls: p.class ? String(p.class) : 'all', ch: p.chapter_id, topic: p.prereq_topic_id })}>{p.prereq_topic_id}{p.name ? ` ${p.name}` : ''}</a></span>)}</div>
         {topic.sub_skills && <div className="muted small subskills">Sub-skills: {topic.sub_skills.replace(/\s*;\s*\n?/g, '; ')}</div>}
+        <ReviewControl topicId={topic.topic_id} review={review} onSaved={onChanged} />
       </div>
 
       <div className="curriculum-actions small">
