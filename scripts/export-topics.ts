@@ -60,6 +60,12 @@ export async function exportTopics(sql: ReturnType<typeof connect>, outDir: stri
       sql`select t.* from cms.cms_topics t join cms.cms_chapters c using (chapter_id) where c.subject = ${subject}`,
       sql`select sheet, row_no, cells from cms.cms_source_map where subject = ${subject} and status = 'active' order by sheet, row_no`,
     ]);
+    // 13 Nov 2026: the stored per-class order (Class View Seq and No. follow it)
+    const [so, co, tor] = await Promise.all([
+      sql`select class, strand_id, position from cms.cms_strand_order where subject = ${subject}`,
+      sql`select o.class, o.chapter_id, o.strand_id, o.position from cms.cms_chapter_order o join cms.cms_chapters c using (chapter_id) where c.subject = ${subject}`,
+      sql`select o.class, o.topic_id, o.chapter_id, o.position from cms.cms_topic_order o join cms.cms_chapters c on c.chapter_id = o.chapter_id where c.subject = ${subject}`,
+    ]);
     const xt: XTopic[] = topics.map((t) => ({
       topic_id: t.topic_id, chapter_id: t.chapter_id, class: t.class, seq: t.seq, name: t.name, level: t.level, sub_skills: t.sub_skills, topic_kind: t.topic_kind,
       source_flags: t.source_flags ?? {}, notes: t.notes, status: t.status,
@@ -69,7 +75,7 @@ export async function exportTopics(sql: ReturnType<typeof connect>, outDir: stri
     }));
     const wb = new ExcelJS.Workbook();
     wb.creator = 'WitoScope Academic CMS'; wb.created = new Date(exportedAt);
-    for (const sheet of buildSheets(subject, strands as never, chapters as never, xt, exportedAt, maps as never)) {
+    for (const sheet of buildSheets(subject, strands as never, chapters as never, xt, exportedAt, maps as never, { strands: so as never, chapters: co as never, topics: tor as never })) {
       const ws = wb.addWorksheet(sheet.name, { views: [{ state: 'frozen', ySplit: 1 }] });
       ws.addRow(sheet.columns).font = { bold: true };
       for (const r of sheet.rows) ws.addRow(r);
