@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { questionDetail, type QuestionDetailData } from './api';
 import { browseHash, classesLabel, derivedRows, involvementOf, signatureRows, STATUS_LABEL, subjectOfChapter, TAG_LABEL } from './logic';
 import { latestOriginality, officialLink, sourceItems, type OriginalityCheck } from './sourcesApi';
@@ -8,6 +8,7 @@ import { textsOf } from '../../shared/version.ts';
 import { bundleOf, retire, setStatus } from './editApi';
 import { supabase } from './supabase';
 import { OriginFlags } from './AddQuestions';
+import { Id } from './Id';
 
 /** A keyboard review command from Browse (D6): A approve · R reject · F needs review. */
 export interface ReviewCommand { kind: 'approve' | 'reject' | 'flag'; n: number }
@@ -149,7 +150,8 @@ export function QuestionDetail({ id, versionNo, onVersion, onEdit, reloadKey = 0
               : <span className="muted">{q.pattern_id ? 'no clones (unique signature in its pattern)' : '— (no pattern)'}</span>}</div>
         </div>
         <KV one rows={[
-          { k: 'Topic', v: d.topic ? `${d.topic.topic_id} · ${d.topic.name}` : (v.topic_id ?? q.topic_id) },
+          { k: 'Chapter', v: d.topic ? <>{d.topic.cms_chapters?.name ?? ''} <Id>{d.topic.chapter_id}</Id></> : q.chapter_id },
+          { k: 'Topic', v: d.topic ? <>{d.topic.name} <Id>{d.topic.topic_id}</Id></> : (v.topic_id ?? q.topic_id) },
           { k: 'Class', v: `${q.class}${q.class_override ? ` (shown in class ${q.class_override})` : ''}` },
           { k: 'Typical set', v: d.set ? `${d.set.typical_set_id} · ${d.set.name}${d.set.status === 'proposed' ? ' · PROPOSED (not approved)' : ''}` : '—' },
           { k: 'Pattern', v: d.pattern ? `${d.pattern.pattern_id} · ${d.pattern.name}${d.pattern.status === 'proposed' ? ' · PROPOSED (not approved)' : ''}` : '—' },
@@ -427,7 +429,7 @@ export function Proposed({ status }: { status?: string | null }) {
   return status === 'proposed' ? <span className="tag proposed" title="Proposed by the book pipeline; not approved yet">Proposed</span> : null;
 }
 
-function KV({ rows, one }: { rows: { k: string; v: string }[]; one?: boolean }) {
+function KV({ rows, one }: { rows: { k: string; v: ReactNode }[]; one?: boolean }) {
   return <dl className={`kv${one ? ' one' : ''}`}>{rows.map((r) => <div key={r.k}><dt>{r.k}</dt><dd>{r.v}</dd></div>)}</dl>;
 }
 

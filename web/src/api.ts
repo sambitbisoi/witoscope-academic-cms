@@ -2,6 +2,7 @@
 // counts come from the security_invoker views in migration 0010.
 import { rollUp, safeSearch, SUBJECTS, type ListQuestion, type ReviewStatus, type RollUp, type Subject, type TopicStats, type VersionRow } from './logic';
 import { supabase } from './supabase';
+import type { SeqOrders } from '../../shared/sequence.ts';
 
 const must = <T>(r: { data: T | null; error: { message: string } | null }): T => {
   if (r.error) throw new Error(r.error.message);
@@ -35,7 +36,7 @@ export const lastImport = async () =>
   must<LastImport[]>(await supabase.from('cms_imports').select('import_id, kind, file_path, started_at, result, chapter_id').order('import_id', { ascending: false }).limit(1))[0] ?? null;
 
 // ---------------------------------------------------------------- Workspace tree
-export interface Chapter { chapter_id: string; name: string; strand_id: string; sort: number; display_code: string | null }
+export interface Chapter { chapter_id: string; name: string; strand_id: string; sort: number; display_code: string | null; status?: string }
 export interface Topic { topic_id: string; chapter_id: string; class: number; seq: number | null; name: string; topic_kind: 'normal' | 'achievers';
   taught_in_school: boolean; source_flags: Record<string, string>; status: string; sub_skills: string | null }
 export type ClassStats = TopicStats & { n_revision?: number; n_clone_groups?: number };
@@ -81,19 +82,30 @@ export async function reviewProgress(): Promise<{ subject: Subject; cls: number;
  * The Browse tree. For one class (D3): the topics in that class (own or mapped) and their counts
  * under the display rule (questions whose level ≤ the class). For all classes: every topic once.
  */
+/** Sequencing (13 Nov 2026): the stored per-class order of a subject's strands, chapters and topics. */
+export async function seqOrders(subject: Subject): Promise<SeqOrders> {
+  const pre = `${prefixOf(subject)}*`;
+  const [strands, chapters, topics] = await Promise.all([
+    all<SeqOrders['strands'][number]>((a, b) => supabase.from('cms_strand_order').select('class, strand_id, position').eq('subject', subject).order('class').order('position').range(a, b)),
+    all<SeqOrders['chapters'][number]>((a, b) => supabase.from('cms_chapter_order').select('class, chapter_id, strand_id, position').like('chapter_id', pre).order('class').order('chapter_id').range(a, b)),
+    all<SeqOrders['topics'][number]>((a, b) => supabase.from('cms_topic_order').select('class, topic_id, chapter_id, position').like('chapter_id', pre).order('class').order('topic_id').range(a, b)),
+  ]);
+  return { strands, chapters, topics };
+}
+
 export async function tree(subject: Subject, cls: string) {
   const pre = `${prefixOf(subject)}*`;
   const [chapters, topics, stats, strands] = await Promise.all([
-    supabase.from('cms_chapters').select('chapter_id, name, strand_id, sort, display_code').eq('subject', subject).order('sort'),
+    supabase.from('cms_chapters').select('chapter_id, name, strand_id, sort, display_code, status').eq('subject', subject).order('sort'),
     topicsWithClasses(subject),
     cls === 'all' ? all<ClassStats & { topic_id: string }>((a, b) => supabase.from('cms_topic_stats').select('*').like('chapter_id', pre).range(a, b))
       : all<ClassStats & { topic_id: string }>((a, b) => supabase.from('cms_topic_class_stats').select('*').like('chapter_id', pre).eq('class', Number(cls)).range(a, b)),
     supabase.from('cms_strands').select('strand_id, name, sort').eq('subject', subject).order('sort'),
   ]);
-  const reviews = await topicReviews();
+  const [reviews, orders] = await Promise.all([topicReviews(), seqOrders(subject)]);
   const byId = new Map(stats.map((s) => [s.topic_id, s]));
   return {
-    reviews,
+    reviews, orders,
     chapters: must<Chapter[]>(chapters),
     strands: must<{ strand_id: string; name: string; sort: number }[]>(strands),
     topics: topics.filter((t) => cls === 'all' || t.classes.includes(Number(cls))).map((t) => ({ ...t, stats: byId.get(t.topic_id) })) as TopicWithStats[],
@@ -209,7 +221,7 @@ export async function questionDetail(questionId: string, versionNo: number | nul
     miscIds.length ? supabase.from('cms_misconceptions').select('misconception_id, description, parent_description, status').in('misconception_id', miscIds) : Promise.resolve({ data: [], error: null }),
     conceptIds.length ? supabase.from('cms_concepts').select('concept_id, name, class, status').in('concept_id', conceptIds) : Promise.resolve({ data: [], error: null }),
     v.insight_id ? supabase.from('cms_insights').select('insight_id, name').eq('insight_id', v.insight_id).maybeSingle() : Promise.resolve({ data: null, error: null }),
-    supabase.from('cms_topics').select('topic_id, name, class, chapter_id').eq('topic_id', (v.topic_id ?? q.topic_id) as string).maybeSingle(),
+    supabase.from('cms_topics').select('topic_id, name, class, chapter_id, cms_chapters(name)').eq('topic_id', (v.topic_id ?? q.topic_id) as string).maybeSingle(),
     (v.typical_set_id ?? q.typical_set_id) ? supabase.from('cms_typical_sets').select('typical_set_id, name, status').eq('typical_set_id', (v.typical_set_id ?? q.typical_set_id) as string).maybeSingle() : Promise.resolve({ data: null, error: null }),
     (v.pattern_id ?? q.pattern_id) ? supabase.from('cms_patterns').select('pattern_id, name, status').eq('pattern_id', (v.pattern_id ?? q.pattern_id) as string).maybeSingle() : Promise.resolve({ data: null, error: null }),
   ]);
@@ -241,7 +253,7 @@ export async function questionDetail(questionId: string, versionNo: number | nul
     misconceptions: new Map(must<{ misconception_id: string; description: string; parent_description: string | null; status: string }[]>(miscs).map((m) => [m.misconception_id, m])),
     conceptNames: new Map(must<{ concept_id: string; name: string; class: number; status: string }[]>(conceptNames).map((c) => [c.concept_id, c])),
     insightName: (must<{ name: string } | null>(insight))?.name ?? null,
-    topic: must<{ topic_id: string; name: string; class: number; chapter_id: string } | null>(topic),
+    topic: must<{ topic_id: string; name: string; class: number; chapter_id: string; cms_chapters: { name: string } | null } | null>(topic as never),
     set: must<{ typical_set_id: string; name: string; status: string } | null>(set),
     pattern: must<{ pattern_id: string; name: string; status: string } | null>(pattern),
   };
