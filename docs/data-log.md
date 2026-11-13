@@ -2,6 +2,18 @@
 
 Changes to real (non-test) data that Sambit approved, with what was done and where the audit trail is.
 
+## 14 Nov 2026: Science — migration 0032 on the REAL project + import:science dry run (no data written)
+
+**Request (Sambit, 14 Nov 2026):** "continue §9 steps (b)–(d): back up the real DB, apply 0032 + db:verify, run import:science --dry-run on real. No real import and no merge yet." (`docs/science-plan.md` §9)
+
+| Step | Result |
+|---|---|
+| (b) Backup | `~/WitoScope/CMS-backups/real-cms-2026-11-14-pre-science.{dump,sql}` (schema `cms`, 48 tables; read-only files). Before: migrations 0001–0031, 2,278 questions, 0 Science questions |
+| (c) Schema | `migrate.ts` applied **0032_science.sql** only (4 empty tables, question columns, 2 views, `cms_decide_topic_class`, updated `cms_version_flags` and `cms_add_questions`). `db:verify`: all checks pass. The live UI (`main`) does not use the new objects |
+| (d) Dry run | `import-science.ts --dry-run`, import #356 rolled back: 33 sources · 2,403 rows (4 near-copies held out: C5-01-011, C5-01-072, C5-06-009, C6-08-018) · 2,636 + 293 citations · 134 questions · 155 direct + 34 supporting links · 12 proposed topic–class links. Checked afterwards: 0 content rows, 0 Science questions, 0 Science sources, 0 proposals, import #356 absent. Only `cms_sq_seq` advanced (to 134), so the real import's questions will start at SQ000135 |
+
+Report: `.local-import/science-import-real-dry-run-2026-11-131840.json` (IDs, counts and citations only). Next, only with Sambit's OK: (e) the real import with `--confirm-real`, then (f) merge #22 + #23 and deploy.
+
 ## 12 Nov 2026: MC19-5011 originality re-check — LOCAL ONLY
 
 **Request (Sambit, 12 Nov 2026):** replace the stale ui-probe check with a real every-field check (logged); don't delete history.
