@@ -103,7 +103,8 @@ export async function tree(subject: Subject, cls: string) {
 // ---------------------------------------------------------------- Topic
 export type QuestionRow = ListQuestion & { subject: string; file_key: string | null; chapter_id: string; topic_id: string; class: number;
   version_id: number; format: string; tier: string | null; gold_use: string | null; clone_batch_id: string | null;
-  level: number | null; effective_level: number; setting_id: string | null; clone_key: string | null };
+  level: number | null; effective_level: number; setting_id: string | null; clone_key: string | null;
+  created_from: string; attributes_pending: boolean; originality_pending: boolean; image_pending: boolean; upload_file: string | null; uploaded_at: string | null };
 export interface Setting { setting_id: string; name: string; description: string | null; theme: string | null; status: string }
 export interface Prereq { prereq_topic_id: string; name: string | null; chapter_id: string | null; class: number | null }
 
@@ -195,11 +196,11 @@ export async function questionDetail(questionId: string, versionNo: number | nul
   const miscIds = [...new Set(wa.map((w) => w.misconception_id).filter((x): x is string => !!x))];
   const conceptIds = [...new Set([...vc.map((c) => c.concept_id), ...wa.map((w) => w.target_concept_id).filter((x): x is string => !!x)])];
   const [row, placements, topicClasses] = await Promise.all([
-    supabase.from('cms_question_list').select('level, effective_level, setting_id, clone_key').eq('question_id', questionId).maybeSingle(),
+    supabase.from('cms_question_list').select('level, effective_level, setting_id, clone_key, created_from, attributes_pending, originality_pending, image_pending, upload_file, uploaded_at').eq('question_id', questionId).maybeSingle(),
     supabase.from('cms_question_classes').select('class, is_home').eq('question_id', questionId).order('class'),
     supabase.from('cms_topic_all_classes').select('class').eq('topic_id', q.topic_id as string),
   ]);
-  const listRow = must<{ level: number | null; effective_level: number; setting_id: string | null; clone_key: string | null } | null>(row);
+  const listRow = must<{ level: number | null; effective_level: number; setting_id: string | null; clone_key: string | null; created_from: string; attributes_pending: boolean; originality_pending: boolean; image_pending: boolean; upload_file: string | null; uploaded_at: string | null } | null>(row);
   const [clones, setting] = await Promise.all([
     listRow?.clone_key ? supabase.from('cms_question_list').select('question_id, file_key, status, retired_at').eq('clone_key', listRow.clone_key).order('question_id').limit(200) : Promise.resolve({ data: [], error: null }),
     listRow?.setting_id ? supabase.from('cms_settings').select('setting_id, name, description, theme, status').eq('setting_id', listRow.setting_id).maybeSingle() : Promise.resolve({ data: null, error: null }),
@@ -221,6 +222,8 @@ export async function questionDetail(questionId: string, versionNo: number | nul
     placements: must<{ class: number; is_home: boolean }[]>(placements),
     topicClasses: [...new Set(must<{ class: number }[]>(topicClasses).map((x) => x.class))].sort((a, b) => a - b),
     effectiveLevel: listRow?.effective_level ?? (q.class as number),
+    /** 13 Nov 2026: origin and pending flags of the current version (Manual / Uploaded; attributes, image, originality). */
+    flags: listRow,
     /** D8c: the question's clone group (same pattern + signature + concepts), itself included. */
     clones: must<{ question_id: string; file_key: string | null; status: string; retired_at: string | null }[]>(clones),
     setting: must<Setting | null>(setting),
@@ -280,4 +283,28 @@ export async function search(raw: string): Promise<SearchHit[]> {
 export async function topicHome(topicId: string) {
   return must<{ topic_id: string; chapter_id: string; class: number } | null>(
     await supabase.from('cms_topics').select('topic_id, chapter_id, class').eq('topic_id', topicId).maybeSingle());
+}
+
+// ---------------------------------------------------------------- add / upload questions (13 Nov 2026)
+export interface AddContext {
+  sets: { typical_set_id: string; name: string; status: string }[]; patterns: { pattern_id: string; name: string; typical_set_id: string; status: string }[];
+  concepts: { concept_id: string; name: string; status: string }[]; settings: { setting_id: string; name: string; status: string }[];
+}
+/** What the add form and the upload may refer to: this topic's typical sets, their patterns and concepts; every setting. */
+export async function addContext(topicId: string): Promise<AddContext> {
+  const [sets, concepts, settings] = await Promise.all([
+    supabase.from('cms_typical_sets').select('typical_set_id, name, status').eq('topic_id', topicId).neq('status', 'retired').order('typical_set_id'),
+    supabase.from('cms_concepts').select('concept_id, name, status').eq('topic_id', topicId).neq('status', 'retired').order('concept_id'),
+    supabase.from('cms_settings').select('setting_id, name, status').neq('status', 'retired').order('name'),
+  ]);
+  const st = must<AddContext['sets']>(sets);
+  const patterns = st.length ? must<AddContext['patterns']>(await supabase.from('cms_patterns').select('pattern_id, name, typical_set_id, status').in('typical_set_id', st.map((x) => x.typical_set_id)).neq('status', 'retired').order('pattern_id')) : [];
+  return { sets: st, patterns, concepts: must<AddContext['concepts']>(concepts), settings: must<AddContext['settings']>(settings) };
+}
+/** Which of these citations are book items in the catalogue (they become source refs; others stay as a citation note). */
+export async function knownSourceItems(ids: string[]): Promise<Set<string>> {
+  const u = [...new Set(ids.filter(Boolean))];
+  if (!u.length) return new Set();
+  const rows = must<{ ref_id: string }[]>(await supabase.from('cms_source_items').select('ref_id').in('ref_id', u.slice(0, 500)));
+  return new Set(rows.map((r) => r.ref_id));
 }

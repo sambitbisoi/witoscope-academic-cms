@@ -7,6 +7,7 @@ import { structureDiff } from '../../shared/save.ts';
 import { textsOf } from '../../shared/version.ts';
 import { bundleOf, retire, setStatus } from './editApi';
 import { supabase } from './supabase';
+import { OriginFlags } from './AddQuestions';
 
 /** A keyboard review command from Browse (D6): A approve · R reject · F needs review. */
 export interface ReviewCommand { kind: 'approve' | 'reject' | 'flag'; n: number }
@@ -49,6 +50,7 @@ export function QuestionDetail({ id, versionNo, onVersion, onEdit, reloadKey = 0
           {q.retired_at && <strong> · retired</strong>}
         </div>
       </div>
+      {isCurrent && d.flags && <PendingBanners f={d.flags} />}
       {isCurrent && <Actions key={v.version_id} d={d} onEdit={onEdit} onChanged={() => { setTick((t) => t + 1); onChanged?.(); }} command={command} onAdvance={onAdvance} />}
       {!isCurrent && <div className="notice small">You're looking at an older version. <button className="link" onClick={() => onVersion(null)}>Show current (v{q.current_version})</button></div>}
 
@@ -312,7 +314,9 @@ function Actions({ d, onEdit, onChanged, command, onAdvance }: { d: QuestionDeta
       if (advance) onAdvance?.();
     } catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
   };
-  const approve = () => (nearCopy ? setAsk('override') : run(() => setStatus(q.question_id, v.version_no, 'approve', null)));
+  // 13 Nov 2026: a question added or uploaded in the CMS can't be approved until its book check has run (the SQL enforces it too)
+  const origPending = !!d.flags?.originality_pending;
+  const approve = () => (origPending ? setErr('Originality pending: run npm run check:originality -- --pending on the Mac first.') : nearCopy ? setAsk('override') : run(() => setStatus(q.question_id, v.version_no, 'approve', null)));
   useEffect(() => {
     if (!command || command.n < mounted.current || busy || q.retired_at || !open) return;
     viaKey.current = true;
@@ -337,7 +341,7 @@ function Actions({ d, onEdit, onChanged, command, onAdvance }: { d: QuestionDeta
       {v.status === 'draft' && <button className="secondary flag" disabled={busy} onClick={() => { viaKey.current = false; setAsk(ask === 'flag' ? null : 'flag'); }} title="F">Needs review…</button>}
       {v.status === 'in_review' && <button className="secondary flag on" disabled={busy} title="Clear the Needs review flag (back to draft)" onClick={() => run(() => setStatus(q.question_id, v.version_no, 'withdraw', null))}>⚑ Needs review · clear</button>}
       {open && <>
-        <button className="approve" disabled={busy} title="A" onClick={() => { viaKey.current = false; approve(); }}>Approve{nearCopy ? '…' : ''}</button>
+        <button className="approve" disabled={busy || origPending} title={origPending ? 'Originality pending: the book check runs on the Mac first' : 'A'} onClick={() => { viaKey.current = false; approve(); }}>Approve{nearCopy ? '…' : ''}</button>
         <button className="reject" disabled={busy} title="R" onClick={() => { viaKey.current = false; setAsk(ask === 'reject' ? null : 'reject'); }}>Reject…</button>
       </>}
       {v.status === 'approved' && <span className="muted small">Approved. Edit makes a new version (a typo fix keeps this one).</span>}
@@ -423,4 +427,18 @@ export function Proposed({ status }: { status?: string | null }) {
 
 function KV({ rows, one }: { rows: { k: string; v: string }[]; one?: boolean }) {
   return <dl className={`kv${one ? ' one' : ''}`}>{rows.map((r) => <div key={r.k}><dt>{r.k}</dt><dd>{r.v}</dd></div>)}</dl>;
+}
+
+/** 13 Nov 2026: what is still open on a question added by hand or uploaded. */
+function PendingBanners({ f }: { f: NonNullable<QuestionDetailData['flags']> }) {
+  const added = f.created_from === 'manual' || f.created_from === 'upload';
+  if (!added && !f.originality_pending) return null;
+  return (
+    <div className="pending-banners small">
+      <div className="origin-line"><OriginFlags q={f} /></div>
+      {added && f.attributes_pending && <div className="banner pending">Attributes pending: the signature and derived fields are not evaluated yet, so this question is left out of clone groups. Edit it and fill in the signature to evaluate them.</div>}
+      {added && f.image_pending && <div className="banner pending">Image pending: a picture is needed (see the figure description).</div>}
+      {f.originality_pending && <div className="banner pending orig">Originality pending: the book check has not run yet, so it can't be approved. It runs on the Mac: <span className="mono">npm run check:originality -- --pending</span>.</div>}
+    </div>
+  );
 }

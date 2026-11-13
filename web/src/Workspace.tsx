@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { reviewOf, topicData, tree, type Chapter, type QuestionRow, type TopicReview, type TopicWithStats } from './api';
+import { AddQuestionForm, BulkUpload, OriginFlags } from './AddQuestions';
 import { ReviewControl, ReviewFilterSelect, RollUpIcon, TopicReviewIcon } from './ReviewStatus';
 import {
-  applyFilters, browseHash, classesLabel, matchesReview, roleOf, rollUp, type ReviewFilter, type RollUp, cloneGroups, countsLabel, distinctTexts, sameWording, type CloneInfo, gapLabel, groupBySet, involvementOf, mixLabel, NO_FILTERS, statusCountsLabel, statusLabel,
+  applyFilters, browseHash, classesLabel, FLAG_FILTERS, matchesReview, roleOf, rollUp, type ReviewFilter, type RollUp, cloneGroups, countsLabel, distinctTexts, sameWording, type CloneInfo, gapLabel, groupBySet, involvementOf, mixLabel, NO_FILTERS, statusCountsLabel, statusLabel,
   subjectLabel, SUBJECTS, summarize, type Filters, type Subject,
 } from './logic';
 import { EditForm } from './EditForm';
@@ -277,6 +278,8 @@ function useOpenGroups(topicId: string, tab: string) {
 function TopicView({ topic, review, chapter, r, go, reload, onOrder, onChanged }: { topic: TopicWithStats; review?: TopicReview; chapter?: Chapter; r: R; go: (p: Partial<R>) => void; reload: number; onOrder: (ids: string[]) => void; onChanged: () => void }) {
   // D5: the add / edit form open on this topic (one at a time)
   const [form, setForm] = useState<{ kind: Kind; id: string | null; fixed?: Record<string, unknown> } | null>(null);
+  // 13 Nov 2026: add a question by hand or bulk-upload an Excel file (this topic only; no AI)
+  const [adding, setAdding] = useState<'form' | 'upload' | null>(null);
   const edit = (kind: Kind, id: string | null, fixed?: Record<string, unknown>) => (e?: { stopPropagation: () => void }) => { e?.stopPropagation(); setForm({ kind, id, fixed }); };
   const [data, setData] = useState<Awaited<ReturnType<typeof topicData>> | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -293,7 +296,7 @@ function TopicView({ topic, review, chapter, r, go, reload, onOrder, onChanged }
 
   const sources = Object.entries(topic.source_flags ?? {}).map(([k, v]) => `${SOURCE_LABEL[k] ?? k.toUpperCase()} ${v}`).join(' · ');
   const s = topic.stats;
-  const filtered = filters.difficulty !== 'all' || filters.status !== 'all' || filters.bank !== 'all';
+  const filtered = filters.difficulty !== 'all' || filters.status !== 'all' || filters.bank !== 'all' || (filters.flag ?? 'all') !== 'all';
   // D3: in class N, only questions whose level ≤ N (lower levels are revision here)
   const inClass = useMemo(() => (data ? data.questions.filter((q) => r.cls === 'all' || q.effective_level <= Number(r.cls)) : []), [data, r.cls]);
   const qs = useMemo(() => applyFilters(inClass, filters).filter((q) => setting === 'all' || (setting === 'none' ? !q.setting_id : q.setting_id === setting)), [inClass, filters, setting]);
@@ -352,7 +355,14 @@ function TopicView({ topic, review, chapter, r, go, reload, onOrder, onChanged }
         <button className="link" onClick={edit('typical_set', null, { topic_id: topic.topic_id })}>+ Question type</button>
         <button className="link" onClick={edit('pattern', null, { topic_id: topic.topic_id })}>+ Pattern</button>
         <button className="link" onClick={edit('concept', null, { topic_id: topic.topic_id })}>+ Concept</button>
+        {topic.status === 'active' && <>
+          <span className="sep" aria-hidden>|</span>
+          <button className="link strong" onClick={() => setAdding(adding === 'form' ? null : 'form')}>+ Add question</button>
+          <button className="link strong" onClick={() => setAdding(adding === 'upload' ? null : 'upload')}>Bulk upload (Excel)</button>
+        </>}
       </div>
+      {adding === 'form' && <AddQuestionForm topic={topic} onDone={(id) => { setAdding(null); if (id) { onChanged(); go({ q: id, v: null }); } }} />}
+      {adding === 'upload' && <BulkUpload topic={topic} onDone={(changed) => { setAdding(null); if (changed) onChanged(); }} />}
       {form && <CurriculumForm key={`${form.kind}-${form.id}`} kind={form.kind} id={form.id} fixed={form.fixed}
         options={{ typical_set_id: (data?.sets ?? []).map((x) => [x.typical_set_id, `${x.typical_set_id} · ${x.name}`] as [string, string]) }}
         onDone={(saved) => { setForm(null); if (saved) onChanged(); }} />}
@@ -373,6 +383,7 @@ function TopicView({ topic, review, chapter, r, go, reload, onOrder, onChanged }
         <Select label="Difficulty" value={filters.difficulty} onChange={(v) => setFilters({ ...filters, difficulty: v })} options={[['all', 'Difficulty: all'], ['Simple', 'Simple'], ['Medium', 'Medium'], ['Complex', 'Complex']]} />
         <Select label="Status" value={filters.status} onChange={(v) => setFilters({ ...filters, status: v })} options={[['all', 'Status: all'], ['draft', 'Draft'], ['in_review', 'Needs review'], ['approved', 'Approved'], ['rejected', 'Rejected'], ['retired', 'Retired']]} />
         <Select label="Bank" value={filters.bank} onChange={(v) => setFilters({ ...filters, bank: v })} options={[['all', 'Bank: all'], ['production', 'Production'], ['gold', 'Gold']]} />
+        <Select label="Flags" value={filters.flag ?? 'all'} onChange={(v) => setFilters({ ...filters, flag: v as never })} options={FLAG_FILTERS} />
         {settingsUsed.length > 0 && <Select label="Setting" value={setting} onChange={setSetting}
           options={[['all', 'Setting: all'], ...settingsUsed.map((x) => [x.setting_id, x.name] as [string, string]), ['none', 'No setting yet']]} />}
         {data && <span className="muted small">{qs.length} of {inClass.length} shown</span>}
@@ -506,6 +517,7 @@ function QRow({ q, shown, same, clone, setting, revision, selected, onPick, extr
       {setting && <span className="tag setting" title="Setting (the story or context)">{setting}</span>}
       {revision !== undefined && <span className="tag revision" title={`Level ${revision}: revision in this class`}>Revision · L{revision}</span>}
       {q.bank === 'gold' && <span className="tag gold">Gold</span>}
+      <OriginFlags q={q} compact />
       {extra && <span className="muted small">{extra}</span>}
       <span className={`lvl ${q.math_difficulty ?? ''}`}>{q.math_difficulty ?? '—'}</span>
       <span className={`qstatus small st-${q.retired_at ? 'retired' : q.status}`}>{statusLabel(q)}</span>
@@ -523,3 +535,4 @@ function Select({ label, value, onChange, options }: { label: string; value: str
     </label>
   );
 }
+

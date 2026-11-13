@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { supabase } from './supabase';
 
 interface ImportRow {
-  import_id: number; kind: 'chapter' | 'topics' | 'seed' | 'sources' | 'book' | 'originality' | 'proposals' | 'figures'; file_path: string; git_commit: string | null; file_hash: string;
+  import_id: number; kind: 'chapter' | 'topics' | 'seed' | 'sources' | 'book' | 'originality' | 'proposals' | 'figures' | 'updates' | 'upload'; file_path: string; git_commit: string | null; file_hash: string;
   chapter_id: string | null; options: Record<string, unknown>; started_at: string; finished_at: string | null;
   result: 'ok' | 'partial' | 'failed' | null; counts: Record<string, unknown>; error_report: unknown;
 }
@@ -12,7 +12,7 @@ interface Problem { level: 'error' | 'warning'; key?: string; where?: string; me
 interface Outcome { key: string; question_id?: string; result: string; version?: number; note?: string }
 
 const KIND: Record<ImportRow['kind'], string> = { chapter: 'Chapter file', topics: 'Topic lists', seed: 'Rules seed', sources: 'Source registry', book: 'Book citations',
-  originality: 'Originality check', proposals: 'Proposed items', figures: 'Figure images' };
+  originality: 'Originality check', proposals: 'Proposed items', figures: 'Figure images', updates: 'CMS updates', upload: 'Question upload (Excel)' };
 /** "v11 seed" from the workbook's file name (…_v11.xlsx). */
 export const seedLabel = (path: string) => `${/_v(\d+)\.xlsx$/.exec(path)?.[0].slice(1, -5) ?? 'rules'} seed`;
 const kindOf = (r: { kind: ImportRow['kind']; file_path: string }) => (r.kind === 'seed' ? seedLabel(r.file_path) : KIND[r.kind]);

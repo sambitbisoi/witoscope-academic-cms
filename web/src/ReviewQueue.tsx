@@ -3,7 +3,8 @@
 // (keys A / R / F, ↓↑); they are not listed here.
 import { useEffect, useState } from 'react';
 import { decideOverride, overrideRequests, reviewQueue, type OverrideRequest } from './editApi';
-import { browseHash, STATUS_LABEL, subjectLabel, subjectOfChapter } from './logic';
+import { browseHash, FLAG_FILTERS, matchesFlag, STATUS_LABEL, subjectLabel, subjectOfChapter, type FlagFilter } from './logic';
+import { OriginFlags } from './AddQuestions';
 
 type Item = Awaited<ReturnType<typeof reviewQueue>>[number];
 type Show = 'all' | 'in_review' | 'rejected' | 'overrides';
@@ -12,12 +13,13 @@ export function ReviewQueue() {
   const [items, setItems] = useState<Item[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [show, setShow] = useState<Show>('all');
+  const [flag, setFlag] = useState<FlagFilter>('all');
   const [nOverrides, setNOverrides] = useState<number | null>(null);
   useEffect(() => { overrideRequests().then((r) => setNOverrides(r.filter((x) => x.status === 'pending').length)).catch(() => setNOverrides(null)); }, []);
   useEffect(() => { reviewQueue().then(setItems).catch((e) => setError(e.message)); }, []);
   if (error) return <p className="error">Couldn't load the review queue: {error}</p>;
   if (!items) return <p className="muted">Loading…</p>;
-  const shown = items.filter((i) => show === 'all' || i.status === show);
+  const shown = items.filter((i) => (show === 'all' || i.status === show) && matchesFlag(flag, i));
   const groups = new Map<string, Item[]>();
   for (const i of shown) { const k = `${i.subject}|${i.class}`; groups.set(k, [...(groups.get(k) ?? []), i]); }
   const age = (iso: string | null) => {
@@ -36,13 +38,16 @@ export function ReviewQueue() {
               {s === 'all' ? 'All' : s === 'overrides' ? 'Overrides' : STATUS_LABEL[s]} · {n(s)}
             </button>
           ))}
+          {show !== 'overrides' && <select className={`small-select ${flag !== 'all' ? 'active' : ''}`} aria-label="Flags" value={flag} onChange={(e) => setFlag(e.target.value as FlagFilter)}>
+            {FLAG_FILTERS.map(([v, l]) => <option key={v} value={v}>{l}{v !== 'all' ? ` · ${items.filter((i) => matchesFlag(v, i)).length}` : ''}</option>)}
+          </select>}
         </div>
       </div>
       {show === 'overrides' ? <OverrideRequests onCount={setNOverrides} /> : <>
       <p className="muted small">Questions flagged <strong>Needs review</strong> and <strong>rejected</strong> ones, with their notes, oldest first.
         Drafts are reviewed in Browse: open a topic and use <kbd>A</kbd> approve · <kbd>R</kbd> reject · <kbd>F</kbd> needs review · <kbd>↓</kbd><kbd>↑</kbd>.
         A rejected question stays; edit it to make a new version.</p>
-      {shown.length === 0 ? <p className="muted">Nothing flagged or rejected.</p> : [...groups.entries()].sort().map(([k, list]) => {
+      {shown.length === 0 ? <p className="muted">{flag !== 'all' ? 'Nothing with this flag.' : 'Nothing flagged or rejected.'}</p> : [...groups.entries()].sort().map(([k, list]) => {
         const [subject, cls] = k.split('|');
         return (
           <div key={k} className="group">
@@ -53,11 +58,12 @@ export function ReviewQueue() {
                 <span className="review-main">
                   <span className="qtext">{i.text}</span>
                   <span className={`note small ${i.status}`}>
-                    {i.status === 'rejected' ? 'Rejected' : '⚑ Needs review'}{i.note ? <>: <strong>{i.note}</strong></> : <span className="muted"> (no note)</span>}
+                    {i.status === 'rejected' ? 'Rejected' : '⚑ Needs review'}{i.note ? <>: <strong>{i.note}</strong></> : i.created_from === 'manual' ? <span className="muted"> (added by hand)</span> : i.created_from === 'upload' ? <span className="muted"> (uploaded from {i.upload_file})</span> : <span className="muted"> (no note)</span>}
                     <span className="muted"> · {i.topic_id}{i.file_key ? ` · ${i.file_key}` : ''} · {age(i.noted_at ?? i.version_created_at)}</span>
                   </span>
                 </span>
                 {i.bank === 'gold' && <span className="tag gold">Gold</span>}
+                <OriginFlags q={i} compact />
                 <span className={`lvl ${i.math_difficulty ?? ''}`}>{i.math_difficulty ?? '—'}</span>
                 <span className="qstatus small">v{i.current_version}{i.approved_version ? ` · approved v${i.approved_version}` : ''}</span>
               </a>

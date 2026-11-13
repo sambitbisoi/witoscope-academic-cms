@@ -55,7 +55,7 @@ export function Home({ grade: routeGrade }: { grade: string | null }) {
           <Jobs />
           {last && (
             <div className="small">
-              Last import: <a href={`#/imports/${last.import_id}`}>#{last.import_id}</a> {last.kind === 'chapter' ? `chapter ${last.chapter_id ?? ''}` : last.kind === 'seed' ? seedLabel(last.file_path) : 'topic lists'}
+              Last import: <a href={`#/imports/${last.import_id}`}>#{last.import_id}</a> {last.kind === 'chapter' ? `chapter ${last.chapter_id ?? ''}` : last.kind === 'seed' ? seedLabel(last.file_path) : last.kind === 'topics' ? 'topic lists' : last.kind === 'upload' ? `question upload ${last.file_path}` : last.kind === 'originality' ? 'originality check' : last.kind}
               {' '}<span className={`badge ${last.result ?? 'running'}`}>{last.result === 'ok' ? 'OK' : last.result === 'partial' ? 'Partial' : last.result === 'failed' ? 'Failed' : 'Running'}</span>
             </div>
           )}
