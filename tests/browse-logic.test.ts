@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  applyFilters, browseHash, countsLabel, sameWording, cloneGroups, classesLabel, distinctTexts, involvementOf, summarize, statusCountsLabel, gapLabel, groupBySet, NO_FILTERS, parseRoute, mapHash, roleOf, roleLabel, showMatches, safeSearch, signatureRows, derivedRows, statusLabel,
+  applyFilters, browseHash, countsLabel, sameWording, cloneGroups, classesLabel, distinctTexts, involvementOf, summarize, statusCountsLabel, gapLabel, groupBySet, NO_FILTERS, parseRoute, mapHash, roleOf, roleLabel, showMatches, rollUp, rollUpTitle, matchesReview, safeSearch, signatureRows, derivedRows, statusLabel,
   subjectOfChapter, type ListQuestion, type TopicStats, type VersionRow,
 } from '../web/src/logic.ts';
 
@@ -191,5 +191,33 @@ describe('PR B helpers', () => {
   it('U15: the multi-class label', () => {
     expect(classesLabel([5, 4, 6, 5])).toBe('Classes 4 · 5 · 6');
     expect(classesLabel([5])).toBeNull();
+  });
+});
+
+describe('review status roll-up (chapter / strand within a class)', () => {
+  const t = (status: 'not_started' | 'in_progress' | 'done', o: { core?: boolean; active?: boolean; achievers?: boolean } = {}) =>
+    ({ status, core: o.core ?? true, active: o.active ?? true, achievers: o.achievers ?? false });
+  it('green when every core topic is done', () => {
+    expect(rollUp([t('done'), t('done')])).toEqual({ state: 'done', done: 2, inProgress: 0, total: 2 });
+  });
+  it('orange when at least one is in progress or done but not all are done', () => {
+    expect(rollUp([t('done'), t('not_started')]).state).toBe('partial');
+    expect(rollUp([t('in_progress'), t('not_started')]).state).toBe('partial');
+    expect(rollUp([t('in_progress'), t('in_progress')]).state).toBe('partial');
+  });
+  it('no icon when nothing has started, or there are no core topics', () => {
+    expect(rollUp([t('not_started'), t('not_started')]).state).toBe('none');
+    expect(rollUp([]).state).toBe('none');
+  });
+  it('ignores extra rows (lower / higher class), retired topics and Achievers rows', () => {
+    expect(rollUp([t('done'), t('not_started', { core: false }), t('in_progress', { core: false })])).toEqual({ state: 'done', done: 1, inProgress: 0, total: 1 });
+    expect(rollUp([t('done'), t('not_started', { active: false })]).state).toBe('done');
+    expect(rollUp([t('done'), t('not_started', { achievers: true })]).state).toBe('done');
+    expect(rollUp([t('done', { core: false })]).state).toBe('none'); // only extra rows done → nothing started here
+  });
+  it('tooltip and filter', () => {
+    expect(rollUpTitle({ state: 'partial', done: 14, inProgress: 2, total: 18 })).toBe('Reviewed 14 of 18 core topics · 2 in progress');
+    expect(rollUpTitle({ state: 'none', done: 0, inProgress: 0, total: 0 })).toBe('No core topics in this class');
+    expect(matchesReview('all', 'done') && matchesReview('done', 'done') && !matchesReview('in_progress', 'done')).toBe(true);
   });
 });

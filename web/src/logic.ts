@@ -93,6 +93,33 @@ export const roleLabel = (homeClass: number, cls: number) => (homeClass === cls 
 export const showMatches = (show: MapShow, role: Role) =>
   show === 'all' || (show === 'extra' ? role !== 'core' : show === role);
 
+// ---------------------------------------------------------------- review status per topic (13 Nov 2026)
+export type ReviewStatus = 'not_started' | 'in_progress' | 'done';
+export const REVIEW_STATUSES: { id: ReviewStatus; label: string; icon: string }[] = [
+  { id: 'not_started', label: 'Not started', icon: '○' },
+  { id: 'in_progress', label: 'In progress', icon: '◐' },
+  { id: 'done', label: 'Done', icon: '✓' },
+];
+export type ReviewFilter = 'all' | ReviewStatus;
+export interface RollUp { state: 'done' | 'partial' | 'none'; done: number; inProgress: number; total: number }
+/**
+ * Roll-up for a chapter or strand within one class: only its CORE topics for that class count
+ * (extra rows from a lower / higher class, retired topics and Achievers rows are ignored).
+ * done = every counted topic done; partial = at least one in progress or done but not all done;
+ * none = nothing started (or nothing to count).
+ */
+export function rollUp(items: { status: ReviewStatus; core: boolean; active: boolean; achievers?: boolean }[]): RollUp {
+  const counted = items.filter((x) => x.core && x.active && !x.achievers);
+  const done = counted.filter((x) => x.status === 'done').length;
+  const inProgress = counted.filter((x) => x.status === 'in_progress').length;
+  const total = counted.length;
+  const state = total > 0 && done === total ? 'done' : done + inProgress > 0 ? 'partial' : 'none';
+  return { state, done, inProgress, total };
+}
+export const rollUpTitle = (r: RollUp) =>
+  r.total === 0 ? 'No core topics in this class' : `Reviewed ${r.done} of ${r.total} core topic${r.total === 1 ? '' : 's'}${r.inProgress ? ` · ${r.inProgress} in progress` : ''}`;
+export const matchesReview = (f: ReviewFilter, s: ReviewStatus) => f === 'all' || f === s;
+
 // ---------------------------------------------------------------- coverage
 export interface TopicStats { n_questions: number; n_simple: number; n_medium: number; n_complex: number; n_gold: number; n_draft: number; n_in_review: number; n_approved: number }
 

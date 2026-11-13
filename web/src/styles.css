@@ -9,6 +9,7 @@
   --navy: #1f2f6b;                      /* U12: chapter names */
   --multi: #0e6e74; --multi-bg: #dff3f2; /* U12/U15: the multi-class pill */
   --sig-bg: #eef3ff; --sig-line: #c9d6f6; --der-bg: #f2f4f7; --der-line: #dde1e8; /* U13 */
+  --rv-partial: #c25e00; --rv-partial-bg: #fff0e0;
   --lower: #8a5a00; --lower-bg: #fff4dc; --lower-line: #e9b949;   /* R1/R2: from a lower class (amber) */
   --higher: #1d4fa8; --higher-bg: #e8f0ff; --higher-line: #7ea2e8; /* R1/R2: from a higher class (blue) */
   --shadow: rgba(16, 24, 40, 0.12);
@@ -28,6 +29,7 @@
     --navy: #a9bcff;
     --multi: #7fd8d2; --multi-bg: #173a3a;
     --sig-bg: #1b2440; --sig-line: #34457a; --der-bg: #20242d; --der-line: #343a48;
+    --rv-partial: #ffab5e; --rv-partial-bg: #3a2614;
     --lower: #f0c36b; --lower-bg: #33280f; --lower-line: #7a5e1e;
     --higher: #9dbcff; --higher-bg: #1a2744; --higher-line: #3c5a99;
     --shadow: rgba(0, 0, 0, 0.45);
@@ -456,3 +458,19 @@ table.map-table tr.warn-row td:first-child { box-shadow: inset 3px 0 0 var(--war
 .book-check-inline.flagged { color: var(--warn); }
 .pill.attention:not(.on) { border-color: var(--warn); color: var(--warn); }
 .qtext-wrap { color: var(--text); }
+
+/* Review status per topic (13 Nov 2026): colour + symbol (✓ done, ◐ in progress) */
+.rv-icon { display: inline-block; font-weight: 700; font-size: 0.85em; margin: 0 4px; line-height: 1; }
+.rv-icon.done { color: var(--ok); }
+.rv-icon.partial { color: var(--rv-partial); }
+.tt-name .rv-icon { margin-left: 0; }
+.review-control { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 8px; }
+.review-control .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.review-control .seg-btn { border: none; border-radius: 0; background: var(--card); color: var(--text); padding: 4px 10px; font-weight: 500; }
+.review-control .seg-btn + .seg-btn { border-left: 1px solid var(--line); }
+.review-control .seg-btn.on.not_started { background: var(--chip); }
+.review-control .seg-btn.on.in_progress { background: var(--rv-partial-bg); color: var(--rv-partial); font-weight: 700; }
+.review-control .seg-btn.on.done { background: var(--ok-bg); color: var(--ok); font-weight: 700; }
+.review-control .review-note { min-width: 180px; flex: 1 1 180px; max-width: 360px; padding: 4px 8px; }
+.small-select { font-size: 0.8rem; padding: 3px 6px; }
+.review-progress { margin: 4px 0; }

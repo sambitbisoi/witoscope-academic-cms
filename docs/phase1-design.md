@@ -59,6 +59,8 @@ All IDs are permanent and never reused. Class is a field, never inferred from an
 
 > **Round 2 (Sambit, 13 Nov 2026):** terminology is **strand → chapter → topic**. The child sees strand, then topic; our chapter is an internal grouping. **R1:** every topic–class link has a role from the topic's home class (its Class View class): **core** (home = this class), **from a lower class** (home < this class) or **from a higher class** (home > this class); views `cms_topic_all_classes` and `cms_topic_class_stats` carry `role` and `home_class` (migration 0027). Browse shows core topics by default, with "Include extra topics (lower / higher class)"; the Level ≤ class display rule (D3) is unchanged.
 
+> **Review status per topic (Sambit, 13 Nov 2026):** `cms_topic_reviews` (topic_id, status not_started / in_progress / done, note, updated_at, updated_by; migration 0028). One status per topic, shared by every class it appears in; manual only, set in Browse with an explicit Save through `cms_set_topic_review` (admin only, logged `review_status` before → after). A chapter or strand within a class rolls up its **core** topics for that class (extra rows, retired topics and Achievers rows are not counted): all done = green ✓, some started = orange ◐, none = no icon.
+
 One "Achievers" topic row per chapter-class (topic_kind = achievers) **[guess: ID scheme for these rows; proposed `ACH-MC19-6`]**.
 
 ### B. Catalogues (tagging vocabulary)

@@ -1,6 +1,6 @@
 // All Browse reads, typed. Everything goes through RLS as the signed-in admin;
 // counts come from the security_invoker views in migration 0010.
-import { safeSearch, SUBJECTS, type ListQuestion, type Subject, type TopicStats, type VersionRow } from './logic';
+import { rollUp, safeSearch, SUBJECTS, type ListQuestion, type ReviewStatus, type RollUp, type Subject, type TopicStats, type VersionRow } from './logic';
 import { supabase } from './supabase';
 
 const must = <T>(r: { data: T | null; error: { message: string } | null }): T => {
@@ -55,6 +55,28 @@ export async function topicsWithClasses(subject: Subject) {
   return topics.map((t) => ({ ...t, classes: [...new Set([t.class, ...(extra.get(t.topic_id) ?? [])])].sort((a, b) => a - b) }));
 }
 
+// ---------------------------------------------------------------- review status per topic (13 Nov 2026)
+export interface TopicReview { topic_id: string; status: ReviewStatus; note: string | null; updated_at: string; updated_by: string | null }
+/** Every topic's review status (a missing topic = not started). */
+export async function topicReviews(): Promise<Map<string, TopicReview>> {
+  const rows = await all<TopicReview>((a, b) => supabase.from('cms_topic_reviews').select('topic_id, status, note, updated_at, updated_by').order('topic_id').range(a, b));
+  return new Map(rows.map((r) => [r.topic_id, r]));
+}
+export const reviewOf = (m: Map<string, TopicReview> | undefined, topicId: string): ReviewStatus => m?.get(topicId)?.status ?? 'not_started';
+/** Home: review progress per subject and class, over each class's core topics (active, not Achievers). */
+export async function reviewProgress(): Promise<{ subject: Subject; cls: number; r: RollUp }[]> {
+  const [topics, reviews] = await Promise.all([
+    all<{ topic_id: string; chapter_id: string; class: number; topic_kind: string; status: string }>((a, b) => supabase.from('cms_topics').select('topic_id, chapter_id, class, topic_kind, status').order('topic_id').range(a, b)),
+    topicReviews(),
+  ]);
+  const out: { subject: Subject; cls: number; r: RollUp }[] = [];
+  for (const sub of SUBJECTS) for (const cls of [1, 2, 3, 4, 5, 6]) {
+    const ts = topics.filter((t) => t.chapter_id.startsWith(`${sub.prefix}C`) && t.class === cls);
+    out.push({ subject: sub.id, cls, r: rollUp(ts.map((t) => ({ status: reviewOf(reviews, t.topic_id), core: true, active: t.status === 'active', achievers: t.topic_kind === 'achievers' }))) });
+  }
+  return out;
+}
+
 /**
  * The Browse tree. For one class (D3): the topics in that class (own or mapped) and their counts
  * under the display rule (questions whose level ≤ the class). For all classes: every topic once.
@@ -68,8 +90,10 @@ export async function tree(subject: Subject, cls: string) {
       : all<ClassStats & { topic_id: string }>((a, b) => supabase.from('cms_topic_class_stats').select('*').like('chapter_id', pre).eq('class', Number(cls)).range(a, b)),
     supabase.from('cms_strands').select('strand_id, name, sort').eq('subject', subject).order('sort'),
   ]);
+  const reviews = await topicReviews();
   const byId = new Map(stats.map((s) => [s.topic_id, s]));
   return {
+    reviews,
     chapters: must<Chapter[]>(chapters),
     strands: must<{ strand_id: string; name: string; sort: number }[]>(strands),
     topics: topics.filter((t) => cls === 'all' || t.classes.includes(Number(cls))).map((t) => ({ ...t, stats: byId.get(t.topic_id) })) as TopicWithStats[],

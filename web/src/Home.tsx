@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { activeJobs, homeStats, lastImport, type HomeStats, type Job, type LastImport } from './api';
+import { activeJobs, homeStats, lastImport, reviewProgress, type HomeStats, type Job, type LastImport } from './api';
 import { seedLabel } from './Imports';
 import { browseHash, SUBJECTS, subjectLabel } from './logic';
 import { Jobs } from './Jobs';
@@ -24,12 +24,14 @@ export function Home({ grade: routeGrade }: { grade: string | null }) {
   const [jobs, setJobs] = useState<Job[] | null>(null);
   const [last, setLast] = useState<LastImport | null | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
+  const [progress, setProgress] = useState<Awaited<ReturnType<typeof reviewProgress>> | null>(null);
 
   useEffect(() => {
     homeStats().then(setStats).catch((e) => setError(e.message));
     // secondary panels: best-effort, never block the page
     activeJobs().then(setJobs).catch(() => setJobs([]));
     lastImport().then(setLast).catch(() => setLast(null));
+    reviewProgress().then(setProgress).catch(() => setProgress(null)); // best effort
   }, []);
   const pick = (g: string) => { try { localStorage.setItem(GRADE_KEY, g); } catch { /* best effort */ } location.hash = g === 'all' ? '#/' : `#/?grade=${g}`; };
 
@@ -84,6 +86,12 @@ export function Home({ grade: routeGrade }: { grade: string | null }) {
                     <div className="muted">{classes} · {grade !== 'all' ? `${t.chapters} chapters · ` : ''}{t.topics} topics</div>
                     <div>{t.questions === 0 ? <span className="muted">Questions: none yet</span> : <>Questions: {t.approved} approved · {t.draft} draft{t.in_review ? ` · ${t.in_review} need review` : ''}</>}</div>
                     {t.gold > 0 && <div className="muted small">Gold set: {t.gold} (reference only)</div>}
+                    {progress && (() => {
+                      const ps = progress.filter((p) => p.subject === s.id && (grade === 'all' || p.cls === Number(grade)));
+                      const done = ps.reduce((n, p) => n + p.r.done, 0), prog = ps.reduce((n, p) => n + p.r.inProgress, 0), total = ps.reduce((n, p) => n + p.r.total, 0);
+                      return <div className="small review-progress" title="Core topics of the class (Achievers rows not counted); set in Browse, topic by topic">
+                        Review progress, {classes} {subjectLabel(s.id)}: <strong>{done} of {total} topics done</strong> · {prog} in progress</div>;
+                    })()}
                     {t.questions > 0 && <span className="chip">All 3 levels: {t.topics_all_levels} of {t.topics_with_questions} topics with questions</span>}
                   </>
                 )}
