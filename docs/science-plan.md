@@ -1,6 +1,6 @@
 # Science plan (13 Nov 2026): content rows, Magnets questions, Science workspace
 
-**Status: plan only. Nothing is built yet.** I'll write code once Sambit confirms this plan (CLAUDE.md, "How Sambit works"). Everything is built and tested on the **local DB**. The real project is touched only after Sambit's OK on a dry-run report.
+**Status (13 Nov 2026): built and imported on the LOCAL database with Sambit's OK (changes to Q2 and Q6 below). The real project is untouched; see §8 and §9.** Everything is built and tested on the **local DB**. The real project is touched only after Sambit's OK on a dry-run report.
 
 Source: `~/WitoScope/ContentResearch/Science/WitoScope_Science_Master.xlsx` (build date 13 Nov 2026; our own words). Book rule: CLAUDE.md, "Book material rule". The cloud gets the master's text plus bare citations (book, class, chapter, printed page). Book PDFs and the `DAV_OCR` text are read only on the Mac, by the originality check.
 
@@ -124,3 +124,66 @@ PRs: **PR A** data + importer + originality (items 1–5, 10); **PR B** screens 
 ## 7. Real project (after local is done; not before Sambit's OK)
 
 The real project is still waiting for its own go-live (migrations 0019–0031). Science comes after it: migration 0032, then `import:science --dry-run` against the real project (`.env.real`), with a report of counts and changes. Nothing is written there until Sambit OKs that report.
+
+### Decisions (Sambit, 13 Nov 2026)
+Q1, Q3, Q4, Q5, Q7, Q8: as proposed. **Q2 changed:** the 12 topic–class links are created as **proposed** links (source "Science master", audited) and appear under Proposed → Topic classes. Approving one there makes the link. Nothing is made active by the importer. **Q6 changed:** all 2,407 content rows get the every-field originality check. On the **real** import, a row at near-copy (≥ 0.85) is held out unless `override_requests.csv` lists that row + field. **Locally** it is imported with an "Originality flagged" badge.
+
+## 8. Local results (13 Nov 2026)
+
+| Item | Result |
+|---|---|
+| Migration | `0032_science.sql` applied locally; `check-migrations` ok; `db:verify` all checks pass (2 new Science citation checks) |
+| Originality (Mac, 1 min 33 s) | All 33 books read: 22 NCERT PDFs (pdftotext) and 11 DAV scans (local OCR in `Science/DAV_OCR`). **Content rows: 2,225 clear · 178 close (0.60–0.85, warning) · 4 near-copy · 0 no book.** Questions: 117 clear · 17 close · 0 near-copy |
+| Near-copy rows (imported locally with the badge, held out of the real import) | C5-01-011 diagram description 0.89 (NCERT C5 Ch1 pdf p6) · C5-01-072 content 0.91 (NCERT C5 Ch1 pdf p16) · C5-06-009 why it matters 1.00 (NCERT C5 Ch6 pdf p3) · C6-08-018 diagram description 0.97 (NCERT C6 Ch8 pdf p3) |
+| Close questions (warning only) | 17: misconception targeted ×9, solution (Explanation) ×5, text ×3 |
+| Import | 33 sources · **2,407 content rows** · 2,640 row citations · **134 questions** (SQ000135–SQ000268, Needs review · Import, attributes pending, 25 image pending) · 293 question citations · **155 direct + 34 supporting links** · 12 proposed topic–class links |
+| Cross-check | The CMS row status equals the sheet's "Question status" on all 2,407 rows (48 with direct questions, 119 not eligible, 2,240 none yet) |
+| Re-run | 0 new · 0 changed · 2,407 unchanged; 134 questions unchanged; 0 new proposals |
+| Note | A first re-run compared the stored score "0.40" with 0.4 and logged 221 spurious `science_row` audit rows (import #2569, local only, score-format diffs only). Fixed (numbers now compare as numbers). The rows are kept: audit history is not deleted |
+| Note | Question IDs start at SQ000135: the dry run used SQ000001–134 (sequences never roll back). IDs are never reused, so the gap is harmless; the real project will show the same gap after its dry run |
+
+### The 12 proposed topic–class links
+
+| Topic | Name | Home class | Row class | Suggested role | Rows |
+|---|---|---|---|---|---|
+| ST0005 | Leaves of different shapes, sizes and textures | 3 | 6 | from a lower class | 4 |
+| ST0034 | Why we wear clothes | 1 | 6 | from a lower class | 5 |
+| ST0090 | Avoiding food waste | 3 | 6 | from a lower class | 2 |
+| ST0106 | Plants and animals need each other | 3 | 6 | from a lower class | 1 |
+| ST0142 | Reading food labels: ingredients and expiry date | 4 | 6 | from a lower class | 3 |
+| ST0151 | Shadows through the day and sundials | 4 | 6 | from a lower class | 4 |
+| ST0162 | Uses of flowers and fruits | 4 | 6 | from a lower class | 6 |
+| ST0207 | Conditions for life on Earth | 5 | 6 | from a lower class | 1 |
+| ST0217 | Seed dispersal: wind, water, animals and bursting | 5 | 6 | from a lower class | 4 |
+| ST0218 | Vegetative propagation: new plants without seeds | 5 | 6 | from a lower class | 1 |
+| ST0241 | Characteristics of living things: respiration, excretion and response | 6 | 5 | from a higher class | 4 |
+| ST0301 | Asteroids and comets | 6 | 5 | from a higher class | 5 |
+
+## 9. Real-project dry-run plan (waits for Sambit's OK; nothing has run there)
+
+The real project is still waiting for its own go-live (migrations 0019–0031, imports, cut-over: `docs/queue-2026-11-12.md`). Science comes **after** go-live.
+
+| Step | Command (on the Mac) | Writes to the real project? |
+|---|---|---|
+| 0 | Backup: `pg_dump` of schema `cms` to `~/WitoScope/CMS-backups/real-cms-<date>-pre-science.{dump,sql}` | No |
+| 1 | `npx tsx --env-file=.env.real scripts/migrate.ts` → applies 0032 (4 tables, columns, views, 2 functions). `check-migrations` runs first | **Yes, schema only.** Needs your OK |
+| 2 | `npx tsx --env-file=.env.real scripts/db-verify.ts` | No |
+| 3 | `npm run check:originality -- --science` (Mac only; already done for today's master) | No |
+| 4 | `npx tsx --env-file=.env.real scripts/import-science.ts --dry-run` → report to `.local-import/science-import-real-dry-run-*.json` | No (one rolled-back transaction; only the SQ sequence advances) |
+| 5 | You review the dry-run report. Expected: 33 sources, **2,403 rows** (4 near-copies held out unless `Science/override_requests.csv` lists row + field), 2,628 row citations, 134 questions, 155 + 34 links, 12 proposed links | — |
+| 6 | Only with your OK: `npx tsx --env-file=.env.real scripts/import-science.ts --confirm-real` (the script refuses a real run without `--confirm-real`) | **Yes** |
+
+Expected held-out rows: C5-01-011, C5-01-072, C5-06-009, C6-08-018. None of them is linked to a question, so no question is blocked. To let one in, add a line to `~/WitoScope/ContentResearch/Science/override_requests.csv` (`file_key,field,reason`, e.g. `C5-01-072,content,"<why the wording must stay>"`) or reword the row in the content map and re-run the check.
+
+## 10. Assumptions and guesses (flagged)
+
+- **[guess]** NCERT source IDs use the local file names (`NCERT-class-6-chapter-4`), with no ncert.nic.in link (Q3).
+- **[inferred]** Legend offsets are "printed = PDF + offset"; the CMS stores `page_offset` as "printed = pdf − offset", so the sign is flipped.
+- **[inferred]** NCERT printed pages run on through a class's book, so a page finds its chapter PDF from the Legend's printed ranges. C5 Ch 10's Seasons' Journal (pp.177–184) counts as part of Ch 10.
+- **[guess]** Content rows get the wording test only, on every field (content, why it matters, misconceptions, diagram description, notes, safety). The numbers rule is off for rows, because a fact's numbers are the book's facts. Questions get the Math rules (numbers rule on text, figure description and options).
+- **[guess]** DAV pages are read around the cited pages ± 3; rows without a DAV citation are compared with the pages their file cites.
+- **[inferred]** Rows written for class N show in class N and above (like question levels, D3); a lower-class row is marked "Class 5 row".
+- **[guess]** Attributes for Science clear "pending" when reading, steps, inhibition (misconception pull), irrelevant info and visual are all set; working memory, strategy and math difficulty are not needed (migration 0032 trigger).
+- **[inferred]** The sheet's Format is stored as `display_format`; the stored format is MCQ-4 or True/False. Explanation → solution 1; Notes → author notes; Q ID → `source_qid` (re-runs match on it).
+- Imported questions are Needs review · Import with originality already recorded (the report is checked against the master's SHA-256), so they are not "originality pending".
+- Science topics hide "+ Question type / + Pattern / + Concept" and the Simple/Medium/Complex mix; no Generate link for Science questions.
