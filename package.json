@@ -29,7 +29,8 @@
     "import:figures": "tsx scripts/import-figures.ts",
     "import:updates": "tsx scripts/import-updates.ts",
     "export:topics": "tsx scripts/export-topics.ts",
-    "curriculum:cutover": "tsx scripts/curriculum-cutover.ts"
+    "curriculum:cutover": "tsx scripts/curriculum-cutover.ts",
+    "import:science": "tsx scripts/import-science.ts"
   },
   "devDependencies": {
     "@types/node": "22.9.0",
