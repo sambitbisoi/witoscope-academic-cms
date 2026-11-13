@@ -4,12 +4,16 @@
 //   npx tsx --env-file=.env.real scripts/upload-figures.ts --run      upload with wrangler under Sambit's Cloudflare login
 //   … --run --from figures/MC34-0016.png                             resume at that key (keys are uploaded in sorted order)
 // A failed upload (e.g. a network blip) is retried once after 5 s; a second failure stops with the key to resume from.
+//   … --verify                                                         fetch every referenced figure back from R2 (6 at a time)
+//                                                                      and compare size and sha256 with the local file
 //
 // Uploads exactly the figures the target database's questions reference (image_path), from the local R2
 // stand-in .r2-local/cms-sources/ where the importers stored them. Refuses any key outside figures/ and
 // anything that is not a PNG we drew (never PDFs, book snapshots or source_images/). Each upload is
 // `npx wrangler r2 object put cms-sources/<key> --file … --content-type image/png --remote` (Phase 4, P17).
-import { execFileSync } from 'node:child_process';
+import { execFile, execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { existsSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { assertCmsOwner, connect } from './lib/db.ts';
@@ -32,6 +36,19 @@ try {
   console.log(`${rows.length} figure keys referenced · ${ok.length} found locally (${mb.toFixed(1)} MB) · ${missing.length} missing · ${bad.length} refused (not figures/*.png)`);
   for (const r of bad) console.log(`  ✗ refused: ${r.image_path}`);
   for (const r of missing.slice(0, 30)) console.log(`  ! not in .r2-local: ${r.image_path}`);
+  if (process.argv.includes('--verify')) {
+    const sha = (b: Buffer) => createHash('sha256').update(b).digest('hex');
+    const get = (key: string) => new Promise<Buffer | null>((res) => execFile('npx', ['wrangler', 'r2', 'object', 'get', `cms-sources/${key}`, '--remote', '--pipe'],
+      { encoding: 'buffer', maxBuffer: 50 * 1024 * 1024 }, (err, out) => res(err ? null : out as Buffer)));
+    const bad: string[] = []; let good = 0, i = 0;
+    const worker = async () => { while (i < ok.length) { const key = ok[i++]!.image_path; let b = await get(key); if (!b) b = await get(key);
+      const local = readFileSync(join(LOCAL, key)); if (b && b.length === local.length && sha(b) === sha(local)) good++; else bad.push(`${key} (${b ? `${b.length} B, local ${local.length} B` : 'not found'})`); } };
+    await Promise.all(Array.from({ length: 6 }, worker));
+    console.log(`Verified in R2: ${good} of ${ok.length} identical to the local file (size and sha256) · ${bad.length} missing or different`);
+    for (const x of bad.slice(0, 50)) console.log(`  ✗ ${x}`);
+    process.exitCode = bad.length ? 1 : 0;
+    process.exit();
+  }
   if (!runIt) { console.log('\nList only. Add --run to upload them with wrangler (Cloudflare login needed).'); process.exit(0); }
   if (bad.length) throw new Error('Refusing to upload: some keys are outside figures/.');
   if (fromKey && !ok.some((r) => r.image_path === fromKey)) throw new Error(`--from ${fromKey}: not one of the referenced figure keys.`);
