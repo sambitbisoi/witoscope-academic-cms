@@ -1,3 +1,4 @@
+import postgres from 'postgres';
 // Chapter importer end to end, against THIS repo's local Supabase (npm run test:db).
 // Uses test-only IDs (strand math-ZY, chapter MC98, topic MT9998, …) and removes them afterwards.
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
@@ -7,13 +8,23 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createHash } from 'node:crypto';
 import { runChapter } from '../scripts/import-chapter.ts';
 import { connect } from '../scripts/lib/db.ts';
-import { LOCAL_CMS_OWNER_URL } from '../scripts/local-bootstrap.ts';
+import { LOCAL_CMS_OWNER_URL, LOCAL_SUPERUSER_URL } from '../scripts/local-bootstrap.ts';
 
 // Database tests write and delete test rows: they ONLY ever use this repo's local
 // container, whatever CMS_DATABASE_URL says (connect() also checks the container).
 import type { ChapterFile, Question } from '../shared/types.ts';
 
 const sql = connect(LOCAL_CMS_OWNER_URL);
+const su = postgres(LOCAL_SUPERUSER_URL, { max: 1, onnotice: () => {} });
+/** cms_set_status 'approve' as the admin (the near-copy rule lives in the SQL). */
+async function asAdminApprove(questionId: string, versionNo: number) {
+  const [{ id }] = await sql`select value #>> '{}' as id from cms.cms_config where key = 'admin_user_id'` as unknown as [{ id: string }];
+  return su.begin(async (tx) => {
+    await tx.unsafe('set local role authenticated');
+    await tx`select set_config('request.jwt.claims', ${JSON.stringify({ sub: id, role: 'authenticated' })}, true)`;
+    return tx`select cms.cms_set_status(${questionId}, ${versionNo}, 'approve', null, false)`;
+  });
+}
 const dir = mkdtempSync(join(tmpdir(), 'cms-chapter-test-'));
 
 const STRATEGY_TYPES = ['Pattern', 'Work backwards', 'Table / list', 'Cases', 'Guess and check', 'Draw / bar model', 'Eliminate',
@@ -74,7 +85,7 @@ beforeAll(async () => {
   await sql`insert into cms.cms_misconceptions (misconception_id, concept_id, description) values ('G6-M-ZZZ1', 'G6-ZZZ-C1', 'Test misconception')`;
   await sql`insert into cms.cms_typical_sets (typical_set_id, subject, class, chapter_id, topic_id, name) values ('TS-G6-ZZ-TEST', 'math', 6, 'MC98', 'MT9998', 'Test set')`;
 });
-afterAll(async () => { await cleanup(); await sql.end(); });
+afterAll(async () => { await cleanup(); await sql.end(); await su.end(); });
 
 async function state() {
   const [q] = await sql`select * from cms.cms_questions where file_key = 'MC98-0001'`;
@@ -266,6 +277,35 @@ describe('chapter importer', () => {
     }), 'import');
     expect(outcome(r).result).toBe('blocked');
     expect(r.problems).toContainEqual({ level: 'error', key: 'MC98-0001', message: 'near-copy of a book: N6-01-004 (similarity 0.93, same numbers in the same order); rewrite it with new wording and numbers' });
+  });
+
+  // Go-live decision (Sambit, 13 Nov 2026): a near-copy comes in as a draft ONLY with an override request for that question + field.
+  const nearInOptions = (rep: Record<string, unknown>, fields = [{ field: 'options', result: 'near_copy' }]) => {
+    (rep.questions as Record<string, unknown>[])[0] = { key: 'MC98-0001', result: 'near_copy', similarity: 0.31, same_numbers: true, closest_ref: 'N6-01-004', field: 'options',
+      fields: fields.map((x) => ({ ...x, similarity: 0.31, same_numbers: true, closest_ref: 'N6-01-004' })) };
+  };
+  it('override request for that question + field → the near-copy comes in as a draft, its near-copy check recorded (blocked from approval)', async () => {
+    const f = baseFile(); q1(f).text = `${q1(f).text} (override probe)`;
+    const r = await runChapter(sql, withReport(f, (rep) => nearInOptions(rep)), 'import', false, { overrideRequests: new Set(['MC98-0001|options']) });
+    expect(outcome(r).result).not.toBe('blocked');
+    expect(r.problems).toContainEqual(expect.objectContaining({ level: 'warning', key: 'MC98-0001', message: expect.stringMatching(/let in as a draft because override_requests\.csv asks for an override of this field/) }));
+    const [v] = await sql`select v.status, c.result, c.field from cms.cms_question_versions v join cms.cms_originality_checks c on c.version_id = v.version_id
+      where v.question_id = ${outcome(r).question_id!} and v.version_no = ${outcome(r).version!} order by c.check_id desc limit 1`;
+    expect(v).toMatchObject({ status: 'draft', result: 'near_copy', field: 'options' });
+    await expect(asAdminApprove(outcome(r).question_id!, outcome(r).version!)).rejects.toThrow(/near-copy/);
+  });
+  it('a request for another field, another question, or only one of two near-copy fields → still blocked', async () => {
+    for (const [allow, fields] of [
+      [['MC98-0001|figure description'], undefined],
+      [['MC98-0002|options'], undefined],
+      [['MC98-0001|options'], [{ field: 'options', result: 'near_copy' }, { field: 'text', result: 'near_copy' }]],
+    ] as [string[], { field: string; result: string }[] | undefined][]) {
+      const f = baseFile(); q1(f).text = `${q1(f).text} (override probe ${allow.join(',')} ${fields?.length ?? 1})`;
+      const r = await runChapter(sql, withReport(f, (rep) => nearInOptions(rep, fields)), 'validate', false, { overrideRequests: new Set(allow) });
+      expect(outcome(r).result).toBe('blocked');
+    }
+    const f = baseFile(); q1(f).text = `${q1(f).text} (no list)`;
+    expect(outcome(await runChapter(sql, withReport(f, (rep) => nearInOptions(rep)), 'validate')).result).toBe('blocked');
   });
 
   it('an old 1.0 report is refused (re-run the check)', async () => {

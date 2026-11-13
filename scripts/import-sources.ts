@@ -1,4 +1,5 @@
-// npm run import:sources [-- --dry-run]
+// npm run import:sources [-- --dry-run] [--math <xlsx>] [--science <xlsx>] [--english <xlsx>]
+// (the flags read other workbooks, e.g. the archived final workbooks for the real project's go-live)
 //
 // Registers every NCERT chapter PDF named in the topic workbooks' "NCERT (CBSE)"
 // sheets as a cms_sources row (ID = NCERT-<pdf file stem>, url = the public NCERT
@@ -17,10 +18,11 @@ import { readWorkbook } from './lib/xlsx.ts';
 
 const dryRun = process.argv.includes('--dry-run');
 const CR = join(homedir(), 'WitoScope', 'ContentResearch');
+const arg = (flag: string) => { const i = process.argv.indexOf(flag); return i >= 0 ? process.argv[i + 1] : undefined; };
 const FILES: Record<Subject, string> = {
-  math: join(CR, 'Math', 'WitoScope_Math_Topics_Class1-6.xlsx'),
-  science: join(CR, 'Science', 'WitoScope_Science_Topics_Class1-6.xlsx'),
-  grammar: join(CR, 'English', 'WitoScope_English_Grammar_Topics_Class1-6.xlsx'),
+  math: arg('--math') ?? join(CR, 'Math', 'WitoScope_Math_Topics_Class1-6.xlsx'),
+  science: arg('--science') ?? join(CR, 'Science', 'WitoScope_Science_Topics_Class1-6.xlsx'),
+  grammar: arg('--english') ?? join(CR, 'English', 'WitoScope_English_Grammar_Topics_Class1-6.xlsx'),
 };
 
 const sql = connect();

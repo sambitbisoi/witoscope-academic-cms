@@ -27,12 +27,15 @@ import { FolderBucket } from './lib/r2-local.ts';
 import { upsertCatalogue } from './lib/upsert.ts';
 import {
   convertPipelineFile, parseKeyFixes, parseOverrides, parseLevels, parseQuestionSettings, parseSettings, parseTopicClasses, type Problem,
+  overrideAllowList,
 } from './lib/updates.ts';
 import { PIPELINE_ROOT } from './lib/local-import.ts';
 import { STAGE_DIR } from './stage-pipeline.ts';
 
 type Sql = ReturnType<typeof connect>;
 type Tx = postgres.TransactionSql;
+/** the folder being imported (runUpdates sets it); its override_requests.csv lets listed near-copies in as drafts */
+let currentDir = '';
 export const UPDATES_DIR = resolve(process.env.CMS_UPDATES_DIR ?? join(homedir(), 'WitoScope', 'ContentResearch', 'CMS-updates'));
 // Order (data thread README, 12 Nov 2026): key fixes and rewrites come before levels and settings, which already use the new keys.
 const CSV_ORDER = ['settings_catalogue.csv', 'topic_classes.csv', 'question_levels.csv', 'question_settings.csv', 'key_fixes.csv'] as const;
@@ -139,7 +142,9 @@ async function checkAndImport(sql: Sql, staged: string, dryRun: boolean): Promis
   writeFileSync(reportPathFor(staged), JSON.stringify(rep, null, 2) + '\n');
   const originality: Record<string, number> = {};
   for (const q of rep.questions) originality[q.result] = (originality[q.result] ?? 0) + 1;
-  return { report: await runChapter(sql, staged, dryRun ? 'validate' : 'import'), originality };
+  // 13 Nov 2026: a near-copy with an override request for that question + field comes in as a draft (blocked from approval)
+  const orq = join(currentDir, 'override_requests.csv');
+  return { report: await runChapter(sql, staged, dryRun ? 'validate' : 'import', false, { overrideRequests: existsSync(orq) ? overrideAllowList(orq) : undefined }), originality };
 }
 
 async function rewrites(sql: Sql, dir: string, dryRun: boolean): Promise<FileResult[]> {
@@ -233,9 +238,11 @@ async function overrides(sql: Sql, dir: string, dryRun: boolean): Promise<FileRe
   return out;
 }
 
-export async function runUpdates(sql: Sql, dir = UPDATES_DIR, opts: { dryRun?: boolean; only?: string[] } = {}): Promise<FileResult[]> {
+export async function runUpdates(sql: Sql, dir = UPDATES_DIR, opts: { dryRun?: boolean; only?: string[]; goLive?: boolean } = {}): Promise<FileResult[]> {
+  currentDir = dir;
   const host = new URL(targetUrl()).hostname;
-  if (host !== '127.0.0.1' && host !== 'localhost') throw new Error('import:updates runs against the local database only (queue 12 Nov 2026).');
+  // local only, except at go-live (scripts/golive.ts passes --go-live for the real project, with Sambit's OK)
+  if (host !== '127.0.0.1' && host !== 'localhost' && !opts.goLive) throw new Error('import:updates runs against the local database only (queue 12 Nov 2026); go-live passes --go-live.');
   const want = (n: string) => !opts.only?.length || opts.only.includes(n);
   const out: FileResult[] = [];
   const has = (n: string) => want(n) && existsSync(join(dir, n));
@@ -258,7 +265,7 @@ if (import.meta.filename === process.argv[1]) {
   const sql = connect();
   try {
     await assertCmsOwner(sql);
-    const results = await runUpdates(sql, dir, { dryRun, only });
+    const results = await runUpdates(sql, dir, { dryRun, only, goLive: args.includes('--go-live') });
     if (!results.length) console.log(`Nothing to import in ${short(dir)}.`);
     for (const r of results) {
       console.log(`\n${short(r.file)}${dryRun ? ' (DRY RUN — nothing saved)' : r.importId ? ` · import #${r.importId}` : ''} → ${r.result.toUpperCase()}`);

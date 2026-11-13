@@ -28,6 +28,7 @@ import type { DerivedConfig } from './lib/v10-config.ts';
 import { questionFromDb } from '../shared/fromDb.ts';
 import { loadBundle } from './lib/bundle.ts';
 import { readOriginality } from './lib/originality-report.ts';
+import { overrideAllowList } from './lib/updates.ts';
 
 type Sql = ReturnType<typeof connect>;
 type Tx = postgres.TransactionSql;
@@ -169,7 +170,7 @@ export async function applyTypo(tx: Tx, versionId: number, questionId: string, q
 // ---------------------------------------------------------------- main
 class Rollback extends Error {}
 
-export async function runChapter(sql: Sql, filePath: string, mode: 'validate' | 'import', forceNew = false): Promise<ChapterReport> {
+export async function runChapter(sql: Sql, filePath: string, mode: 'validate' | 'import', forceNew = false, opts: { overrideRequests?: Set<string> } = {}): Promise<ChapterReport> {
   const abs = resolve(filePath);
   const raw = readFileSync(abs);
   const fileHash = createHash('sha256').update(raw).digest('hex');
@@ -178,7 +179,7 @@ export async function runChapter(sql: Sql, filePath: string, mode: 'validate' | 
   const shown = rel.startsWith('..') ? abs.replace(homedir(), '~') : rel;
   const report: ChapterReport = { file: shown, mode, importId: null, result: 'failed', problems: [], outcomes: [], counts: {} };
   // the local originality check's report (citations and scores only), if it was run
-  const orig = readOriginality(abs, fileHash);
+  const orig = readOriginality(abs, fileHash, opts.overrideRequests);
 
   let data: unknown;
   try { data = JSON.parse(raw.toString('utf8')); } catch (e) {
@@ -381,13 +382,14 @@ export function printReport(r: ChapterReport) {
 if (import.meta.filename === process.argv[1]) {
   const [mode, path, ...rest] = process.argv.slice(2);
   if ((mode !== 'validate' && mode !== 'import') || !path) {
-    console.error('usage: npm run chapter -- validate|import <file.json> [--force-new-version]');
+    console.error('usage: npm run chapter -- validate|import <file.json> [--force-new-version] [--override-requests <override_requests.csv>]');
     process.exit(1);
   }
   const sql = connect();
   try {
     await assertCmsOwner(sql);
-    const r = await runChapter(sql, path, mode, rest.includes('--force-new-version'));
+    const orq = rest.includes('--override-requests') ? rest[rest.indexOf('--override-requests') + 1] : undefined;
+    const r = await runChapter(sql, path, mode, rest.includes('--force-new-version'), { overrideRequests: orq ? overrideAllowList(orq) : undefined });
     printReport(r);
     process.exitCode = r.result === 'failed' ? 1 : 0;
   } finally {

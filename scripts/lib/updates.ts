@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 // The "CMS-updates" file contracts (docs/queue-2026-11-12.md, section "File contracts"): pure
 // parsing and checks, no database. The importer (scripts/import-updates.ts) applies them.
 //   question_levels.csv     file_key, level, source_file, source_field
@@ -186,4 +187,12 @@ export function parseOverrides(text: string, file = 'override_requests.csv') {
     rows.push({ file_key: v.file_key!, field: v.field, reason: v.reason });
   }
   return { rows, problems };
+}
+
+/** "<file key>|<field>" for every valid row of an override_requests.csv: near-copies the importer may let in as drafts (13 Nov 2026). */
+export function overrideAllowList(path: string): Set<string> {
+  const p = parseOverrides(readFileSync(path, 'utf8'));
+  const bad = p.problems.filter((x) => x.level === 'error');
+  if (bad.length) throw new Error(`${path}: ${bad.map((x) => `${x.where}: ${x.message}`).join('; ')}`);
+  return new Set(p.rows.map((r) => `${r.file_key}|${r.field}`));
 }
