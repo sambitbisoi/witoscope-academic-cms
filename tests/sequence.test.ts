@@ -1,6 +1,6 @@
 // Sequencing (13 Nov 2026): order and numbering per class, no crossing, extras and Achievers last.
 import { describe, expect, it } from 'vitest';
-import { buildSequence, moveWithin, numbered, numbersOf, type SeqOrders, type SeqTopic } from '../shared/sequence.ts';
+import { buildSequence, extraAchievers, moveWithin, numbered, numbersOf, topicRole, type SeqOrders, type SeqTopic } from '../shared/sequence.ts';
 
 const strands = [{ strand_id: 'math-NUM', name: 'Numbers & Place Value', sort: 1 }, { strand_id: 'math-OPS', name: 'Operations', sort: 2 }];
 const chapters = [
@@ -54,5 +54,29 @@ describe('moving within one list (no crossing)', () => {
     expect(moveWithin(['a', 'b', 'c', 'd'], 3, 0)).toEqual(['d', 'a', 'b', 'c']);
     expect(moveWithin(['a', 'b', 'c'], 0, 9)).toEqual(['b', 'c', 'a']);
     expect(moveWithin(['a', 'b'], 1, 1)).toEqual(['a', 'b']);
+  });
+});
+
+describe('extra Achievers rows (0034, Sambit 14 Nov 2026)', () => {
+  // MC08 is in class 3 only through HIGH2's link (home class 5) → its class-3 Achievers row is extra
+  const ts = [...topics, t('HIGH2', 'MC08', 5, { classes: [3, 5] }), t('ACH-MC08-3', 'MC08', 3, { topic_kind: 'achievers' }), t('ACH-MC08-5', 'MC08', 5, { topic_kind: 'achievers' }),
+    t('C3', 'MC03', 3, { seq: 1 }), t('ACH-MC03-3', 'MC03', 3, { topic_kind: 'achievers' })];
+  const f3 = (includeExtra: boolean) => buildSequence(3, strands, chapters, ts, none, { includeExtra }).flatMap((s) => [`${s.no ?? '-'} ${s.strand.strand_id}`,
+    ...s.chapters.flatMap((c) => [`${c.no ?? '-'} ${c.chapter.chapter_id}`, ...c.topics.map((x) => `${x.no ?? '-'} ${x.topic.topic_id}`)])]);
+  it('an Achievers row is extra when its chapter has no active topic with that home class', () => {
+    expect([...extraAchievers(ts)].sort()).toEqual(['ACH-MC08-3']);
+    expect(topicRole(ts.find((x) => x.topic_id === 'ACH-MC08-3')!, 3, ts)).toBe('higher');
+    expect(topicRole(ts.find((x) => x.topic_id === 'ACH-MC03-3')!, 3, ts)).toBe('core');
+    expect(topicRole(ts.find((x) => x.topic_id === 'ACH-MC08-5')!, 5, ts)).toBe('core');
+  });
+  it('extra topics off: the chapter does not appear; on: it appears unnumbered, with its linked topic and Achievers row', () => {
+    expect(f3(false)).toEqual(['1 math-NUM', '1.1 MC03', '1.1.1 C3', '- ACH-MC03-3', '1.2 MC02', '1.2.1 LOW']);
+    expect(f3(false).join(' ')).not.toMatch(/MC08/);
+    const on = f3(true);
+    expect(on.slice(on.indexOf('- MC08'))).toEqual(['- MC08', '- HIGH2', '- ACH-MC08-3']);
+    expect(numbersOf(buildSequence(3, strands, chapters, ts, none, { includeExtra: true })).chapter.has('MC08')).toBe(false);
+  });
+  it('a retired topic does not make its chapter present', () => {
+    expect(extraAchievers([t('A', 'MC02', 4, { status: 'retired' }), t('ACH-MC02-4', 'MC02', 4, { topic_kind: 'achievers' })])).toEqual(new Set(['ACH-MC02-4']));
   });
 });

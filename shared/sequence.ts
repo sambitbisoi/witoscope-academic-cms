@@ -4,7 +4,8 @@
 //
 // Rules: only CORE rows are sequenced (a topic whose home class is this class). Extra rows (a topic
 // from a lower / higher class) come after the core ones, unnumbered. Achievers rows are always last in
-// their chapter, unnumbered. Retired topics and chapters are hidden (they keep their stored slot).
+// their chapter, unnumbered. An Achievers row of a chapter that is in this class only through links is extra (0034).
+// Retired topics and chapters are hidden (they keep their stored slot).
 // Items with no stored position, or stored under another strand / chapter (they moved), go to the end.
 
 export interface SeqStrand { strand_id: string; name: string; sort: number }
@@ -22,6 +23,22 @@ export interface SeqStrandNode { strand: SeqStrand; no: string | null; core: boo
 
 const BIG = 1e9;
 
+type AchLike = { topic_id: string; chapter_id: string; class: number; status: string; topic_kind: string };
+/** 0034 (Sambit, 14 Nov 2026): an Achievers row for class N is EXTRA when its chapter has no active normal topic with
+ *  home class N (the chapter is in class N only through approved links). Extra Achievers rows show only with the extra
+ *  topics, and give their chapter no place in the class's numbering. The others stay core, as before. */
+export function extraAchievers(topics: AchLike[]): Set<string> {
+  const home = new Set(topics.filter((t) => t.topic_kind === 'normal' && t.status === 'active').map((t) => `${t.chapter_id}|${t.class}`));
+  return new Set(topics.filter((t) => t.topic_kind === 'achievers' && !home.has(`${t.chapter_id}|${t.class}`)).map((t) => t.topic_id));
+}
+/** The role of a topic in class N, with extra Achievers rows as extra: "higher" when the chapter has a topic whose home
+ *  class is above N (its links come down from there), else "lower". */
+export function topicRole(t: AchLike, cls: number, topics: AchLike[], extra: Set<string> = extraAchievers(topics)): 'core' | 'lower' | 'higher' {
+  if (t.class !== cls) return t.class < cls ? 'lower' : 'higher';
+  if (!extra.has(t.topic_id)) return 'core';
+  return topics.some((x) => x.chapter_id === t.chapter_id && x.topic_kind === 'normal' && x.status === 'active' && x.class > cls) ? 'higher' : 'lower';
+}
+
 /** Sort by stored position (when valid), then the fallback keys; items without a position go after. */
 function ordered<T>(items: T[], pos: (x: T) => number | undefined, ...fallback: ((x: T) => number | string)[]): T[] {
   return [...items].sort((a, b) => {
@@ -35,8 +52,10 @@ function ordered<T>(items: T[], pos: (x: T) => number | undefined, ...fallback: 
 /** The class's tree in order, with numbers. includeExtra adds topics from lower / higher classes (unnumbered). */
 export function buildSequence(cls: number, strands: SeqStrand[], chapters: SeqChapter[], topics: SeqTopic[], orders: SeqOrders, opts: { includeExtra?: boolean } = {}): SeqStrandNode[] {
   const active = topics.filter((t) => t.status === 'active');
-  const core = active.filter((t) => t.class === cls);
-  const extra = opts.includeExtra ? active.filter((t) => t.class !== cls && (t.classes ?? []).includes(cls)) : [];
+  const extraAch = extraAchievers(topics);
+  const core = active.filter((t) => t.class === cls && !extraAch.has(t.topic_id));
+  // extra: topics from another class linked to this one, and (0034) Achievers rows of chapters present here only through links
+  const extra = opts.includeExtra ? active.filter((t) => (t.class !== cls && (t.classes ?? []).includes(cls)) || (t.class === cls && extraAch.has(t.topic_id))) : [];
   const chapterOf = new Map(chapters.map((c) => [c.chapter_id, c]));
   const tPos = new Map(orders.topics.filter((o) => o.class === cls).map((o) => [o.topic_id, o]));
   const cPos = new Map(orders.chapters.filter((o) => o.class === cls).map((o) => [o.chapter_id, o]));
@@ -53,13 +72,14 @@ export function buildSequence(cls: number, strands: SeqStrand[], chapters: SeqCh
     const normal = ordered(e.core.filter((t) => t.topic_kind !== 'achievers'),
       (t) => { const o = tPos.get(t.topic_id); return o && o.chapter_id === t.chapter_id ? o.position : undefined; }, (t) => t.seq ?? BIG, (t) => t.topic_id);
     const ach = e.core.filter((t) => t.topic_kind === 'achievers');
-    const ext = [...e.extra].sort((a, b) => a.class - b.class || (a.seq ?? BIG) - (b.seq ?? BIG) || a.topic_id.localeCompare(b.topic_id));
+    const ext = [...e.extra].filter((t) => t.topic_kind !== 'achievers').sort((a, b) => a.class - b.class || (a.seq ?? BIG) - (b.seq ?? BIG) || a.topic_id.localeCompare(b.topic_id));
+    const extAch = e.extra.filter((t) => t.topic_kind === 'achievers');
     const isCore = e.core.length > 0;
     chapterNodes.set(chId, {
       chapter: c, no: null, core: isCore, firstSeq: firstSeq(e.core),
       topics: [...normal.map((t) => ({ topic: t, no: null, role: 'core' as SeqRole })),
         ...ext.map((t) => ({ topic: t, no: null, role: (t.class < cls ? 'lower' : 'higher') as SeqRole })),
-        ...ach.map((t) => ({ topic: t, no: null, role: 'achievers' as SeqRole }))],
+        ...[...ach, ...extAch].map((t) => ({ topic: t, no: null, role: 'achievers' as SeqRole }))],
     });
   }
 

@@ -5,11 +5,11 @@
 // links open Browse there.
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { all, reviewOf, seqOrders, topicReviews, topicsWithClasses, type ClassStats, type TopicWithStats } from './api';
-import { buildSequence, numbered, numbersOf, type SeqOrders } from '../../shared/sequence.ts';
+import { buildSequence, extraAchievers, numbered, numbersOf, topicRole, type SeqOrders } from '../../shared/sequence.ts';
 import { ReorderPanel, type ReorderLevel } from './Reorder';
 import { Id } from './Id';
 import { ReviewFilterSelect, RollUpIcon, TopicReviewIcon } from './ReviewStatus';
-import { browseHash, gapLabel, mapHash, matchesReview, mixLabel, roleLabel, roleOf, rollUp, safeSearch, showMatches, type ReviewFilter, type ReviewStatus, type RollUp, SUBJECTS, subjectLabel, type MapShow, type Role, type Subject } from './logic';
+import { browseHash, gapLabel, mapHash, matchesReview, mixLabel, roleLabel, rollUp, safeSearch, showMatches, type ReviewFilter, type ReviewStatus, type RollUp, SUBJECTS, subjectLabel, type MapShow, type Role, type Subject } from './logic';
 import { supabase } from './supabase';
 import { contentRowStats } from './scienceApi';
 import { CurriculumForm, curriculumOwner, type Kind } from './CurriculumForms';
@@ -49,12 +49,13 @@ async function load(subjects: Subject[]) {
     out.strands.push(...sts.map((x) => ({ ...x, subject })));
     out.seq.set(subject, { topics, chapters: ch, strands: sts, orders });
     const st = new Map(stats.map((x) => [`${x.topic_id}|${x.class}`, x]));
+    const extraAch = extraAchievers(topics); // 0034: Achievers rows of chapters in a class only through links are extra
     for (const t of topics) {
       names.set(t.topic_id, t);
       if (t.status !== 'active') continue;
       const chapter = ch.find((x) => x.chapter_id === t.chapter_id);
       const strand = sts.find((x) => x.strand_id === chapter?.strand_id);
-      for (const c of t.classes) out.rows.push({ topic: t, subject, cls: c, role: roleOf(t.class, c), review: reviewOf(reviews, t.topic_id), stats: st.get(`${t.topic_id}|${c}`), chapter, strand, content: covOf.get(`${t.topic_id}|${c}`) });
+      for (const c of t.classes) out.rows.push({ topic: t, subject, cls: c, role: topicRole(t, c, topics, extraAch), review: reviewOf(reviews, t.topic_id), stats: st.get(`${t.topic_id}|${c}`), chapter, strand, content: covOf.get(`${t.topic_id}|${c}`) });
     }
   }
   for (const x of pre) {
@@ -271,7 +272,7 @@ export function CurriculumMap(r: R) {
                     {gap && <div className="gap small">⚠ {gap}</div>}</>}</>}
                     {x.content && <div className="muted small" title="Science content rows written for this class: with direct questions · supporting only · none yet · not eligible">
                       {x.content.n_rows} rows · ✓ {x.content.n_direct} · ✓ {x.content.n_supporting} supp. · ⚠ {x.content.n_none} · ○ {x.content.n_not_eligible}</div>}</td>
-                  <td className="nowrap">{x.role === 'core' ? <span className="muted">core</span> : <span className={`role-tag ${x.role}`}>{roleLabel(x.topic.class, x.cls)}</span>}</td>
+                  <td className="nowrap">{x.role === 'core' ? <span className="muted">core</span> : <span className={`role-tag ${x.role}`}>{x.topic.topic_kind === 'achievers' ? 'extra · via linked topics' : roleLabel(x.topic.class, x.cls)}</span>}</td>
                   <td className="small">{pre.length === 0 ? <span className="muted">—</span> : pre.map((p, i) => <span key={p.id}>{i > 0 && ', '}
                     <a href={browseHash({ subject: x.subject, cls: String(p.class || x.cls), ch: p.chapter_id, topic: p.id })}>{p.name}</a> <Id>{p.id}</Id></span>)}</td>
                 </tr>

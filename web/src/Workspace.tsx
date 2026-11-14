@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { reviewOf, topicData, tree, type Chapter, type QuestionRow, type TopicReview, type TopicWithStats } from './api';
 import { AddQuestionForm, BulkUpload, OriginFlags } from './AddQuestions';
-import { buildSequence, numbered, numbersOf } from '../../shared/sequence.ts';
+import { buildSequence, extraAchievers, numbered, numbersOf, topicRole } from '../../shared/sequence.ts';
 import { Id } from './Id';
 import { ReviewControl, ReviewFilterSelect, RollUpIcon, TopicReviewIcon } from './ReviewStatus';
 import {
-  applyFilters, browseHash, classesLabel, FLAG_FILTERS, matchesReview, roleOf, rollUp, type ReviewFilter, type RollUp, cloneGroups, countsLabel, distinctTexts, sameWording, type CloneInfo, gapLabel, groupBySet, involvementOf, mixLabel, NO_FILTERS, statusCountsLabel, statusLabel,
+  applyFilters, browseHash, classesLabel, FLAG_FILTERS, matchesReview, rollUp, type ReviewFilter, type RollUp, cloneGroups, countsLabel, distinctTexts, sameWording, type CloneInfo, gapLabel, groupBySet, involvementOf, mixLabel, NO_FILTERS, statusCountsLabel, statusLabel,
   subjectLabel, SUBJECTS, summarize, type Filters, type Subject,
 } from './logic';
 import { EditForm } from './EditForm';
@@ -75,8 +75,11 @@ export function Workspace(r: R) {
   }, [step, r.q, r.v, r.edit, panes, setPanes]);
 
   // R1: the topics this class shows (core, plus extra ones when asked); the selected topic always shows
-  const shownTopics = useMemo(() => (data?.topics ?? []).filter((t) => r.cls === 'all' || extra || t.class === Number(r.cls) || t.topic_id === r.topic), [data, r.cls, extra, r.topic]);
-  const nExtra = useMemo(() => (r.cls === 'all' ? 0 : (data?.topics ?? []).filter((t) => t.class !== Number(r.cls)).length), [data, r.cls]);
+  // 0034: an Achievers row of a chapter that is in this class only through links is extra too
+  const extraAch = useMemo(() => extraAchievers(data?.topics ?? []), [data]);
+  const isCoreHere = useCallback((t: TopicWithStats) => r.cls === 'all' || (t.class === Number(r.cls) && !extraAch.has(t.topic_id)), [r.cls, extraAch]);
+  const shownTopics = useMemo(() => (data?.topics ?? []).filter((t) => r.cls === 'all' || extra || isCoreHere(t) || t.topic_id === r.topic), [data, r.cls, extra, r.topic, isCoreHere]);
+  const nExtra = useMemo(() => (r.cls === 'all' ? 0 : (data?.topics ?? []).filter((t) => !isCoreHere(t)).length), [data, r.cls, isCoreHere]);
   const chapterOf = useMemo(() => new Map((data?.chapters ?? []).map((c) => [c.chapter_id, c])), [data]);
   // Sequencing (13 Nov 2026): the class's stored order and its numbers (1. / 1.2 / 1.2.3); none for "All classes"
   const seq = useMemo(() => (data && r.cls !== 'all'
@@ -96,11 +99,11 @@ export function Workspace(r: R) {
   const rolls = useMemo(() => {
     const ch = new Map<string, RollUp>(); const st = new Map<string, RollUp>();
     if (!data) return { ch, st };
-    const items = data.topics.map((t) => ({ t, x: { status: reviewOf(data.reviews, t.topic_id), core: r.cls === 'all' || t.class === Number(r.cls), active: t.status === 'active', achievers: t.topic_kind === 'achievers' } }));
+    const items = data.topics.map((t) => ({ t, x: { status: reviewOf(data.reviews, t.topic_id), core: isCoreHere(t), active: t.status === 'active', achievers: t.topic_kind === 'achievers' } }));
     for (const c of data.chapters) ch.set(c.chapter_id, rollUp(items.filter((i) => i.t.chapter_id === c.chapter_id).map((i) => i.x)));
     for (const x of data.strands) { const ids = new Set(data.chapters.filter((c) => c.strand_id === x.strand_id).map((c) => c.chapter_id)); st.set(x.strand_id, rollUp(items.filter((i) => ids.has(i.t.chapter_id)).map((i) => i.x))); }
     return { ch, st };
-  }, [data, r.cls]);
+  }, [data, r.cls, isCoreHere]);
   // R3: every branch is open by default (Sambit, 13 Nov); a branch closed with its arrow stays closed (remembered)
   const selChapter = topicChapter(data?.topics, r.topic);
   // a newly selected topic re-opens its branch even if it was closed before
@@ -125,7 +128,7 @@ export function Workspace(r: R) {
       </div>
       {error && <p className="error">Couldn't load topics: {error}</p>}
       {!data && !error && <p className="muted">Loading…</p>}
-      {data && <Tree strands={strands.filter((x) => !r.strand || x.strand_id === r.strand)} chapters={chapters.filter((c) => !r.ch || c.chapter_id === r.ch)} topics={shownTopics} cls={r.cls}
+      {data && <Tree strands={strands.filter((x) => !r.strand || x.strand_id === r.strand)} chapters={chapters.filter((c) => !r.ch || c.chapter_id === r.ch)} topics={shownTopics} extraAch={extraAch} cls={r.cls}
         selected={r.topic} gapsOnly={gapsOnly} seq={seq} reviews={data.reviews} reviewFilter={reviewFilter} rolls={rolls} isOpen={isOpen} onToggle={toggle} onPick={(t) => { setOverlay(false); go({ topic: t, q: null, v: null, row: null, chview: false }); }}
         onChapterView={r.subject === 'science' ? (ch) => { setOverlay(false); go({ ch, topic: null, q: null, v: null, row: null, chview: true }); } : undefined} chview={r.chview ? r.ch : null} />}
     </>
@@ -230,8 +233,8 @@ const topicChapter = (topics: TopicWithStats[] | undefined, id: string | null) =
 const qsLabel = (n: number) => `${n} Q${n === 1 ? '' : 's'}`;
 
 /** R3: Strand ▸ Chapter ▸ Topic; each branch opens and closes with the arrow on its left. */
-function Tree({ strands, chapters, topics, cls, selected, gapsOnly, seq, reviews, reviewFilter, rolls, isOpen, onToggle, onPick, onChapterView, chview }: {
-  strands: { strand_id: string; name: string }[]; chapters: Chapter[]; seq: ReturnType<typeof numbersOf> | null; topics: TopicWithStats[]; cls: string; selected: string | null;
+function Tree({ strands, chapters, topics, extraAch, cls, selected, gapsOnly, seq, reviews, reviewFilter, rolls, isOpen, onToggle, onPick, onChapterView, chview }: {
+  strands: { strand_id: string; name: string }[]; chapters: Chapter[]; seq: ReturnType<typeof numbersOf> | null; topics: TopicWithStats[]; /** 0034 */ extraAch: Set<string>; cls: string; selected: string | null;
   gapsOnly: boolean; reviews: Map<string, TopicReview>; reviewFilter: ReviewFilter; rolls: { ch: Map<string, RollUp>; st: Map<string, RollUp> }; isOpen: (id: string) => boolean; onToggle: (id: string) => void; onPick: (t: string) => void;
   /** Science: open the chapter view (all topics of the chapter) */ onChapterView?: (chapterId: string) => void; chview?: string | null;
 }) {
@@ -257,12 +260,12 @@ function Tree({ strands, chapters, topics, cls, selected, gapsOnly, seq, reviews
         {onChapterView && <button className={`link small chview-link ${chview === c.chapter_id ? 'on' : ''}`} onClick={() => onChapterView(c.chapter_id)} title="All topics of this chapter: content rows and questions">Chapter view</button>}
         {open && <div className="tree-kids">{ts.map((t) => {
           const gap = topicGap(t);
-          const role = cls === 'all' ? 'core' : roleOf(t.class, Number(cls));
+          const role = cls === 'all' ? 'core' : topicRole(t, Number(cls), topics, extraAch);
           return (
             <button key={t.topic_id} className={`tree-topic role-${role} ${t.topic_id === selected ? 'sel' : ''} ${t.topic_kind === 'achievers' ? 'ach' : ''}`} onClick={() => onPick(t.topic_id)}
               ref={t.topic_id === selected ? (el) => el?.scrollIntoView({ block: 'nearest' }) : undefined}>
               <span className="tt-name"><TopicReviewIcon status={reviewOf(reviews, t.topic_id)} />{t.topic_kind === 'achievers' ? t.name : <>{numbered(seq?.topic.get(t.topic_id), t.name)} <Id>{t.topic_id}</Id></>}{cls === 'all' && <span className="cls"> · C{t.class}</span>}
-                {role !== 'core' && <span className={`role-tag ${role}`}> from Class {t.class}</span>}<ClassesPill classes={t.classes} /></span>
+                {role !== 'core' && t.topic_kind !== 'achievers' && <span className={`role-tag ${role}`}> from Class {t.class}</span>}<ClassesPill classes={t.classes} /></span>
               <span className="tt-meta">{topicCounts(t)}{gap && <span className="gap"> · ⚠ {gap}</span>}</span>
             </button>
           );
