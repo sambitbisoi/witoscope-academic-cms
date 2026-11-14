@@ -186,16 +186,26 @@ export async function runScience(sql: Sql, master: Master, report: ScienceReport
           select row_id, source_id, page_from, page_to, raw from cms.cms_citations where row_id = any(${changed.map((c) => c.r.row_id)})`) oldCites.set(c.row_id, [...(oldCites.get(c.row_id) ?? []), citeKey(c)]);
       }
       const citesChanged = new Set(changed.filter(({ r }) => (oldCites.get(r.row_id) ?? []).sort().join('\n') !== r.citations.map(citeKey).sort().join('\n')).map(({ r }) => r.row_id));
-      for (const { r, row, before } of changed) {
-        const diff: Record<string, { before: unknown; after: unknown }> = {};
-        for (const k of ROW_COLS) if (!sameValue(before[k], row[k])) diff[k] = { before: before[k] ?? null, after: row[k] ?? null };
-        if (citesChanged.has(r.row_id)) diff.citations = { before: (oldCites.get(r.row_id) ?? []).length, after: r.citations.length };
-        if (before.content_hash !== row.content_hash && !Object.keys(diff).length) diff.content_hash = { before: before.content_hash, after: row.content_hash };
-        if (!before.in_master) { diff.in_master = { before: false, after: true }; res.rows.back_in_master++; }
-        await tx`update cms.cms_content_rows set ${tx({ ...row, in_master: true, missing_since: null, import_id: importId, updated_at: new Date() } as never)} where row_id = ${r.row_id}`;
-        await tx`insert into cms.cms_reviews (target, target_table, target_id, action, field_diff, by_label, import_id, reason)
-          values ('catalogue', 'cms_content_rows', ${r.row_id}, 'science_row', ${tx.json(diff as never)}, ${by}, ${importId}, 'changed in the Science master')`;
-        res.rows.updated++;
+      // Changed rows are written in batches (one UPDATE … FROM and one audit INSERT per 200 rows), not one round trip
+      // per row: thousands of single statements through the pooler were long enough to stall (14 Nov 2026).
+      const setCols = changed.length ? Object.keys(changed[0]!.row).filter((k) => k !== 'row_id') : [];
+      for (let i = 0; i < changed.length; i += 200) {
+        const chunk = changed.slice(i, i + 200);
+        const audits = chunk.map(({ r, row, before }) => {
+          const diff: Record<string, { before: unknown; after: unknown }> = {};
+          for (const k of ROW_COLS) if (!sameValue(before[k], row[k])) diff[k] = { before: before[k] ?? null, after: row[k] ?? null };
+          if (citesChanged.has(r.row_id)) diff.citations = { before: (oldCites.get(r.row_id) ?? []).length, after: r.citations.length };
+          if (before.content_hash !== row.content_hash && !Object.keys(diff).length) diff.content_hash = { before: before.content_hash, after: row.content_hash };
+          if (!before.in_master) { diff.in_master = { before: false, after: true }; res.rows.back_in_master++; }
+          return { target: 'catalogue', target_table: 'cms_content_rows', target_id: r.row_id, action: 'science_row', field_diff: tx.json(diff as never), by_label: by, import_id: importId, reason: 'changed in the Science master' };
+        });
+        const data = chunk.map(({ row }) => { for (const k of Object.keys(row)) if (!setCols.includes(k) && k !== 'row_id') throw new Error(`row column ${k} not in the batch`); return row; });
+        const n = await tx.unsafe(`update cms.cms_content_rows c set ${setCols.map((k) => `"${k}" = x."${k}"`).join(', ')},
+              in_master = true, missing_since = null, import_id = $2, updated_at = now()
+            from jsonb_populate_recordset(null::cms.cms_content_rows, $1::text::jsonb) x where c.row_id = x.row_id`, [JSON.stringify(data), importId] as never[]);
+        if (n.count !== chunk.length) throw new Error(`batch update wrote ${n.count} of ${chunk.length} rows`);
+        await tx`insert into cms.cms_reviews ${tx(audits as never[])}`;
+        res.rows.updated += chunk.length;
       }
       // rows gone from the master: flagged, never deleted
       const inMaster = new Set(master.rows.map((r) => r.row_id));
