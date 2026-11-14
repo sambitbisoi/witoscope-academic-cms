@@ -568,6 +568,21 @@ table.map-table tr.warn-row td:first-child { box-shadow: inset 3px 0 0 var(--war
 .tag.flagged { background: var(--err-bg); color: var(--error); font-weight: 600; }
 .tag.use { background: var(--chip); color: var(--muted); }
 .tag.gone { background: var(--chip); color: var(--muted); text-decoration: line-through; }
+.tag.role-core { background: var(--sig-bg); color: var(--accent); }
+.tag.role-extension { background: var(--multi-bg); color: var(--multi); }
+.tag.role-preview { background: var(--chip); color: var(--muted); }
+.tag.mismatch { background: var(--warn-bg); color: var(--warn); font-weight: 600; }
+/* content row detail card (14 Nov 2026) */
+.sci-detail { padding: 10px 12px; border-bottom: 1px solid var(--line); background: var(--subtle); }
+.sci-detail-tags { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 6px; margin-bottom: 6px; }
+.sci-detail-tags .tag { margin-left: 0; }
+.sci-detail-tags .id-muted { margin-left: auto; }
+.sci-f { padding: 5px 0; border-top: 1px solid var(--row-line); }
+.sci-f:first-of-type { border-top: none; }
+.sci-f-l { font-size: 0.75rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; margin-bottom: 1px; }
+.sci-f-v { line-height: 1.4; }
+.sci-f-v .tag { margin-left: 6px; }
+.sci-q-sub { padding: 8px 12px 0; }
 .chview-link { display: block; margin: -2px 0 4px 26px; }
 .chview-link.on { font-weight: 600; }
 .tint-box.linked { background: var(--ok-soft); border-color: var(--ok-line); margin-bottom: 10px; }

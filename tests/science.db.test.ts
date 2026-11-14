@@ -23,7 +23,7 @@ const row = (id: string, cls: number, extra: Partial<MasterRow> = {}): MasterRow
   row_id: id, topic_id: 'ST0325', chapter_id: 'SC48', row_class: cls, type: 'Fact', chapter_role: 'Core', content: `Test content of ${id} in our own words.`,
   why_it_matters: null, misconceptions: 'A test belief.', diagram_description: null, picture_question: false, question_use: 'OK', safety: null, source: 'Book',
   found_in: 'DAV only', confidence: 'high', notes: null, time_sensitive: false, time_checked_year: null, accuracy_flag: false, master_file: 'Class6_ZZ_content',
-  book: 'DAV Class 6', book_chapter_no: 4, book_chapter_title: 'Test', appears_in: 'DAV C6 test', sort: 1,
+  book: 'DAV Class 6', book_chapter_no: 4, book_chapter_title: 'Test', appears_in: 'DAV C6 test', sort: 1, topic_classes_mapped: null, topic_taught_in: null, revisit: null, also_in_rows: [],
   citations: [{ source_id: SRC.source_id, page_from: 203, page_to: 204, raw: 'ZZ pp.203–204' }], sheet_status: null, sheet: 2, ...extra,
 });
 const question = (qid: string, links: MasterQuestion['links'], text = `Test question ${qid}?`): MasterQuestion => ({
@@ -125,6 +125,27 @@ describe('import:science (local, rolled back)', () => {
       expect(a.rows.overridden).toEqual(['C6-ZZ-004']);
       const [r] = await tx`select originality_result, originality_override from cms.cms_content_rows where row_id = 'C6-ZZ-004'`;
       expect(r).toEqual({ originality_result: 'near_copy', originality_override: 'a standard definition that cannot be reworded' });
+    });
+  });
+
+  it('class information (0033): only the four columns change, audited; citations untouched; unknown "also in" IDs dropped and listed', async () => {
+    await inRollback(async (tx) => {
+      const m1 = master([R1, R2], []);
+      await run(tx, m1);
+      const cites = await tx`select citation_id from cms.cms_citations where row_id in ('C6-ZZ-001', 'C6-ZZ-002') order by 1`;
+      const withClasses = { ...R1, topic_classes_mapped: '1, 6', topic_taught_in: 'DAV 5 · NCERT 5–6', revisit: 'Y: Class 5–6 topic, also in Class 6', also_in_rows: ['C6-ZZ-002', 'C6-ZZ-999'] };
+      const m2 = master([withClasses, R2], [], 'sha-classes');
+      const b = await run(tx, m2);
+      expect(b.rows).toMatchObject({ inserted: 0, updated: 1, unchanged: 1 });
+      expect(b.also_in).toMatchObject({ rows_with_ids: 1, ids_parsed: 2, ids_kept: 1, unknown: [{ row_id: 'C6-ZZ-001', id: 'C6-ZZ-999' }] });
+      expect(b.class_mismatch).toMatchObject([{ row_id: 'C6-ZZ-001', only_master: [1] }]);   // master names class 1; ST0325 (class 6) is not linked to it
+      expect(b.class_mismatch.some((x) => x.row_id === 'C6-ZZ-002')).toBe(false);
+      const [r] = await tx`select topic_classes_mapped, topic_taught_in, revisit, also_in_rows from cms.cms_content_rows where row_id = 'C6-ZZ-001'`;
+      expect(r).toEqual({ topic_classes_mapped: '1, 6', topic_taught_in: 'DAV 5 · NCERT 5–6', revisit: 'Y: Class 5–6 topic, also in Class 6', also_in_rows: ['C6-ZZ-002'] });
+      const [audit] = await tx`select field_diff from cms.cms_reviews where target_id = 'C6-ZZ-001' and action = 'science_row' and import_id = ${b.import_id}`;
+      expect(Object.keys(audit!.field_diff).sort()).toEqual(['also_in_rows', 'revisit', 'topic_classes_mapped', 'topic_taught_in']);
+      expect(await tx`select citation_id from cms.cms_citations where row_id in ('C6-ZZ-001', 'C6-ZZ-002') order by 1`).toEqual(cites);
+      await expect(tx`update cms.cms_content_rows set also_in_rows = '{not-an-id}' where row_id = 'C6-ZZ-001'`).rejects.toThrow(/check/);
     });
   });
 

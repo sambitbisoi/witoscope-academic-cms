@@ -1,7 +1,7 @@
 // Science master parsing (13 Nov 2026). Synthetic cells only: no book text in the repo.
 import { describe, expect, it } from 'vitest';
 import {
-  davPages, extraRole, figureDescription, idList, legendBooks, ncertPages, notesFlags, pageList, questionLinks, resolveCitation, rowStatus, sheetStatus, sourceIdFor,
+  alsoInRows, classMismatch, classSet, davPages, extraRole, figureDescription, idList, legendBooks, ncertPages, notesFlags, pageList, questionLinks, resolveCitation, rowStatus, sheetStatus, sourceIdFor,
   sourcesFromLegend, storedFormat, taughtIn,
 } from '../shared/science.ts';
 import { nearCopyCover, scienceOverrides } from '../scripts/lib/science-import.ts';
@@ -48,6 +48,31 @@ describe('cells', () => {
     const per = taughtIn('C6-04-001: NCERT p.61–62; DAV Mag p.203 | C6-04-014: Claude-added (extends NCERT p.64)');
     expect(per.map((c) => [c.book, c.for_row_id, c.claude_added ?? false])).toEqual([['NCERT', 'C6-04-001', false], ['Mag', 'C6-04-001', false], ['NCERT', 'C6-04-014', true]]);
     expect(() => taughtIn('IXL lesson 3')).toThrow();
+  });
+});
+
+describe('class information (0033)', () => {
+  it('parses "Also in" strictly: valid row IDs only, the rest reported', () => {
+    expect(alsoInRows('Also in C6: C6-11-023, C6-11-024.')).toEqual({ ids: ['C6-11-023', 'C6-11-024'], bad: [], mentioned: true });
+    expect(alsoInRows('Seen before. Also in C5: C5-02-004; TIME-SENSITIVE: checked 2026')).toEqual({ ids: ['C5-02-004'], bad: [], mentioned: true });
+    expect(alsoInRows('Also in C6: C6-11-23, see chapter 9.')).toEqual({ ids: [], bad: ['C6-11-23', 'see', 'chapter', '9'], mentioned: true });
+    expect(alsoInRows('Also in the class 6 book.')).toEqual({ ids: [], bad: [], mentioned: true });
+    expect(alsoInRows('Also includes social well-being.').mentioned).toBe(false);
+    expect(alsoInRows(null)).toEqual({ ids: [], bad: [], mentioned: false });
+  });
+  it('reads class cells and compares them with the approved classes', () => {
+    expect(classSet('5–6')).toEqual([5, 6]);
+    expect(classSet('3, 5–6')).toEqual([3, 5, 6]);
+    expect(classSet('3–4, 6')).toEqual([3, 4, 6]);
+    expect(classSet('4')).toEqual([4]);
+    expect(classSet(null)).toBeNull();
+    expect(classSet('Class 5')).toBeNull();
+    expect(classMismatch('5–6', [6, 5])).toBeNull();
+    expect(classMismatch('3, 5–6', [6])).toEqual({ onlyMaster: [3, 5] });
+    expect(classMismatch('5', [6])).toEqual({ onlyMaster: [5] });
+    expect(classMismatch('5', [4, 5, 6])).toBeNull();                 // extra CMS classes are not a mismatch
+    expect(classMismatch('4, 6', [2, 4, 5, 6])).toBeNull();
+    expect(classMismatch(null, [6])).toBeNull();
   });
 });
 

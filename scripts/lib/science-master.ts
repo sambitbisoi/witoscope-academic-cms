@@ -3,7 +3,7 @@
 // write when any is an error.
 import { createHash } from 'node:crypto';
 import {
-  CONTENT_COLUMNS, CONTENT_TYPES, davPages, figureDescription, idList, LEGEND_COLUMNS, legendBooks, missingColumns, ncertPages, notesFlags, QUESTION_COLUMNS, QUESTION_USES,
+  alsoInRows, CONTENT_COLUMNS, CONTENT_TYPES, davPages, figureDescription, idList, LEGEND_COLUMNS, legendBooks, missingColumns, ncertPages, notesFlags, QUESTION_COLUMNS, QUESTION_USES,
   questionLinks, resolveCitation, sheetStatus, sourcesFromLegend, storedFormat, str, taughtIn, TIERS, yn, type LegendBook, type RowStatus, type ScienceSource,
 } from '../../shared/science.ts';
 import { stableJson } from '../../shared/json.ts';
@@ -16,6 +16,8 @@ export interface MasterRow {
   safety: string | null; source: string; found_in: string | null; confidence: string | null; notes: string | null;
   time_sensitive: boolean; time_checked_year: number | null; accuracy_flag: boolean;
   master_file: string; book: string | null; book_chapter_no: number | null; book_chapter_title: string | null; appears_in: string | null; sort: number;
+  /** class information (0033): bare labels from the master; also_in_rows parsed strictly from Notes (unfiltered here) */
+  topic_classes_mapped: string | null; topic_taught_in: string | null; revisit: string | null; also_in_rows: string[];
   citations: Citation[]; sheet_status: RowStatus | null; sheet: number;
 }
 export interface MasterQuestion {
@@ -24,7 +26,9 @@ export interface MasterQuestion {
   confidence: string | null; notes: string | null; links: { row_id: string; role: 'direct' | 'supporting' }[]; citations: Citation[]; sheet: number; hash: string;
 }
 export interface MasterProblem { level: 'error' | 'warning'; where: string; message: string }
-export interface Master { path: string; sha256: string; rows: MasterRow[]; questions: MasterQuestion[]; books: LegendBook[]; sources: ScienceSource[]; problems: MasterProblem[] }
+/** Notes that mention "also in" but gave no valid row ID, or carried tokens that are not row IDs. */
+export interface AlsoInProblem { row_id: string; bad: string[] }
+export interface Master { path: string; sha256: string; rows: MasterRow[]; also_in_unparsed?: AlsoInProblem[]; questions: MasterQuestion[]; books: LegendBook[]; sources: ScienceSource[]; problems: MasterProblem[] }
 
 const num = (v: unknown) => (str(v) === null ? null : Number(v));
 
@@ -57,6 +61,7 @@ export async function readMaster(path: string): Promise<Master> {
   });
 
   const rows: MasterRow[] = [];
+  const alsoUnparsed: AlsoInProblem[] = [];
   const seen = new Set<string>();
   C.forEach((x, i) => {
     const v = x.values, where = `Content row ${x.row}`;
@@ -77,12 +82,15 @@ export async function readMaster(path: string): Promise<Master> {
     const pic = yn(v['Picture question possible (Y/N)']);
     if (pic === null) warn(w, 'Picture question possible is not Y or N; read as N');
     const conf = str(v.Confidence)?.toLowerCase() ?? null;
+    const also = alsoInRows(notes);
+    if (also.mentioned && (!also.ids.length || also.bad.length)) alsoUnparsed.push({ row_id, bad: also.bad });
     rows.push({
       row_id, topic_id: str(v['Topic ID']) ?? '', chapter_id: str(v['Master chapter ID']) ?? '', row_class: rowClass, type, chapter_role: str(v['Chapter role']) ?? '',
       content: content ?? '', why_it_matters: str(v['Why it matters / real-life link']), misconceptions: str(v['Common misconceptions']),
       diagram_description: str(v['Diagram description']), picture_question: pic ?? false, question_use: use, safety: str(v.Safety), source: str(v.Source) ?? '',
       found_in: str(v['Found in']), confidence: conf, notes, ...notesFlags(notes), master_file: str(v.File) ?? '', book: str(v.Book),
       book_chapter_no: num(v['Chapter no.']), book_chapter_title: str(v['Chapter title']), appears_in: str(v['Appears in (this chapter)']), sort: i + 1,
+      topic_classes_mapped: str(v['Topic class (mapped)']), topic_taught_in: str(v['Topic also taught in']), revisit: str(v.Revisit), also_in_rows: also.ids,
       citations, sheet_status: sheetStatus(str(v['Question status'])), sheet: x.row,
     });
   });
@@ -127,5 +135,5 @@ export async function readMaster(path: string): Promise<Master> {
     const { sheet: _s, ...hashed } = q;
     questions.push({ ...q, hash: createHash('sha256').update(stableJson(hashed)).digest('hex') });
   }
-  return { path, sha256: wb.sha256, rows, questions, books, sources, problems };
+  return { path, sha256: wb.sha256, rows, also_in_unparsed: alsoUnparsed, questions, books, sources, problems };
 }

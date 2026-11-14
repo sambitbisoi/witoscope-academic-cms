@@ -4,8 +4,9 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Id } from './Id';
 import { OriginFlags } from './AddQuestions';
-import { scienceData, type ScienceData, type ScienceQuestion, type ScienceRow } from './scienceApi';
-import { statusLabel } from './logic';
+import { rowDetail, scienceData, type ScienceData, type ScienceQuestion, type ScienceRow } from './scienceApi';
+import { browseHash, statusLabel } from './logic';
+import { classMismatch } from '../../shared/science.ts';
 
 export const CONTENT_TYPES = ['Fact', 'Concept', 'How it works', 'Experiment', 'Scenario-Case', 'Diagram', 'Vocabulary'] as const;
 const STATUS: Record<ScienceRow['status'], { icon: string; label: string; cls: string }> = {
@@ -136,6 +137,8 @@ export function ScienceView({ scope, cls, topicNames, row, q, onRow, onQuestion,
               {' '}<button className="link small" onClick={() => onRow(null)}>All for this {chapterMode ? 'chapter' : 'topic'}</button></div>
               : <div className="small muted">All for this {chapterMode ? 'chapter' : 'topic'} · pick a content row to narrow</div>}
           </div>
+          {selRow && <RowDetail r={selRow} inScope={(id) => !!data.rows.some((x) => x.row_id === id)} onRow={onRow} />}
+          {selRow && <div className="eyebrow sci-q-sub">Questions for this row</div>}
           {listed.length === 0 ? <p className="muted small">{selRow ? (selRow.question_use !== 'OK' ? `No questions: this row is "${selRow.question_use}".` : 'No questions use this row yet.') : 'No questions yet.'}</p>
             : chapterMode && !row ? [...new Set(listed.map((x) => x.q.topic_id))].map((tid) => (
               <div key={tid}><div className="sci-topic-name small">{topicNames.get(tid)?.name ?? tid} <Id>{tid}</Id></div>
@@ -156,17 +159,66 @@ function RowItem({ r, cls, selected, onPick }: { r: ScienceRow; cls: string; sel
       <span className="sci-row-meta small">
         <span className={`cov ${s.cls}`} title={`Row status: ${s.label}`}>{s.icon} {s.label}</span>
         <span className="muted">&nbsp;· {r.n_direct} direct · {r.n_supporting} supporting</span>
-        {r.question_use !== 'OK' && <span className="tag use">{r.question_use}</span>}
+        {r.chapter_role && <span className={`tag role-${r.chapter_role.toLowerCase()}`} title="Chapter role">{r.chapter_role}</span>}
         {cls !== 'all' && r.row_class < Number(cls) && <span className="tag revision" title="Written for a lower class">Class {r.row_class} row</span>}
-        {r.source === 'Claude-added' && <span className="tag claude" title="Not in the books: added by Claude">Claude-added</span>}
-        {r.safety && <span className="tag safety" title={r.safety}>Safety</span>}
-        {r.time_sensitive && <span className="tag time" title={`Checked ${r.time_checked_year ?? '?'}: questions must say "as of ${r.time_checked_year ?? 'year'}"`}>Time-sensitive {r.time_checked_year ?? ''}</span>}
-        {r.accuracy_flag && <span className="tag accuracy" title="The notes correct a book's statement (ACCURACY)">Accuracy</span>}
-        {r.originality_result === 'near_copy' && <span className="tag flagged" title={`Originality: ${r.originality_field} is ${r.originality_score} similar to ${r.originality_ref}${r.originality_override ? ` · override requested: ${r.originality_override}` : ''}`}>Originality flagged</span>}
-        {!r.in_master && <span className="tag gone" title="This row is no longer in the Science master; kept, never deleted">Not in master</span>}
+        <RowTags r={r} />
         <Id>{r.row_id}</Id>
       </span>
     </button>
+  );
+}
+
+/** The row's flags (list and detail card): question use, Claude-added, Safety, Time-sensitive, Accuracy, Originality, Not in master. */
+function RowTags({ r }: { r: ScienceRow }) {
+  return <>
+    {r.question_use !== 'OK' && <span className="tag use">{r.question_use}</span>}
+    {r.source === 'Claude-added' && <span className="tag claude" title="Not in the books: added by Claude">Claude-added</span>}
+    {r.safety && <span className="tag safety" title={r.safety}>Safety</span>}
+    {r.time_sensitive && <span className="tag time" title={`Checked ${r.time_checked_year ?? '?'}: questions must say "as of ${r.time_checked_year ?? 'year'}"`}>Time-sensitive {r.time_checked_year ?? ''}</span>}
+    {r.accuracy_flag && <span className="tag accuracy" title="The notes correct a book's statement (ACCURACY)">Accuracy</span>}
+    {r.originality_result === 'near_copy' && <span className="tag flagged" title={`Originality: ${r.originality_field} is ${r.originality_score} similar to ${r.originality_ref}${r.originality_override ? ` · override requested: ${r.originality_override}` : ''}`}>Originality flagged</span>}
+    {!r.in_master && <span className="tag gone" title="This row is no longer in the Science master; kept, never deleted">Not in master</span>}
+  </>;
+}
+
+/** Detail card of the selected content row (read-only). Empty fields are hidden. */
+function RowDetail({ r, inScope, onRow }: { r: ScienceRow; inScope: (id: string) => boolean; onRow: (id: string) => void }) {
+  const [d, setD] = useState<Awaited<ReturnType<typeof rowDetail>> | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  useEffect(() => { setD(null); setErr(null); rowDetail(r).then(setD).catch((e) => setErr(e.message)); }, [r.row_id]); // eslint-disable-line react-hooks/exhaustive-deps
+  const mm = d ? classMismatch(r.topic_classes_mapped, d.classes) : null;
+  const F = ({ label, children }: { label: string; children: ReactNode }) => <div className="sci-f"><div className="sci-f-l">{label}</div><div className="sci-f-v">{children}</div></div>;
+  const book = [r.book, r.book_chapter_no !== null ? `Ch ${r.book_chapter_no}${r.book_chapter_title ? ` ${r.book_chapter_title}` : ''}` : r.book_chapter_title].filter(Boolean).join(' · ');
+  return (
+    <div className="sci-detail" aria-label="Content row detail">
+      <div className="sci-detail-tags small"><RowTags r={r} /><Id>{r.row_id}</Id></div>
+      <F label="Type">{r.type}</F>
+      {r.chapter_role && <F label="Chapter role">{r.chapter_role}</F>}
+      <F label="Content">{r.content}</F>
+      {r.why_it_matters && <F label="Why it matters / real-life link">{r.why_it_matters}</F>}
+      {r.misconceptions && <F label="Common misconceptions">{r.misconceptions}</F>}
+      {r.diagram_description && <F label="Diagram description">{r.diagram_description}</F>}
+      {(r.topic_classes_mapped || r.topic_taught_in || r.revisit) && <F label="Classes">
+        {r.topic_classes_mapped && <div>NCERT classes: {r.topic_classes_mapped} · CMS classes: {d ? (d.classes.join(', ') || '—') : '…'}
+          {mm && <span className="tag mismatch" title={`Master names class ${mm.onlyMaster.join(', ')}, which this topic is not linked to. Nothing is changed.`}>Class mismatch</span>}</div>}
+        {r.topic_taught_in && <div className="muted small">Also taught in: {r.topic_taught_in}</div>}
+        {r.revisit && <div className="muted small">Revisit: {r.revisit}</div>}
+      </F>}
+      {r.also_in_rows.length > 0 && <F label="Also in">
+        {(d?.alsoIn ?? r.also_in_rows.map((id) => ({ row_id: id, at: null }))).map((x, i) => <span key={x.row_id}>{i > 0 && ' · '}
+          {inScope(x.row_id) ? <button className="link" onClick={() => onRow(x.row_id)} title={x.at?.content}>{x.row_id}</button>
+            : x.at ? <a href={browseHash({ subject: 'science', cls: 'all', ch: x.at.chapter_id, topic: x.at.topic_id, tab: 'content', row: x.row_id })} title={x.at.content}>{x.row_id}</a>
+            : <span className="muted">{x.row_id}</span>}</span>)}
+      </F>}
+      {(r.source || r.found_in) && <F label="Source / Found in">{[r.source, r.found_in].filter(Boolean).join(' · ')}{r.confidence ? <span className="muted small"> · confidence {r.confidence}</span> : null}</F>}
+      {(book || r.appears_in || (d?.citations.length ?? 0) > 0) && <F label="Book citation">
+        {book && <div>{book}</div>}
+        {r.appears_in && <div className="muted small">{r.appears_in}</div>}
+        {d?.citations.map((c, i) => <div key={i} className="small">{d.sources.get(c.source_id) ?? c.source_id} · {c.raw}</div>)}
+      </F>}
+      {r.notes && <F label="Notes">{r.notes}</F>}
+      {err && <p className="error small">Couldn't load the citations and classes: {err}</p>}
+    </div>
   );
 }
 

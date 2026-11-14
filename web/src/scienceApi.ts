@@ -9,13 +9,16 @@ export interface ContentRow {
   time_checked_year: number | null; accuracy_flag: boolean; book: string | null; book_chapter_no: number | null; book_chapter_title: string | null; sort: number;
   originality_result: string | null; originality_field: string | null; originality_score: number | null; originality_ref: string | null; originality_override: string | null;
   in_master: boolean;
+  /** class information (0033): bare labels from the master; also_in_rows = row IDs from Notes "Also in C<n>: …" */
+  topic_classes_mapped: string | null; topic_taught_in: string | null; revisit: string | null; also_in_rows: string[];
+  appears_in: string | null;
 }
 export type RowStatus = 'direct' | 'supporting' | 'not_eligible' | 'none';
 export type ScienceRow = ContentRow & { status: RowStatus; n_direct: number; n_supporting: number };
 export type ScienceQuestion = QuestionRow & { level_tier: string | null; display_format: string | null; safety_note: string | null; links: { row_id: string; role: 'direct' | 'supporting' }[] };
 export interface Citation { source_id: string; page_from: number; page_to: number; raw: string; for_row_id: string | null }
 
-const ROW_COLS = 'row_id, topic_id, chapter_id, row_class, type, chapter_role, content, why_it_matters, misconceptions, diagram_description, picture_question, question_use, safety, source, found_in, confidence, notes, time_sensitive, time_checked_year, accuracy_flag, book, book_chapter_no, book_chapter_title, sort, originality_result, originality_field, originality_score, originality_ref, originality_override, in_master';
+const ROW_COLS = 'row_id, topic_id, chapter_id, row_class, type, chapter_role, content, why_it_matters, misconceptions, diagram_description, picture_question, question_use, safety, source, found_in, confidence, notes, time_sensitive, time_checked_year, accuracy_flag, book, book_chapter_no, book_chapter_title, appears_in, sort, topic_classes_mapped, topic_taught_in, revisit, also_in_rows, originality_result, originality_field, originality_score, originality_ref, originality_override, in_master';
 
 /** Everything the Science view shows, for one topic or every topic of a chapter. */
 export async function scienceData(scope: { topicId: string } | { chapterId: string }) {
@@ -57,6 +60,26 @@ export async function scienceDetail(versionId: number) {
     links: links.map((l) => ({ ...l, row: byId.get(l.row_id) ?? null })).sort((a, b) => (a.role === b.role ? a.row_id.localeCompare(b.row_id) : a.role === 'direct' ? -1 : 1)),
     citations, sources: new Map(sources.map((s) => [s.source_id, s])),
     version: (v.data ?? {}) as { level_tier: string | null; display_format: string | null; misconception_targeted: string | null; safety_note: string | null; confidence: string | null },
+  };
+}
+
+/** A content row's detail card: its citations (with source titles), the topic's approved classes
+ *  (home class + active links) and where its "Also in" rows live (to open them). */
+export async function rowDetail(r: Pick<ContentRow, 'row_id' | 'topic_id' | 'also_in_rows'>) {
+  const [cites, classes, also] = await Promise.all([
+    supabase.from('cms_citations').select('source_id, page_from, page_to, raw').eq('row_id', r.row_id).order('citation_id'),
+    supabase.from('cms_topic_all_classes').select('class').eq('topic_id', r.topic_id),
+    r.also_in_rows.length ? supabase.from('cms_content_rows').select('row_id, topic_id, chapter_id, content').in('row_id', r.also_in_rows) : Promise.resolve({ data: [], error: null }),
+  ]);
+  for (const x of [cites, classes, also]) if (x.error) throw new Error(x.error.message);
+  const citations = (cites.data ?? []) as Omit<Citation, 'for_row_id'>[];
+  const srcIds = [...new Set(citations.map((c) => c.source_id))];
+  const sources = srcIds.length ? ((await supabase.from('cms_sources').select('source_id, title').in('source_id', srcIds)).data ?? []) as { source_id: string; title: string }[] : [];
+  const where = new Map(((also.data ?? []) as { row_id: string; topic_id: string; chapter_id: string; content: string }[]).map((x) => [x.row_id, x]));
+  return {
+    citations, sources: new Map(sources.map((s) => [s.source_id, s.title])),
+    classes: [...new Set(((classes.data ?? []) as { class: number }[]).map((c) => c.class))].sort(),
+    alsoIn: r.also_in_rows.map((id) => ({ row_id: id, at: where.get(id) ?? null })),
   };
 }
 

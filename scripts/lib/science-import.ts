@@ -8,9 +8,9 @@
 // flagged" badge. A near-copy question is blocked (as for Math) unless the CSV lists it, then it comes in as a
 // draft with a pending override request.
 import type postgres from 'postgres';
-import { extraRole } from '../../shared/science.ts';
+import { classMismatch, extraRole } from '../../shared/science.ts';
 import type { Sql } from './db.ts';
-import type { Master, MasterQuestion, MasterRow } from './science-master.ts';
+import type { AlsoInProblem, Master, MasterQuestion, MasterRow } from './science-master.ts';
 import { rowHash } from './science-master.ts';
 import type { ScienceCheck, ScienceReport } from './science-originality.ts';
 import { SCIENCE_REPORT_SCHEMA } from './science-originality.ts';
@@ -29,6 +29,10 @@ export interface ScienceResult {
   links: { direct: number; supporting: number };
   originality: { rows: Record<string, number>; questions: Record<string, number> };
   status_mismatch: { row_id: string; sheet: string; cms: string }[];
+  /** class information (0033): Notes "Also in C<n>: …" parsed strictly; IDs not in the CMS are dropped and listed */
+  also_in: { rows_with_ids: number; ids_parsed: number; ids_kept: number; unparsed: AlsoInProblem[]; unknown: { row_id: string; id: string }[] };
+  /** rows whose "Topic class (mapped)" names a class the topic is not linked to (home + active links); shown, never changed */
+  class_mismatch: { row_id: string; topic_id: string; mapped: string; approved: number[]; only_master: number[] }[];
   problems: string[];
 }
 
@@ -64,14 +68,15 @@ class Rollback extends Error { constructor(readonly result: ScienceResult) { sup
 
 const ROW_COLS = ['topic_id', 'chapter_id', 'row_class', 'type', 'chapter_role', 'content', 'why_it_matters', 'misconceptions', 'diagram_description', 'picture_question',
   'question_use', 'safety', 'source', 'found_in', 'confidence', 'notes', 'time_sensitive', 'time_checked_year', 'accuracy_flag', 'master_file', 'book', 'book_chapter_no',
-  'book_chapter_title', 'appears_in', 'sort', 'originality_result', 'originality_field', 'originality_score', 'originality_ref', 'originality_override'] as const;
+  'book_chapter_title', 'appears_in', 'sort', 'topic_classes_mapped', 'topic_taught_in', 'revisit', 'also_in_rows', 'originality_result', 'originality_field', 'originality_score', 'originality_ref', 'originality_override'] as const;
 
 export async function runScience(sql: Sql, master: Master, report: ScienceReport | null, opts: ScienceOptions): Promise<ScienceResult> {
   const res: ScienceResult = {
     import_id: null, dry_run: opts.dryRun, target: opts.target, sources: { inserted: 0, updated: 0, unchanged: 0 },
     rows: { inserted: 0, updated: 0, unchanged: 0, flagged_missing: 0, back_in_master: 0, held_out: [], near_copy_badged: [], overridden: [] },
     citations: { rows: 0, questions: 0 }, proposals: [], questions: { created: [], replaced: [], unchanged: 0, skipped: [], blocked: [], not_in_master: [] },
-    links: { direct: 0, supporting: 0 }, originality: { rows: {}, questions: {} }, status_mismatch: [], problems: [],
+    links: { direct: 0, supporting: 0 }, originality: { rows: {}, questions: {} }, status_mismatch: [],
+    also_in: { rows_with_ids: 0, ids_parsed: 0, ids_kept: 0, unparsed: [...(master.also_in_unparsed ?? [])], unknown: [] }, class_mismatch: [], problems: [],
   };
   const errors = master.problems.filter((p) => p.level === 'error');
   if (errors.length) throw new Error(`the master has ${errors.length} error(s), e.g. ${errors[0]!.where}: ${errors[0]!.message}`);
@@ -125,10 +130,23 @@ export async function runScience(sql: Sql, master: Master, report: ScienceReport
 
       // ------------------------------------------------ content rows
       const held = new Set<string>();
+      const existing = new Map((await tx`select * from cms.cms_content_rows`).map((r) => [r.row_id as string, r]));
+      // "Also in" IDs are kept only for rows that exist after this import (in the CMS already, or coming in now)
+      const willHold = (r: MasterRow) => { const cov = nearCopyCover(rowCheck.get(r.row_id), opts.overrides); return opts.target === 'real' && cov.near && !cov.covered; };
+      const knownIds = new Set([...existing.keys(), ...master.rows.filter((r) => !willHold(r)).map((r) => r.row_id)]);
+      const alsoIn = new Map<string, string[]>();
+      for (const r of master.rows) {
+        if (r.also_in_rows.length) { res.also_in.rows_with_ids++; res.also_in.ids_parsed += r.also_in_rows.length; }
+        for (const id of r.also_in_rows) if (!knownIds.has(id)) res.also_in.unknown.push({ row_id: r.row_id, id });
+        const kept = r.also_in_rows.filter((id) => knownIds.has(id));
+        res.also_in.ids_kept += kept.length;
+        alsoIn.set(r.row_id, kept);
+      }
       const dbRow = (r: MasterRow) => {
         const c = rowCheck.get(r.row_id)!;
         const cov = nearCopyCover(c, opts.overrides);
-        const { citations: _c, sheet: _s, sheet_status: _ss, ...rest } = r;
+        const { citations: _c, sheet: _s, sheet_status: _ss, ...all } = r;
+        const rest = { ...all, also_in_rows: alsoIn.get(r.row_id) ?? [] };
         return {
           row: {
             row_id: r.row_id, ...Object.fromEntries(ROW_COLS.filter((k) => k in rest).map((k) => [k, (rest as Record<string, unknown>)[k]])),
@@ -137,7 +155,6 @@ export async function runScience(sql: Sql, master: Master, report: ScienceReport
           } as Record<string, unknown>, cov,
         };
       };
-      const existing = new Map((await tx`select * from cms.cms_content_rows`).map((r) => [r.row_id as string, r]));
       const fresh: Record<string, unknown>[] = [];
       const changed: { r: MasterRow; row: Record<string, unknown>; before: Record<string, unknown> }[] = [];
       for (const r of master.rows) {
@@ -161,15 +178,34 @@ export async function runScience(sql: Sql, master: Master, report: ScienceReport
             reason: 'from the Science master', field_diff: tx.json({ topic_id: { before: null, after: r.topic_id }, originality: { before: null, after: r.originality_result } } as never), by_label: by, import_id: importId })) as never[])}`;
         }
       }
-      for (const { r, row, before } of changed) {
-        const diff: Record<string, { before: unknown; after: unknown }> = {};
-        for (const k of ROW_COLS) if (!sameValue(before[k], row[k])) diff[k] = { before: before[k] ?? null, after: row[k] ?? null };
-        if (before.content_hash !== row.content_hash && !Object.keys(diff).length) diff.citations = { before: 'changed', after: 'changed' };
-        if (!before.in_master) { diff.in_master = { before: false, after: true }; res.rows.back_in_master++; }
-        await tx`update cms.cms_content_rows set ${tx({ ...row, in_master: true, missing_since: null, import_id: importId, updated_at: new Date() } as never)} where row_id = ${r.row_id}`;
-        await tx`insert into cms.cms_reviews (target, target_table, target_id, action, field_diff, by_label, import_id, reason)
-          values ('catalogue', 'cms_content_rows', ${r.row_id}, 'science_row', ${tx.json(diff as never)}, ${by}, ${importId}, 'changed in the Science master')`;
-        res.rows.updated++;
+      // a changed row's citations are rewritten only when they really differ (never deleted just because another field changed)
+      const citeKey = (c: { source_id: string; page_from: number; page_to: number; raw: string }) => `${c.source_id}|${c.page_from}|${c.page_to}|${c.raw}`;
+      const oldCites = new Map<string, string[]>();
+      if (changed.length) {
+        for (const c of await tx<{ row_id: string; source_id: string; page_from: number; page_to: number; raw: string }[]>`
+          select row_id, source_id, page_from, page_to, raw from cms.cms_citations where row_id = any(${changed.map((c) => c.r.row_id)})`) oldCites.set(c.row_id, [...(oldCites.get(c.row_id) ?? []), citeKey(c)]);
+      }
+      const citesChanged = new Set(changed.filter(({ r }) => (oldCites.get(r.row_id) ?? []).sort().join('\n') !== r.citations.map(citeKey).sort().join('\n')).map(({ r }) => r.row_id));
+      // Changed rows are written in batches (one UPDATE … FROM and one audit INSERT per 200 rows), not one round trip
+      // per row: thousands of single statements through the pooler were long enough to stall (14 Nov 2026).
+      const setCols = changed.length ? Object.keys(changed[0]!.row).filter((k) => k !== 'row_id') : [];
+      for (let i = 0; i < changed.length; i += 200) {
+        const chunk = changed.slice(i, i + 200);
+        const audits = chunk.map(({ r, row, before }) => {
+          const diff: Record<string, { before: unknown; after: unknown }> = {};
+          for (const k of ROW_COLS) if (!sameValue(before[k], row[k])) diff[k] = { before: before[k] ?? null, after: row[k] ?? null };
+          if (citesChanged.has(r.row_id)) diff.citations = { before: (oldCites.get(r.row_id) ?? []).length, after: r.citations.length };
+          if (before.content_hash !== row.content_hash && !Object.keys(diff).length) diff.content_hash = { before: before.content_hash, after: row.content_hash };
+          if (!before.in_master) { diff.in_master = { before: false, after: true }; res.rows.back_in_master++; }
+          return { target: 'catalogue', target_table: 'cms_content_rows', target_id: r.row_id, action: 'science_row', field_diff: tx.json(diff as never), by_label: by, import_id: importId, reason: 'changed in the Science master' };
+        });
+        const data = chunk.map(({ row }) => { for (const k of Object.keys(row)) if (!setCols.includes(k) && k !== 'row_id') throw new Error(`row column ${k} not in the batch`); return row; });
+        const n = await tx.unsafe(`update cms.cms_content_rows c set ${setCols.map((k) => `"${k}" = x."${k}"`).join(', ')},
+              in_master = true, missing_since = null, import_id = $2, updated_at = now()
+            from jsonb_populate_recordset(null::cms.cms_content_rows, $1::text::jsonb) x where c.row_id = x.row_id`, [JSON.stringify(data), importId] as never[]);
+        if (n.count !== chunk.length) throw new Error(`batch update wrote ${n.count} of ${chunk.length} rows`);
+        await tx`insert into cms.cms_reviews ${tx(audits as never[])}`;
+        res.rows.updated += chunk.length;
       }
       // rows gone from the master: flagged, never deleted
       const inMaster = new Set(master.rows.map((r) => r.row_id));
@@ -181,8 +217,8 @@ export async function runScience(sql: Sql, master: Master, report: ScienceReport
         res.rows.flagged_missing++;
       }
       // citations of new and changed rows (bare: source + printed pages)
-      const touched = [...fresh.map((r) => r.row_id as string), ...changed.map((c) => c.r.row_id)];
-      if (changed.length) await tx`delete from cms.cms_citations where row_id = any(${changed.map((c) => c.r.row_id)})`;
+      const touched = [...fresh.map((r) => r.row_id as string), ...citesChanged];
+      if (citesChanged.size) await tx`delete from cms.cms_citations where row_id = any(${[...citesChanged]})`;
       const byId = new Map(master.rows.map((r) => [r.row_id, r]));
       const cits = touched.flatMap((id) => byId.get(id)!.citations.map((c) => ({ row_id: id, source_id: c.source_id, page_from: c.page_from, page_to: c.page_to, raw: c.raw })));
       for (let i = 0; i < cits.length; i += 1000) await tx`insert into cms.cms_citations ${tx(cits.slice(i, i + 1000) as never[])}`;
@@ -301,10 +337,22 @@ export async function runScience(sql: Sql, master: Master, report: ScienceReport
         if (r.sheet_status && mine && r.sheet_status !== mine) res.status_mismatch.push({ row_id: r.row_id, sheet: r.sheet_status, cms: mine });
       }
 
+      // ------------------------------------------------ "Topic class (mapped)" names a class the topic is not linked to (report only)
+      const approved = new Map<string, number[]>();
+      for (const a of await tx<{ topic_id: string; class: number }[]>`select topic_id, class from cms.cms_topic_all_classes where topic_id like 'ST%'`) approved.set(a.topic_id, [...(approved.get(a.topic_id) ?? []), a.class]);
+      for (const r of master.rows) {
+        if (held.has(r.row_id)) continue;
+        const cls = approved.get(r.topic_id) ?? [];
+        const mm = classMismatch(r.topic_classes_mapped, cls);
+        if (mm) res.class_mismatch.push({ row_id: r.row_id, topic_id: r.topic_id, mapped: r.topic_classes_mapped!, approved: [...cls].sort(), only_master: mm.onlyMaster });
+      }
+
       await tx`update cms.cms_imports set finished_at = now(), result = ${res.questions.blocked.length || res.rows.held_out.length ? 'partial' : 'ok'},
         counts = ${tx.json({ sources: res.sources, rows: { ...res.rows, held_out: res.rows.held_out.length, near_copy_badged: res.rows.near_copy_badged.length, overridden: res.rows.overridden.length },
           citations: res.citations, proposals: res.proposals.length, questions: { created: res.questions.created.length, replaced: res.questions.replaced.length, unchanged: res.questions.unchanged,
-          skipped: res.questions.skipped.length, blocked: res.questions.blocked.length }, links: res.links, originality: res.originality } as never)},
+          skipped: res.questions.skipped.length, blocked: res.questions.blocked.length }, links: res.links, originality: res.originality,
+          also_in: { rows_with_ids: res.also_in.rows_with_ids, ids_parsed: res.also_in.ids_parsed, ids_kept: res.also_in.ids_kept, unparsed: res.also_in.unparsed.length, unknown: res.also_in.unknown.length },
+          class_mismatch: res.class_mismatch.length } as never)},
         error_report = ${tx.json([...res.questions.blocked, ...res.questions.skipped, ...res.rows.held_out.map((id) => ({ row_id: id, why: 'near-copy, held out' }))] as never)}
         where import_id = ${importId}`;
       if (opts.dryRun && !opts.inTx) throw new Rollback(res);
