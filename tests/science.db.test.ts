@@ -133,14 +133,15 @@ describe('import:science (local, rolled back)', () => {
       const m1 = master([R1, R2], []);
       await run(tx, m1);
       const cites = await tx`select citation_id from cms.cms_citations where row_id in ('C6-ZZ-001', 'C6-ZZ-002') order by 1`;
-      const withClasses = { ...R1, topic_classes_mapped: '5–6', topic_taught_in: 'DAV 5 · NCERT 5–6', revisit: 'Y: Class 5–6 topic, also in Class 6', also_in_rows: ['C6-ZZ-002', 'C6-ZZ-999'] };
+      const withClasses = { ...R1, topic_classes_mapped: '1, 6', topic_taught_in: 'DAV 5 · NCERT 5–6', revisit: 'Y: Class 5–6 topic, also in Class 6', also_in_rows: ['C6-ZZ-002', 'C6-ZZ-999'] };
       const m2 = master([withClasses, R2], [], 'sha-classes');
       const b = await run(tx, m2);
       expect(b.rows).toMatchObject({ inserted: 0, updated: 1, unchanged: 1 });
       expect(b.also_in).toMatchObject({ rows_with_ids: 1, ids_parsed: 2, ids_kept: 1, unknown: [{ row_id: 'C6-ZZ-001', id: 'C6-ZZ-999' }] });
-      expect(b.class_mismatch.map((x) => x.row_id)).toEqual(['C6-ZZ-001']);   // ST0325 is a class-6 topic; the master says 5–6
+      expect(b.class_mismatch).toMatchObject([{ row_id: 'C6-ZZ-001', only_master: [1] }]);   // master names class 1; ST0325 (class 6) is not linked to it
+      expect(b.class_mismatch.some((x) => x.row_id === 'C6-ZZ-002')).toBe(false);
       const [r] = await tx`select topic_classes_mapped, topic_taught_in, revisit, also_in_rows from cms.cms_content_rows where row_id = 'C6-ZZ-001'`;
-      expect(r).toEqual({ topic_classes_mapped: '5–6', topic_taught_in: 'DAV 5 · NCERT 5–6', revisit: 'Y: Class 5–6 topic, also in Class 6', also_in_rows: ['C6-ZZ-002'] });
+      expect(r).toEqual({ topic_classes_mapped: '1, 6', topic_taught_in: 'DAV 5 · NCERT 5–6', revisit: 'Y: Class 5–6 topic, also in Class 6', also_in_rows: ['C6-ZZ-002'] });
       const [audit] = await tx`select field_diff from cms.cms_reviews where target_id = 'C6-ZZ-001' and action = 'science_row' and import_id = ${b.import_id}`;
       expect(Object.keys(audit!.field_diff).sort()).toEqual(['also_in_rows', 'revisit', 'topic_classes_mapped', 'topic_taught_in']);
       expect(await tx`select citation_id from cms.cms_citations where row_id in ('C6-ZZ-001', 'C6-ZZ-002') order by 1`).toEqual(cites);

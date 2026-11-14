@@ -31,8 +31,8 @@ export interface ScienceResult {
   status_mismatch: { row_id: string; sheet: string; cms: string }[];
   /** class information (0033): Notes "Also in C<n>: …" parsed strictly; IDs not in the CMS are dropped and listed */
   also_in: { rows_with_ids: number; ids_parsed: number; ids_kept: number; unparsed: AlsoInProblem[]; unknown: { row_id: string; id: string }[] };
-  /** rows whose "Topic class (mapped)" differs from the topic's approved classes (home + active links); shown, never changed */
-  class_mismatch: { row_id: string; topic_id: string; mapped: string; approved: number[]; only_master: number[]; only_cms: number[] }[];
+  /** rows whose "Topic class (mapped)" names a class the topic is not linked to (home + active links); shown, never changed */
+  class_mismatch: { row_id: string; topic_id: string; mapped: string; approved: number[]; only_master: number[] }[];
   problems: string[];
 }
 
@@ -327,14 +327,14 @@ export async function runScience(sql: Sql, master: Master, report: ScienceReport
         if (r.sheet_status && mine && r.sheet_status !== mine) res.status_mismatch.push({ row_id: r.row_id, sheet: r.sheet_status, cms: mine });
       }
 
-      // ------------------------------------------------ "Topic class (mapped)" vs the topic's approved classes (report only)
+      // ------------------------------------------------ "Topic class (mapped)" names a class the topic is not linked to (report only)
       const approved = new Map<string, number[]>();
       for (const a of await tx<{ topic_id: string; class: number }[]>`select topic_id, class from cms.cms_topic_all_classes where topic_id like 'ST%'`) approved.set(a.topic_id, [...(approved.get(a.topic_id) ?? []), a.class]);
       for (const r of master.rows) {
         if (held.has(r.row_id)) continue;
         const cls = approved.get(r.topic_id) ?? [];
         const mm = classMismatch(r.topic_classes_mapped, cls);
-        if (mm) res.class_mismatch.push({ row_id: r.row_id, topic_id: r.topic_id, mapped: r.topic_classes_mapped!, approved: [...cls].sort(), only_master: mm.onlyMaster, only_cms: mm.onlyCms });
+        if (mm) res.class_mismatch.push({ row_id: r.row_id, topic_id: r.topic_id, mapped: r.topic_classes_mapped!, approved: [...cls].sort(), only_master: mm.onlyMaster });
       }
 
       await tx`update cms.cms_imports set finished_at = now(), result = ${res.questions.blocked.length || res.rows.held_out.length ? 'partial' : 'ok'},

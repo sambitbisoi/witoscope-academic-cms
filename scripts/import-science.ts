@@ -40,8 +40,8 @@ export function printResult(r: ScienceResult) {
   console.log(`Also in:       ${r.also_in.rows_with_ids} rows with IDs in Notes · ${r.also_in.ids_parsed} IDs parsed · ${r.also_in.ids_kept} kept · ${r.also_in.unknown.length} not in the CMS (dropped) · ${r.also_in.unparsed.length} notes with "also in" not fully parsed`);
   for (const u of r.also_in.unknown) console.log(`  ${u.row_id}: ${u.id} is not a content row`);
   for (const u of r.also_in.unparsed) console.log(`  ${u.row_id}: "also in" ${u.bad.length ? `with tokens that are not row IDs: ${u.bad.join(', ')}` : 'but no row ID'}`);
-  console.log(`Class mismatch: ${r.class_mismatch.length} row(s) whose "Topic class (mapped)" differs from the topic's approved classes (shown in the CMS; nothing changed)`);
-  for (const m of r.class_mismatch.slice(0, 10)) console.log(`  ${m.row_id} (${m.topic_id}): master ${m.mapped} · CMS ${m.approved.join(', ')}`);
+  console.log(`Class mismatch: ${r.class_mismatch.length} row(s) whose "Topic class (mapped)" names a class the topic is not linked to (shown in the CMS; nothing changed)`);
+  for (const m of r.class_mismatch.slice(0, 10)) console.log(`  ${m.row_id} (${m.topic_id}): master ${m.mapped} · CMS ${m.approved.join(', ')} · not linked: ${m.only_master.join(', ')}`);
   if (r.status_mismatch.length) {
     console.log(`Row status differs from the sheet's "Question status" for ${r.status_mismatch.length} row(s):`);
     for (const m of r.status_mismatch.slice(0, 20)) console.log(`  ${m.row_id}: sheet ${m.sheet} · CMS ${m.cms}`);

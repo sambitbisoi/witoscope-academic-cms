@@ -68,8 +68,10 @@ describe('class information (0033)', () => {
     expect(classSet(null)).toBeNull();
     expect(classSet('Class 5')).toBeNull();
     expect(classMismatch('5–6', [6, 5])).toBeNull();
-    expect(classMismatch('3, 5–6', [6])).toEqual({ onlyMaster: [3, 5], onlyCms: [] });
-    expect(classMismatch('5', [6])).toEqual({ onlyMaster: [5], onlyCms: [6] });
+    expect(classMismatch('3, 5–6', [6])).toEqual({ onlyMaster: [3, 5] });
+    expect(classMismatch('5', [6])).toEqual({ onlyMaster: [5] });
+    expect(classMismatch('5', [4, 5, 6])).toBeNull();                 // extra CMS classes are not a mismatch
+    expect(classMismatch('4, 6', [2, 4, 5, 6])).toBeNull();
     expect(classMismatch(null, [6])).toBeNull();
   });
 });

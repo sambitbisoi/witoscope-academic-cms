@@ -199,9 +199,8 @@ function RowDetail({ r, inScope, onRow }: { r: ScienceRow; inScope: (id: string)
       {r.misconceptions && <F label="Common misconceptions">{r.misconceptions}</F>}
       {r.diagram_description && <F label="Diagram description">{r.diagram_description}</F>}
       {(r.topic_classes_mapped || r.topic_taught_in || r.revisit) && <F label="Classes">
-        {r.topic_classes_mapped && <div>Class {r.topic_classes_mapped}
-          {mm && <span className="tag mismatch" title={`The topic's approved classes in the CMS are ${d!.classes.join(', ')}.${mm.onlyMaster.length ? ` Only in the master: ${mm.onlyMaster.join(', ')}.` : ''}${mm.onlyCms.length ? ` Only in the CMS: ${mm.onlyCms.join(', ')}.` : ''} Nothing is changed.`}>Class mismatch</span>}
-          {d && !mm && d.classes.length > 0 && <span className="muted small"> · matches the topic</span>}</div>}
+        {r.topic_classes_mapped && <div>NCERT classes: {r.topic_classes_mapped} · CMS classes: {d ? (d.classes.join(', ') || '—') : '…'}
+          {mm && <span className="tag mismatch" title={`Master names class ${mm.onlyMaster.join(', ')}, which this topic is not linked to. Nothing is changed.`}>Class mismatch</span>}</div>}
         {r.topic_taught_in && <div className="muted small">Also taught in: {r.topic_taught_in}</div>}
         {r.revisit && <div className="muted small">Revisit: {r.revisit}</div>}
       </F>}

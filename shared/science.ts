@@ -57,14 +57,14 @@ export function classSet(v: string | null): number[] | null {
   return [...out].sort();
 }
 
-/** The master's "Topic class (mapped)" against the topic's approved classes (home class + active links).
- *  null = nothing to compare (empty cell); otherwise which classes are only in the master / only in the CMS. */
-export function classMismatch(mapped: string | null, approved: number[]): { onlyMaster: number[]; onlyCms: number[] } | null {
+/** The master's "Topic class (mapped)" (the NCERT classes) against the topic's approved classes (home class + active links).
+ *  A mismatch (Sambit, 14 Nov 2026) is ONLY a class the master names that the topic is not linked to; extra CMS classes are fine.
+ *  null = no mismatch or nothing to compare (empty cell). */
+export function classMismatch(mapped: string | null, approved: number[]): { onlyMaster: number[] } | null {
   const m = classSet(mapped);
   if (!m) return null;
-  const a = [...new Set(approved)].sort();
-  const onlyMaster = m.filter((c) => !a.includes(c)), onlyCms = a.filter((c) => !m.includes(c));
-  return onlyMaster.length || onlyCms.length ? { onlyMaster, onlyCms } : null;
+  const onlyMaster = m.filter((c) => !approved.includes(c));
+  return onlyMaster.length ? { onlyMaster } : null;
 }
 
 /** A question's content rows: "Direct row ID(s)" are direct, the rest of "Content row ID(s)" supporting.
