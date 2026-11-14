@@ -28,6 +28,8 @@ async function cleanup() {
   await owner`delete from cms.cms_topic_prereqs where topic_id = any(${[...made.topics, 'MT9993']})`;
   if (made.topics.length) await owner`delete from cms.cms_topics where topic_id = any(${made.topics})`;
   await owner`delete from cms.cms_topics where chapter_id = 'MC93'`;
+  await owner`delete from cms.cms_reviews where target_id like 'ACH-%' and split_part(target_id, '-', 2) = any(${[...made.chapters, 'MC93']})`;
+  await owner`delete from cms.cms_topics where topic_kind = 'achievers' and chapter_id = any(${[...made.chapters, 'MC93']})`; // 0034: Achievers rows the trigger made
   if (made.chapters.length) await owner`delete from cms.cms_chapters where chapter_id = any(${made.chapters})`;
   await owner`delete from cms.cms_chapters where chapter_id = 'MC93'`;
   await owner`delete from cms.cms_strands where strand_id = 'math-ZT'`;
@@ -68,10 +70,15 @@ describe('cms_save_curriculum (D5)', () => {
     const t = await save({ kind: 'topic', action: 'create', fields: { chapter_id: ch.id, class: 4, name: 'New topic', sub_skills: 'a; b' } });
     made.topics.push(t.id);
     expect(t.id).toMatch(/^MT\d{4}$/);
-    const ach = await save({ kind: 'topic', action: 'create', fields: { chapter_id: ch.id, class: 4, name: 'Achievers', topic_kind: 'achievers' } });
-    made.topics.push(ach.id);
-    expect(ach.id).toBe(`ACH-${ch.id}-4`);
+    // 0034: the new topic's home class makes the chapter present in class 4, so its Achievers row exists already
+    made.topics.push(`ACH-${ch.id}-4`);
+    const [auto] = await owner`select name, topic_kind from cms.cms_topics where topic_id = ${`ACH-${ch.id}-4`}`;
+    expect(auto).toEqual({ name: 'Achievers: Made in the CMS', topic_kind: 'achievers' });
     await expect(save({ kind: 'topic', action: 'create', fields: { chapter_id: ch.id, class: 4, name: 'again', topic_kind: 'achievers' } })).rejects.toThrow(/already exists/);
+    // a class the chapter is not present in can still get one by hand
+    const ach = await save({ kind: 'topic', action: 'create', fields: { chapter_id: ch.id, class: 2, name: 'Achievers', topic_kind: 'achievers' } });
+    made.topics.push(ach.id);
+    expect(ach.id).toBe(`ACH-${ch.id}-2`);
     await save({ kind: 'topic', action: 'update', id: t.id, fields: { name: 'Renamed topic', topic_id: 'MT0001' }, reason: 'clearer name' });
     const [row] = await owner`select topic_id, name from cms.cms_topics where topic_id = ${t.id}`;
     expect(row).toEqual({ topic_id: t.id, name: 'Renamed topic' }); // the ID never changes

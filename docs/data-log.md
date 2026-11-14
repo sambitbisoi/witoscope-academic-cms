@@ -2,6 +2,17 @@
 
 Changes to real (non-test) data that Sambit approved, with what was done and where the audit trail is.
 
+## 14 Nov 2026: Achievers for every class a Math chapter is present in (0034)
+
+**Approval (Sambit, 14 Nov 2026):** "PR #27 review: OK, with one screen rule added to #27 before going real" (an Achievers row of a chapter that is in a class only through links is extra: shown only with "Include extra topics", unnumbered), "Then: tests + db:verify on local → apply 0034 to real (batched) → db:verify on real → merge #27 → deploy."
+
+| Step | Result |
+|---|---|
+| Backup | `~/WitoScope/CMS-backups/real-cms-2026-11-14-pre-0034.dump` (schema `cms`, read-only file) |
+| Local | 0034 applied; `db:verify` passes; 305 unit + 120 DB tests pass; 80 Achievers rows backfilled |
+| Real dry run | 0034 in one rolled-back transaction (186 ms): 80 rows (C1 3 · C2 14 · C3 10 · C4 12 · C5 15 · C6 26); MC19 gets C3 and C4; a new link made ACH-MC19-2 (audited); real unchanged afterwards |
+| Real | `migrate.ts` applied **0034_achievers_every_class.sql** (the backfill is one batched statement): Achievers rows 184 → **264** (none outside Math), 80 `create` audits ("Achievers rule"), MC19: C3–C6, triggers `cms_topic_achievers` and `cms_topic_class_achievers` in place. `db:verify` on real: all checks passed |
+
 ## 14 Nov 2026: Science content rows — class information (0033)
 
 **Approval (Sambit, 14 Nov 2026):** "Review OK, with one change before going real" (Class mismatch = only a class the master names that the topic is not linked to), "Then go ahead: apply 0033 to real → import:science --confirm-real → db:verify on real → push, open the PR, merge, deploy."

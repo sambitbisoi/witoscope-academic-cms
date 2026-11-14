@@ -59,6 +59,8 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await owner`delete from cms.cms_topics where topic_id = 'MT9999'`;
+  await owner`delete from cms.cms_reviews where target_id like 'ACH-%' and split_part(target_id, '-', 2) = any(${['MC99']})`;
+  await owner`delete from cms.cms_topics where topic_kind = 'achievers' and chapter_id = any(${['MC99']})`; // 0034: Achievers rows the trigger made
   await owner`delete from cms.cms_chapters where chapter_id = 'MC99'`;
   await owner`delete from cms.cms_strands where strand_id = 'math-ZZ'`;
   await Promise.all([su.end(), owner.end()]);
@@ -114,6 +116,8 @@ describe('catalog: every table is locked the same way', () => {
       { proname: 'cms_current_uid', prosecdef: false, provolatile: 's', proconfig: ['search_path=""'], auth_exec: true, anon_exec: false, public_exec: false },
       { proname: 'cms_decide_override', prosecdef: true, provolatile: 'v', proconfig: ['search_path=""'], auth_exec: true, anon_exec: false, public_exec: false },
       { proname: 'cms_decide_topic_class', prosecdef: true, provolatile: 'v', proconfig: ['search_path=""'], auth_exec: true, anon_exec: false, public_exec: false },
+      // 0034 Achievers rule: invoker helpers, not callable by the app user
+      { proname: 'cms_ensure_achievers', prosecdef: false, provolatile: 'v', proconfig: ['search_path=""'], auth_exec: false, anon_exec: false, public_exec: false },
       { proname: 'cms_is_admin', prosecdef: true, provolatile: 's', proconfig: ['search_path=""'], auth_exec: true, anon_exec: false, public_exec: false },
       { proname: 'cms_record_run', prosecdef: true, provolatile: 'v', proconfig: ['search_path=""'], auth_exec: true, anon_exec: false, public_exec: false },
       { proname: 'cms_retire', prosecdef: true, provolatile: 'v', proconfig: ['search_path=""'], auth_exec: true, anon_exec: false, public_exec: false },
@@ -123,7 +127,9 @@ describe('catalog: every table is locked the same way', () => {
       { proname: 'cms_set_catalogue_status', prosecdef: true, provolatile: 'v', proconfig: ['search_path=""'], auth_exec: true, anon_exec: false, public_exec: false },
       { proname: 'cms_set_status', prosecdef: true, provolatile: 'v', proconfig: ['search_path=""'], auth_exec: true, anon_exec: false, public_exec: false },
       { proname: 'cms_set_topic_review', prosecdef: true, provolatile: 'v', proconfig: ['search_path=""'], auth_exec: true, anon_exec: false, public_exec: false },
-      // trigger function (not callable by anyone; runs on every version write)
+      // trigger functions (not callable by anyone)
+      { proname: 'cms_topic_achievers', prosecdef: false, provolatile: 'v', proconfig: ['search_path=""'], auth_exec: false, anon_exec: false, public_exec: false },
+      { proname: 'cms_topic_class_achievers', prosecdef: false, provolatile: 'v', proconfig: ['search_path=""'], auth_exec: false, anon_exec: false, public_exec: false },
       { proname: 'cms_version_flags', prosecdef: false, provolatile: 'v', proconfig: ['search_path=""'], auth_exec: false, anon_exec: false, public_exec: false },
     ]);
   });
