@@ -217,8 +217,35 @@ function print(rows: ({ label: string; field?: string } & ReturnType<typeof chec
   console.log(`\n${rows.length} checked · ${n('clear')} clear · ${n('flagged')} close (warning) · ${n('near_copy')} near-copy (blocks the import) · ${n('no_sources')} with no book on this Mac`);
 }
 
+/** --science <master.xlsx>: every field of every content row and question of the Science master (13 Nov 2026). */
+async function checkScience(sql: Sql, masterPath: string) {
+  const { readMaster } = await import('./lib/science-master.ts');
+  const { checkMaster, scienceReportPath } = await import('./lib/science-originality.ts');
+  const master = await readMaster(masterPath);
+  const errors = master.problems.filter((p) => p.level === 'error');
+  if (errors.length) { for (const p of errors) console.error(`  ✗ ${p.where}: ${p.message}`); throw new Error('the master has errors; fix them first'); }
+  const { th, near } = await thresholds(sql);
+  console.log(`Originality check of the Science master (${master.rows.length} content rows, ${master.questions.length} questions; warning from ${th}, near-copy from ${near})`);
+  const rep = checkMaster(master, join(masterPath, '..'), th, near, (s) => process.stderr.write(`${s}\n`));
+  const out = scienceReportPath(masterPath);
+  writeFileSync(out, JSON.stringify(rep, null, 2) + '\n');
+  const tally = (xs: { result: string }[]) => ['clear', 'flagged', 'near_copy', 'no_sources'].map((k) => `${xs.filter((x) => x.result === k).length} ${k.replace('_', '-')}`).join(' · ');
+  console.log(`  read on this Mac: ${rep.read.length} page sets from ${new Set(rep.read.map((r) => r.source_id)).size} books${rep.missing.length ? ` · no text on this Mac for ${rep.missing.join(', ')}` : ''}`);
+  console.log(`  content rows: ${tally(rep.rows)}`);
+  console.log(`  questions:    ${tally(rep.questions)}`);
+  for (const x of [...rep.rows, ...rep.questions].filter((r) => r.result === 'near_copy')) console.log(`  ✗ NEAR-COPY ${x.key} · ${x.field}: ${x.closest_ref} (${x.similarity}${x.same_numbers ? ', same numbers' : ''})`);
+  console.log(`Report: ${out} (citations and scores only; import:science reads it)`);
+}
+
 if (import.meta.filename === process.argv[1]) {
   const args = process.argv.slice(2);
+  if (args.includes('--science')) {
+    const path = resolve(opt2(args, '--science') ?? join(process.env.HOME ?? '', 'WitoScope', 'ContentResearch', 'Science', 'WitoScope_Science_Master.xlsx'));
+    if (!hasPdftotext()) { console.error('pdftotext is needed (brew install poppler).'); process.exit(1); }
+    const sql = connect();
+    try { await assertCmsOwner(sql); await checkScience(sql, path); } finally { await sql.end(); }
+    process.exit(0);
+  }
   const opt = (name: string) => (args.includes(name) ? args[args.indexOf(name) + 1] ?? null : null);
   const file = args.find((a, i) => !a.startsWith('--') && args[i - 1] !== '--chapter' && args[i - 1] !== '--to-fix');
   if (!file && !args.includes('--unchecked') && !args.includes('--all') && !args.includes('--pending')) {
@@ -249,3 +276,5 @@ if (import.meta.filename === process.argv[1]) {
     await sql.end();
   }
 }
+
+function opt2(args: string[], name: string) { const v = args[args.indexOf(name) + 1]; return v && !v.startsWith('--') ? v : null; }

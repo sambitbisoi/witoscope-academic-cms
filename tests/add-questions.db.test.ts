@@ -23,7 +23,7 @@ async function cleanup() {
   const qids = (await owner`select question_id from cms.cms_questions where chapter_id = 'MC89'`).map((r) => r.question_id as string);
   if (qids.length) {
     const vids = (await owner`select version_id from cms.cms_question_versions where question_id = any(${qids})`).map((r) => r.version_id);
-    for (const t of ['cms_version_options', 'cms_version_wrong_answers', 'cms_version_concepts', 'cms_version_solutions', 'cms_version_hints', 'cms_version_source_refs', 'cms_originality_checks'])
+    for (const t of ['cms_version_options', 'cms_version_wrong_answers', 'cms_version_concepts', 'cms_version_solutions', 'cms_version_hints', 'cms_version_source_refs', 'cms_originality_checks', 'cms_question_content_rows'])
       await owner`delete from ${owner(`cms.${t}`)} where version_id = any(${vids})`;
     await owner`delete from cms.cms_reviews where target_id like any (${qids.map((q) => `${q} v%`)})`;
     await owner`delete from cms.cms_question_versions where question_id = any(${qids})`;
@@ -45,6 +45,13 @@ beforeAll(async () => {
 afterAll(async () => { await cleanup(); await Promise.all([owner.end(), su.end()]); });
 
 describe('cms_add_questions', () => {
+  it('Science (0032): stores optional content-row links; a row in both lists counts as direct; an unknown row is refused', async () => {
+    const r = await add({ topic_id: 'MT9970', origin: 'manual', questions: [mcq({ content_rows: [{ row_id: 'C6-04-001', role: 'direct' }, { row_id: 'C6-04-014', role: 'supporting' }, { row_id: 'C6-04-001', role: 'supporting' }] })] });
+    const links = await owner`select x.row_id, x.role from cms.cms_question_content_rows x join cms.cms_question_list l using (version_id) where l.question_id = ${r.added[0]!.question_id} order by row_id`;
+    expect(links.map((l) => `${l.row_id}:${l.role}`)).toEqual(['C6-04-001:direct', 'C6-04-014:supporting']);
+    await expect(add({ topic_id: 'MT9970', origin: 'manual', questions: [mcq({ content_rows: [{ row_id: 'C6-99-999', role: 'direct' }] })] })).rejects.toThrow(/content row ID does not exist/);
+  });
+
   it('adds a question by hand: Needs review, Manual, all three pending flags, options marked', async () => {
     const r = await add({ topic_id: 'MT9970', origin: 'manual', questions: [mcq({ picture_needed: true, figure_description: 'Four number cards',
       solution: 'Compare hundreds first.', hints: ['Look at the hundreds'], wrong_answers: [{ value: '102', why: 'confused 0 and 2' }], author_notes: 'from class work' })] });

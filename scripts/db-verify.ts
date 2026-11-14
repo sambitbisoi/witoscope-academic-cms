@@ -61,7 +61,7 @@ try {
   check('cms_is_admin: security definer, stable, empty search_path, authenticated only',
     !!adm && adm.prosecdef && adm.provolatile === 's' && adm.proconfig?.[0] === 'search_path=""' && adm.auth_exec && !adm.anon_exec);
 
-  const DEFINER_ALLOWED = ['cms_is_admin', 'cms_apply_save', 'cms_set_status', 'cms_retire', 'cms_record_run', 'cms_save_job', 'cms_set_catalogue_status', 'cms_save_curriculum', 'cms_decide_override', 'cms_set_topic_review', 'cms_add_questions', 'cms_save_order'];
+  const DEFINER_ALLOWED = ['cms_is_admin', 'cms_apply_save', 'cms_set_status', 'cms_retire', 'cms_record_run', 'cms_save_job', 'cms_set_catalogue_status', 'cms_save_curriculum', 'cms_decide_override', 'cms_set_topic_review', 'cms_add_questions', 'cms_save_order', 'cms_decide_topic_class'];
   const badFns = fns.filter((f) => f.proconfig?.[0] !== 'search_path=""' || f.anon_exec || (f.prosecdef && !DEFINER_ALLOWED.includes(f.proname)));
   check('every cms function: empty search_path, no anon access; only the listed functions run as owner', badFns.length === 0, badFns.map((f) => f.proname).join(', '));
 
@@ -78,6 +78,13 @@ try {
 
   const [mapCols] = await sql`select count(*)::int as n from cms.cms_source_map m, jsonb_array_elements(m.cells) c where c ->> 0 ~* '(evidence|^notes?\y|source scan)'`;
   check('source-mapping rows hold no evidence, notes or scan paths (book text stays on the Mac)', mapCols!.n === 0, `${mapCols!.n} such cells`);
+
+  // Science (13 Nov 2026): citations are a source + printed pages + the cell's own short citation, nothing else
+  const citCols = (await sql`select column_name from information_schema.columns where table_schema = 'cms' and table_name = 'cms_citations' order by 1`).map((c) => c.column_name as string);
+  check('Science citations are citations only (source, pages, short label)', citCols.join() === ['citation_id', 'for_row_id', 'page_from', 'page_to', 'raw', 'row_id', 'source_id', 'version_id'].join(), citCols.join(', '));
+  const [badCit] = await sql`select count(*)::int as n from cms.cms_citations
+    where raw !~ '^(NCERT p\\.|DAV |Claude-added \\(extends NCERT p|[A-Za-z][A-Za-z0-9]* (pp?\\.)?[0-9])' or char_length(raw) > 80`;
+  check('every Science citation label looks like "NCERT p.N" / "<book> p.N"', badCit!.n === 0, `${badCit!.n} other labels`);
 
   const [admin] = await sql`select value #>> '{}' as id from cms.cms_config where key = 'admin_user_id'`;
   check('cms_config.admin_user_id is set to a UUID', /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(admin?.id ?? ''), admin?.id ?? 'not set');
