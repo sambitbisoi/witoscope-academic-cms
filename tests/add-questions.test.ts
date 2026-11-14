@@ -1,6 +1,6 @@
 // Add / bulk-upload questions (13 Nov 2026): mandatory-field checks, Excel row parsing, flag filters.
 import { describe, expect, it } from 'vitest';
-import { mandatoryErrors, matchesFlag, parseUploadRow, UPLOAD_COLUMNS, type UploadLookups } from '../web/src/logic.ts';
+import { contentRowLinks, mandatoryErrors, matchesFlag, parseUploadRow, UPLOAD_COLUMNS, uploadColumns, type UploadLookups } from '../web/src/logic.ts';
 
 const look: UploadLookups = { concepts: new Set(['G6-FRC-C1']), sets: new Set(['TS-A', 'TS-B']), patterns: new Map([['P-A1', 'TS-A']]), settings: new Set(['SET01']), sourceItems: new Set(['N6-01-004']) };
 const base = { text: 'Which is largest?', format: 'MCQ-4', a: '12', b: '21', c: '102', d: '120', correct: '120', level: 6, picture: 'N' };
@@ -54,5 +54,20 @@ describe('flag filters', () => {
   const q = { created_from: 'upload', attributes_pending: true, originality_pending: false, image_pending: true };
   it('filters on origin and each pending flag', () => {
     expect(['all', 'manual', 'upload', 'attributes', 'image', 'originality'].filter((f) => matchesFlag(f as never, q))).toEqual(['all', 'upload', 'attributes', 'image']);
+  });
+});
+
+describe('Science content-row columns (13 Nov 2026)', () => {
+  const sci: UploadLookups = { ...look, contentRows: new Set(['C6-04-001', 'C6-04-014']) };
+  it('direct and supporting IDs become links; a row in both is direct; unknown IDs are left out with a warning', () => {
+    const r = parseUploadRow(2, { ...base, rows_direct: 'C6-04-001', rows_supporting: 'c6-04-014, C6-04-001; C6-99-999' }, sci);
+    expect(r.q!.content_rows).toEqual([{ row_id: 'C6-04-001', role: 'direct' }, { row_id: 'C6-04-014', role: 'supporting' }]);
+    expect(r.warnings).toEqual(['content row C6-99-999 is not known; left out']);
+    expect(r.errors).toEqual([]);
+  });
+  it('the template has the content-row columns for Science only', () => {
+    expect(uploadColumns(true).map((c) => c.key)).toEqual(expect.arrayContaining(['rows_direct', 'rows_supporting']));
+    expect(uploadColumns(false).some((c) => c.key.startsWith('rows_'))).toBe(false);
+    expect(contentRowLinks('', '')).toEqual([]);
   });
 });
