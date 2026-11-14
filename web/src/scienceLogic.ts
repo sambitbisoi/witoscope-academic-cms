@@ -1,5 +1,6 @@
 // Science workspace layout (Sambit, 14 Nov 2026): tree | content | questions. Pure helpers (no React, no network),
 // unit-tested in tests/science-layout.test.ts.
+import { classMismatch } from '../../shared/science.ts';
 
 export interface RowLike { row_id: string; topic_id: string; sort: number; row_class: number; question_use: string }
 export interface QuestionLike { question_id: string; topic_id: string; level_tier: string | null; links: { row_id: string; role: 'direct' | 'supporting' }[] }
@@ -40,4 +41,12 @@ export function topicGroups<T extends RowLike>(rows: T[], topicIds: string[]): {
   const ordered = rowsInOrder(rows);
   const ids = [...topicIds, ...[...new Set(ordered.map((r) => r.topic_id))].filter((id) => !topicIds.includes(id))];
   return ids.map((topic_id) => ({ topic_id, rows: ordered.filter((r) => r.topic_id === topic_id) }));
+}
+
+/** The open row's Classes line: "NCERT classes: <mapped or none> · CMS classes: <approved>". An empty or "–" master cell
+ *  (DAV-only rows) reads "none" and never raises Class mismatch (Sambit, 14 Nov 2026). */
+export function classesLine(mapped: string | null, approved: number[] | null): { text: string; mismatch: number[] } {
+  const m = mapped && mapped.trim() !== '' && mapped.trim() !== '–' && mapped.trim() !== '—' ? mapped.trim() : null;
+  const cms = approved === null ? '…' : [...approved].sort().join(', ') || '—';
+  return { text: `NCERT classes: ${m ?? 'none'} · CMS classes: ${cms}`, mismatch: approved && m ? classMismatch(m, approved)?.onlyMaster ?? [] : [] };
 }
