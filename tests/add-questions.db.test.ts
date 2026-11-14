@@ -32,6 +32,8 @@ async function cleanup() {
   await owner`delete from cms.cms_reviews where import_id in (select import_id from cms.cms_imports where chapter_id = 'MC89')`;
   await owner`delete from cms.cms_imports where chapter_id = 'MC89'`;
   await owner`delete from cms.cms_topics where topic_id = 'MT9970'`;
+  await owner`delete from cms.cms_reviews where target_id like 'ACH-%' and split_part(target_id, '-', 2) = any(${['MC89']})`;
+  await owner`delete from cms.cms_topics where topic_kind = 'achievers' and chapter_id = any(${['MC89']})`; // 0034: Achievers rows the trigger made
   await owner`delete from cms.cms_chapters where chapter_id = 'MC89'`;
   await owner`delete from cms.cms_strands where strand_id = 'math-ZQ'`;
 }
