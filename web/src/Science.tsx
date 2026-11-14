@@ -8,8 +8,7 @@ import { Id } from './Id';
 import { OriginFlags } from './AddQuestions';
 import { rowDetail, scienceData, type ScienceData, type ScienceQuestion, type ScienceRow } from './scienceApi';
 import { browseHash, statusLabel } from './logic';
-import { isDimmed, listedOrder, rightPane, rowQuestions, rowsForClass, rowsInOrder, topicGroups } from './scienceLogic';
-import { classMismatch } from '../../shared/science.ts';
+import { classesLine, isDimmed, listedOrder, rightPane, rowQuestions, rowsForClass, rowsInOrder, topicGroups } from './scienceLogic';
 
 export const CONTENT_TYPES = ['Fact', 'Concept', 'How it works', 'Experiment', 'Scenario-Case', 'Diagram', 'Vocabulary'] as const;
 const STATUS: Record<ScienceRow['status'], { icon: string; label: string; cls: string }> = {
@@ -187,7 +186,7 @@ function RowDetail({ r, inScope, onRow }: { r: ScienceRow; inScope: (id: string)
   const [d, setD] = useState<Awaited<ReturnType<typeof rowDetail>> | null>(null);
   const [err, setErr] = useState<string | null>(null);
   useEffect(() => { setD(null); setErr(null); rowDetail(r).then(setD).catch((e) => setErr(e.message)); }, [r.row_id]); // eslint-disable-line react-hooks/exhaustive-deps
-  const mm = d ? classMismatch(r.topic_classes_mapped, d.classes) : null;
+  const cl = classesLine(r.topic_classes_mapped, d ? d.classes : null);
   const F = ({ label, children }: { label: string; children: ReactNode }) => <div className="sci-f"><div className="sci-f-l">{label}</div><div className="sci-f-v">{children}</div></div>;
   const book = [r.book, r.book_chapter_no !== null ? `Ch ${r.book_chapter_no}${r.book_chapter_title ? ` ${r.book_chapter_title}` : ''}` : r.book_chapter_title].filter(Boolean).join(' · ');
   return (
@@ -195,8 +194,9 @@ function RowDetail({ r, inScope, onRow }: { r: ScienceRow; inScope: (id: string)
       {r.why_it_matters && <F label="Why it matters / real-life link">{r.why_it_matters}</F>}
       {r.misconceptions && <F label="Common misconceptions">{r.misconceptions}</F>}
       {r.diagram_description && <F label="Diagram description">{r.diagram_description}</F>}
-      {r.topic_classes_mapped && <F label="Classes">NCERT classes: {r.topic_classes_mapped} · CMS classes: {d ? (d.classes.join(', ') || '—') : '…'}
-        {mm && <span className="tag mismatch" title={`Master names class ${mm.onlyMaster.join(', ')}, which this topic is not linked to. Nothing is changed.`}>Class mismatch</span>}</F>}
+      {/* "Topic class (mapped)" empty or "–" (DAV-only rows): still shown, as "none"; never a Class mismatch */}
+      <F label="Classes">{cl.text}
+        {cl.mismatch.length > 0 && <span className="tag mismatch" title={`Master names class ${cl.mismatch.join(', ')}, which this topic is not linked to. Nothing is changed.`}>Class mismatch</span>}</F>
       {r.topic_taught_in && <F label="Also taught in">{r.topic_taught_in}</F>}
       {r.revisit && <F label="Revisit">{r.revisit}</F>}
       {r.also_in_rows.length > 0 && <F label="Also in">
@@ -207,7 +207,7 @@ function RowDetail({ r, inScope, onRow }: { r: ScienceRow; inScope: (id: string)
       </F>}
       {(r.source || r.found_in) && <F label="Source / Found in">{[r.source, r.found_in].filter(Boolean).join(' · ')}{r.confidence ? <span className="muted small"> · confidence {r.confidence}</span> : null}</F>}
       {(book || r.appears_in || (d?.citations.length ?? 0) > 0) && <F label="Citation">
-        {book && <div>{book}</div>}
+        {book && <div><span className="muted">Filed under:</span> {book}</div>}
         {r.appears_in && <div className="muted small">{r.appears_in}</div>}
         {d?.citations.map((c, i) => <div key={i} className="small">{d.sources.get(c.source_id) ?? c.source_id} · {c.raw}</div>)}
       </F>}

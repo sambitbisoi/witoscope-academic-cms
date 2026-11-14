@@ -1,6 +1,8 @@
 :root {
   --bg: #f6f7f9; --card: #ffffff; --text: #1d2330; --muted: #667085; --line: #d9dee7;
   --accent: #2f5bd3; --accent-text: #ffffff; --error: #b42318;
+  --approve-blocked-text: #5b6475;
+  --row-detail-bg: #fbf7ee; --row-detail-line: #eadfc6;
   --subtle: #fafbfc; --hover: #f3f6fd; --sel-bg: #eef2fc; --row-line: #eef0f3; --chip: #eef0f4;
   --ok: #146c3a; --ok-bg: #e3f4ea; --ok-soft: #f3fbf6; --ok-line: #9fd3b2;
   --warn: #8a5a00; --warn-bg: #fff3d6; --notice-bg: #fff8e6; --notice-line: #f3dca0;
@@ -21,6 +23,8 @@
   :root {
     --bg: #12151c; --card: #1a1e27; --text: #e4e7ee; --muted: #98a1b3; --line: #2e3442;
     --accent: #7c9cf2; --accent-text: #0e1118; --error: #f28b82;
+    --approve-blocked-text: #98a1b3;
+    --row-detail-bg: #2a2619; --row-detail-line: #4a412a;
     --subtle: #1f2430; --hover: #232a38; --sel-bg: #243150; --row-line: #262c38; --chip: #2a303d;
     --ok: #7fd3a0; --ok-bg: #173a27; --ok-soft: #16261d; --ok-line: #2f6b47;
     --warn: #f0c36b; --warn-bg: #3a2e14; --notice-bg: #2f2814; --notice-line: #5c4a1c;
@@ -246,6 +250,8 @@ button.link.more { font-size: 0.86rem; text-align: left; }
 /* ---------------- Phase 5: edit, review ---------------- */
 .actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--row-line); }
 button.approve { background: var(--ok); border-color: var(--ok); }
+/* 14 Nov 2026: approval blocked (attributes, originality, picture pending): visibly disabled; the reason line stays below */
+button.approve.blocked, button.approve.blocked:hover { background: var(--chip); border-color: var(--line); color: var(--approve-blocked-text); cursor: not-allowed; opacity: 1; }
 .reason { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end; width: 100%; }
 .reason label { flex: 1; min-width: 200px; }
 .compare { margin-top: 8px; background: var(--subtle); border: 1px solid var(--line); border-radius: 6px; padding: 8px; }
@@ -388,7 +394,13 @@ button.flag.on { background: var(--notice-bg); border-color: var(--notice-line);
 /* U16: background sections, always shown, under a muted divider */
 .background-divider { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 0.78rem; margin-top: 8px; }
 .background-divider::before, .background-divider::after { content: ''; flex: 1; border-top: 1px dashed var(--line); }
-.background { display: flex; flex-direction: column; gap: 14px; opacity: 0.92; }
+.background { display: flex; flex-direction: column; gap: 14px; opacity: 0.92; margin-top: 10px; }
+/* 14 Nov 2026: background (tagging, sources, history) folded by default */
+.background-fold > summary { cursor: pointer; list-style: none; }
+.background-fold > summary::-webkit-details-marker { display: none; }
+.background-fold > summary span::before { content: '▸ '; }
+.background-fold[open] > summary span::before { content: '▾ '; }
+.background-fold > summary:hover { color: var(--text); }
 
 /* U2: proposed list */
 .search-in { height: 34px; padding: 0 12px; width: 360px; max-width: 100%; }
@@ -588,7 +600,8 @@ table.map-table tr.warn-row td:first-child { box-shadow: inset 3px 0 0 var(--war
 .tag.role-preview { background: var(--chip); color: var(--muted); }
 .tag.mismatch { background: var(--warn-bg); color: var(--warn); font-weight: 600; }
 /* the open row's fields, in place under the row */
-.sci-detail { padding: 6px 12px 10px 44px; background: var(--subtle); border-top: 1px solid var(--row-line); }
+.sci-detail { padding: 6px 12px 10px 44px; background: var(--row-detail-bg); border-top: 1px solid var(--row-detail-line); border-bottom: 1px solid var(--row-detail-line); }
+.sci-detail .sci-f { border-top-color: var(--row-detail-line); }
 .sci-f { padding: 5px 0; border-top: 1px solid var(--row-line); }
 .sci-f:first-child { border-top: none; }
 .sci-f-l { font-size: 0.72rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; margin-bottom: 1px; }

@@ -54,9 +54,8 @@ export function QuestionDetail({ id, versionNo, onVersion, onEdit, reloadKey = 0
       </div>
       {q.subject === 'science' ? <ScienceBody d={d} isCurrent={isCurrent} onVersion={onVersion}
         actions={isCurrent ? <Actions key={v.version_id} d={d} onEdit={onEdit} onChanged={() => { setTick((t) => t + 1); onChanged?.(); }} command={command} onAdvance={onAdvance} /> : null} /> : <>
-      {isCurrent && d.flags && <PendingBanners f={d.flags} gold={q.bank === 'gold'} />}
-      {isCurrent && <Actions key={v.version_id} d={d} onEdit={onEdit} onChanged={() => { setTick((t) => t + 1); onChanged?.(); }} command={command} onAdvance={onAdvance} />}
       {!isCurrent && <div className="notice small">You're looking at an older version. <button className="link" onClick={() => onVersion(null)}>Show current (v{q.current_version})</button></div>}
+      {isCurrent && <Actions key={v.version_id} d={d} onEdit={onEdit} onChanged={() => { setTick((t) => t + 1); onChanged?.(); }} command={command} onAdvance={onAdvance} />}
 
       <div className="preview">
         <div className="eyebrow">Preview (as the child sees it)</div>
@@ -112,29 +111,6 @@ export function QuestionDetail({ id, versionNo, onVersion, onEdit, reloadKey = 0
         </Section>
       )}
 
-      <div className="tint-box signature">
-        <div className="tint-title">Signature — review</div>
-        <KV rows={signatureRows(v, d.insightName)} />
-      </div>
-      <div className="tint-box derived">
-        <div className="tint-title">Derived <span className="muted small">(computed on save)</span></div>
-        <KV rows={derivedRows(v)} />
-      </div>
-
-      <Section title="Concepts · involvement (main 1.0 · secondary 0.5 · minor 0.2)">
-        {d.concepts.length === 0 ? <div className="muted small">None.</div> : (
-          <ul className="plain small">
-            {[...d.concepts].sort((a, b) => a.part_label.localeCompare(b.part_label) || b.involvement - a.involvement).map((c) => (
-              <li key={`${c.part_label}-${c.concept_id}`}>
-                {c.part_label && <span className="muted">({c.part_label}) </span>}
-                <span className="mono">{c.concept_id}</span> {d.conceptNames.get(c.concept_id)?.name ?? ''}<Proposed status={d.conceptNames.get(c.concept_id)?.status} />{' '}
-                <span className="muted inv" title={involvementOf(c.involvement).title}>{involvementOf(c.involvement).label} {Number(c.involvement).toFixed(1)}</span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </Section>
-
       <Section title="Placement">
         <div className="placement small">
           <div><span className="muted">Level</span> <strong>{q.level ?? '—'}</strong>{q.level ? ` (written for class ${q.level})` : ` (not set yet; class ${q.class} is used)`}</div>
@@ -164,9 +140,34 @@ export function QuestionDetail({ id, versionNo, onVersion, onEdit, reloadKey = 0
         ]} />
       </Section>
 
+      {isCurrent && d.flags && <PendingBanners f={d.flags} gold={q.bank === 'gold'} />}
+      <div className="tint-box signature">
+        <div className="tint-title">Signature — review</div>
+        <KV rows={signatureRows(v, d.insightName)} />
+      </div>
+      <div className="tint-box derived">
+        <div className="tint-title">Derived <span className="muted small">(computed on save)</span></div>
+        <KV rows={derivedRows(v)} />
+      </div>
+
+      <Section title="Concepts · involvement (main 1.0 · secondary 0.5 · minor 0.2)">
+        {d.concepts.length === 0 ? <div className="muted small">None.</div> : (
+          <ul className="plain small">
+            {[...d.concepts].sort((a, b) => a.part_label.localeCompare(b.part_label) || b.involvement - a.involvement).map((c) => (
+              <li key={`${c.part_label}-${c.concept_id}`}>
+                {c.part_label && <span className="muted">({c.part_label}) </span>}
+                <span className="mono">{c.concept_id}</span> {d.conceptNames.get(c.concept_id)?.name ?? ''}<Proposed status={d.conceptNames.get(c.concept_id)?.status} />{' '}
+                <span className="muted inv" title={involvementOf(c.involvement).title}>{involvementOf(c.involvement).label} {Number(c.involvement).toFixed(1)}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Section>
+
       </>}
-      <div className="background-divider"><span>Background — tagging, sources, history</span></div>
-      <div className="background">
+      <details className="background-fold">
+        <summary className="background-divider"><span>Background — tagging, sources, history</span></summary>
+        <div className="background">
           <Section title={`Tagging${v.tagged_by ? ` (by ${v.tagged_by})` : ''}`}>
             {v.tagging_summary && <div className="small prewrap">{v.tagging_summary}</div>}
             {v.tagging_why && Object.keys(v.tagging_why).length > 0 ? (
@@ -209,7 +210,8 @@ export function QuestionDetail({ id, versionNo, onVersion, onEdit, reloadKey = 0
               ))}</ul>
             )}
           </Section>
-      </div>
+        </div>
+      </details>
     </div>
   );
 }
@@ -361,7 +363,7 @@ function Actions({ d, onEdit, onChanged, command, onAdvance }: { d: QuestionDeta
       {v.status === 'draft' && <button className="secondary flag" disabled={busy} onClick={() => { viaKey.current = false; setAsk(ask === 'flag' ? null : 'flag'); }} title="F">Needs review…</button>}
       {v.status === 'in_review' && <button className="secondary flag on" disabled={busy} title="Clear the Needs review flag (back to draft)" onClick={() => run(() => setStatus(q.question_id, v.version_no, 'withdraw', null))}>⚑ Needs review · clear</button>}
       {open && <>
-        <button className="approve" disabled={busy || blockers.length > 0} title={blockers.length ? `Can't approve yet: ${blockers.join('; ')}` : 'A'} onClick={() => { viaKey.current = false; approve(); }}>Approve{nearCopy ? '…' : ''}</button>
+        <button className={`approve ${blockers.length ? 'blocked' : ''}`} disabled={busy || blockers.length > 0} aria-disabled={busy || blockers.length > 0} title={blockers.length ? `Can't approve yet: ${blockers.join('; ')}` : 'A'} onClick={() => { viaKey.current = false; approve(); }}>Approve{nearCopy ? '…' : ''}</button>
         <button className="reject" disabled={busy} title="R" onClick={() => { viaKey.current = false; setAsk(ask === 'reject' ? null : 'reject'); }}>Reject…</button>
       </>}
       {open && blockers.length > 0 && <span className="muted small blockers">Approve is off until: {blockers.join(' · ')}</span>}
@@ -490,12 +492,45 @@ function ScienceBody({ d, isCurrent, onVersion, actions }: { d: QuestionDetailDa
   const vr = v as unknown as Record<string, unknown>;
   const attr = (c: (typeof SCIENCE_ATTRS)[number]['col']) => (vr[c] === null || vr[c] === undefined ? PENDING : typeof vr[c] === 'boolean' ? (vr[c] ? 'yes' : 'no') : String(vr[c]));
   const subj = subjectOfChapter(q.chapter_id);
+  // Order (Sambit, 14 Nov 2026): actions · preview · explanation · misconception · safety / taught in / level and placement
+  // · the boxes (attributes pending · linked content · attributes) · background (folded, shared with Math)
+  const hasCites = !!x && (x.citations.length > 0 || !!x.version.confidence);
   return (
     <>
       {!isCurrent && <div className="notice small">You're looking at an older version. <button className="link" onClick={() => onVersion(null)}>Show current (v{q.current_version})</button></div>}
-      {isCurrent && d.flags && <PendingBanners f={d.flags} gold={q.bank === 'gold'} />}
+      {actions}
       {err && <p className="error small">Couldn't load the linked content: {err}</p>}
 
+      <div className="preview">
+        <div className="eyebrow">Preview (as the child sees it){x?.version.display_format ? ` · ${x.version.display_format}` : ''}</div>
+        <div className="stem">{v.text}</div>
+        {v.image_path && <FigureImage path={v.image_path} alt={v.figure_description ?? 'Figure'} />}
+        {v.figure_description && <div className="figure small prewrap"><span className="tag">{v.image_status === 'has_image' ? 'Image' : 'Image needed'}</span> {v.figure_description}</div>}
+        <div className="options">
+          {d.options.filter((o) => o.part_label === '').map((o) => (
+            <div key={o.position} className={`option ${o.is_correct ? 'correct' : ''}`}><span className="opt-label">{String.fromCharCode(64 + o.position)} · {o.text}{o.is_correct ? ' ✓' : ''}</span></div>
+          ))}
+        </div>
+      </div>
+      {d.solutions[0] && <Section title="Explanation"><div className="small prewrap">{d.solutions[0].text}</div></Section>}
+      {x?.version.misconception_targeted && <Section title="Misconception targeted"><div className="small">{x.version.misconception_targeted}</div></Section>}
+      {x?.version.safety_note && <Section title="Safety note"><div className="small banner safety">{x.version.safety_note}</div></Section>}
+      {hasCites && <Section title="Taught in (citations)">
+        {x!.citations.length > 0 && <ul className="plain small">{x!.citations.map((c, i) => (
+          <li key={i}>{c.for_row_id && <span className="mono muted">{c.for_row_id}: </span>}{x!.sources.get(c.source_id)?.title ?? c.source_id}, p.{c.page_from}{c.page_to !== c.page_from ? `–${c.page_to}` : ''}
+            {/^Claude-added/.test(c.raw) && <span className="muted"> (Claude-added, extends this page)</span>}</li>))}</ul>}
+        {x!.version.confidence && <div className="muted small">Confidence: {x!.version.confidence}</div>}
+      </Section>}
+      <Section title="Level / class and placement">
+        <KV one rows={[
+          { k: 'Level (class)', v: q.level ? `${q.level} (written for class ${q.level})` : '—' },
+          { k: 'Class', v: String(q.class) },
+          { k: 'Chapter', v: d.topic ? <>{d.topic.cms_chapters?.name ?? ''} <Id>{d.topic.chapter_id}</Id></> : q.chapter_id },
+          { k: 'Topic', v: d.topic ? <>{d.topic.name} <Id>{d.topic.topic_id}</Id></> : q.topic_id },
+        ]} />
+      </Section>
+
+      {isCurrent && d.flags && <PendingBanners f={d.flags} gold={q.bank === 'gold'} />}
       <div className="tint-box linked">
         <div className="tint-title">Linked content{x ? ` · ${x.links.filter((l) => l.role === 'direct').length} direct · ${x.links.filter((l) => l.role === 'supporting').length} supporting` : ''}</div>
         {!x ? <div className="muted small">Loading…</div> : x.links.length === 0 ? <div className="muted small">No content rows linked.</div> : (
@@ -523,36 +558,6 @@ function ScienceBody({ d, isCurrent, onVersion, actions }: { d: QuestionDetailDa
         ]} />
       </div>
 
-      <div className="preview">
-        <div className="eyebrow">Preview (as the child sees it){x?.version.display_format ? ` · ${x.version.display_format}` : ''}</div>
-        <div className="stem">{v.text}</div>
-        {v.image_path && <FigureImage path={v.image_path} alt={v.figure_description ?? 'Figure'} />}
-        {v.figure_description && <div className="figure small prewrap"><span className="tag">{v.image_status === 'has_image' ? 'Image' : 'Image needed'}</span> {v.figure_description}</div>}
-        <div className="options">
-          {d.options.filter((o) => o.part_label === '').map((o) => (
-            <div key={o.position} className={`option ${o.is_correct ? 'correct' : ''}`}><span className="opt-label">{String.fromCharCode(64 + o.position)} · {o.text}{o.is_correct ? ' ✓' : ''}</span></div>
-          ))}
-        </div>
-      </div>
-      {d.solutions[0] && <Section title="Explanation"><div className="small prewrap">{d.solutions[0].text}</div></Section>}
-      {x?.version.misconception_targeted && <Section title="Misconception targeted"><div className="small">{x.version.misconception_targeted}</div></Section>}
-      <Section title="Safety">{x?.version.safety_note ? <div className="small banner safety">{x.version.safety_note}</div> : <div className="muted small">None.</div>}</Section>
-      <Section title="Taught in (citations)">
-        {!x ? <div className="muted small">…</div> : x.citations.length === 0 ? <div className="muted small">None.</div> : (
-          <ul className="plain small">{x.citations.map((c, i) => (
-            <li key={i}>{c.for_row_id && <span className="mono muted">{c.for_row_id}: </span>}{x.sources.get(c.source_id)?.title ?? c.source_id}, p.{c.page_from}{c.page_to !== c.page_from ? `–${c.page_to}` : ''}
-              {/^Claude-added/.test(c.raw) && <span className="muted"> (Claude-added, extends this page)</span>}</li>))}</ul>
-        )}
-        {x?.version.confidence && <div className="muted small">Confidence: {x.version.confidence}</div>}
-      </Section>
-      {actions}
-      <Section title="Placement">
-        <KV one rows={[
-          { k: 'Chapter', v: d.topic ? <>{d.topic.cms_chapters?.name ?? ''} <Id>{d.topic.chapter_id}</Id></> : q.chapter_id },
-          { k: 'Topic', v: d.topic ? <>{d.topic.name} <Id>{d.topic.topic_id}</Id></> : q.topic_id },
-          { k: 'Class', v: String(q.class) },
-        ]} />
-      </Section>
     </>
   );
 }

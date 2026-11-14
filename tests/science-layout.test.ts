@@ -1,6 +1,6 @@
 // Science workspace layout (14 Nov 2026): tree | content | questions. Synthetic rows only.
 import { describe, expect, it } from 'vitest';
-import { isDimmed, listedOrder, rightPane, rowQuestions, rowsForClass, rowsInOrder, topicGroups } from '../web/src/scienceLogic.ts';
+import { classesLine, isDimmed, listedOrder, rightPane, rowQuestions, rowsForClass, rowsInOrder, topicGroups } from '../web/src/scienceLogic.ts';
 import { parseRoute, browseHash } from '../web/src/logic.ts';
 
 const row = (row_id: string, sort: number, extra: Partial<{ topic_id: string; row_class: number; question_use: string }> = {}) =>
@@ -52,5 +52,15 @@ describe('deep links', () => {
     const h = browseHash({ subject: 'science', cls: '6', ch: 'SC48', topic: 'ST0329', tab: 'content', row: 'C6-04-028', q: 'SQ000225' });
     expect(parseRoute(h)).toMatchObject({ name: 'browse', subject: 'science', cls: '6', ch: 'SC48', topic: 'ST0329', row: 'C6-04-028', q: 'SQ000225' });
     expect(parseRoute(browseHash({ subject: 'science', cls: 'all', ch: 'SC48', chview: true, row: 'C6-04-028' }))).toMatchObject({ chview: true, row: 'C6-04-028', topic: null });
+  });
+});
+
+describe('Classes line (A3)', () => {
+  it('an empty or "–" master cell reads "none" and is never a mismatch', () => {
+    expect(classesLine(null, [6])).toEqual({ text: 'NCERT classes: none · CMS classes: 6', mismatch: [] });
+    expect(classesLine('–', [4, 6])).toEqual({ text: 'NCERT classes: none · CMS classes: 4, 6', mismatch: [] });
+    expect(classesLine('6', [6])).toEqual({ text: 'NCERT classes: 6 · CMS classes: 6', mismatch: [] });
+    expect(classesLine('5–6', [6])).toEqual({ text: 'NCERT classes: 5–6 · CMS classes: 6', mismatch: [5] });
+    expect(classesLine(null, null).text).toBe('NCERT classes: none · CMS classes: …');
   });
 });
