@@ -2,17 +2,21 @@
 
 Changes to real (non-test) data that Sambit approved, with what was done and where the audit trail is.
 
-## 14 Nov 2026: Science content rows — class information (0033) — dry run only
+## 14 Nov 2026: Science content rows — class information (0033)
 
-**Request (Sambit, 14 Nov 2026):** detail card + class columns; backup, migration on local, real dry run, then stop for his OK.
+**Approval (Sambit, 14 Nov 2026):** "Review OK, with one change before going real" (Class mismatch = only a class the master names that the topic is not linked to), "Then go ahead: apply 0033 to real → import:science --confirm-real → db:verify on real → push, open the PR, merge, deploy."
 
 | Step | Result |
 |---|---|
 | Backup | `~/WitoScope/CMS-backups/real-cms-2026-11-14-pre-0033.dump` (schema `cms`, read-only file) |
-| Local | `0033_content_row_classes.sql` applied; `db:verify` passes; `import:science` (local) updated 2,407 rows, 0 citations rewritten; a re-run changes nothing |
-| Real dry run | 0033 + `import:science` in **one transaction, rolled back** (the real project has no 0033 yet): import #358 not kept · 2,403 rows to update (4 near-copies still held out) · 0 citations rewritten · Also in: 314 rows, 374 IDs parsed, 374 kept, 0 unknown, 0 unparsed · Class mismatch 880. Checked afterwards: migrations still 0001–0032, columns absent |
+| Local | 0033 applied; `db:verify` passes; unit + DB tests pass; Class mismatch 0 |
+| First dry run | 0033 + import in one rolled-back transaction (real had no 0033 yet): 2,403 rows, 0 citations rewritten, Also in 374 IDs / 0 unknown / 0 unparsed |
+| Schema | `migrate.ts` applied **0033_content_row_classes.sql** on real; `db:verify` passes |
+| First real run | **Failed, nothing committed**: one statement per row (≈4,800) through the pooler hit the 2-min statement timeout; a timed rolled-back retry stalled on a dropped connection (its stale server session was ended with `pg_terminate_backend`). Fix: changed rows are written in batches of 200 (commit "write changed content rows in batches") |
+| Real import | `import-science.ts --confirm-real` → **import #362**: 2,403 rows updated (4 near-copies still held out), 2,403 `science_row` audits (diff: the four new columns only), 0 citations rewritten (still 2,636), 0 question changes · Also in: 314 rows, 374 IDs, 0 unknown, 0 unparsed · Class mismatch **0** |
+| Checked afterwards | migrations 0001–0033; 2,403 rows with Revisit, 1,684 with Topic class (mapped), 314 with Also in (374 IDs); `db:verify` on real: all checks passed |
 
-Not done (waits for Sambit): 0033 on the real project, `--confirm-real`, merge.
+Report: `.local-import/science-import-real-2026-11-140438.json` (IDs, counts and citations only).
 
 ## 14 Nov 2026: Science — real import (step e)
 
