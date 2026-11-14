@@ -207,7 +207,7 @@ function RowDetail({ r, inScope, onRow }: { r: ScienceRow; inScope: (id: string)
       </F>}
       {(r.source || r.found_in) && <F label="Source / Found in">{[r.source, r.found_in].filter(Boolean).join(' · ')}{r.confidence ? <span className="muted small"> · confidence {r.confidence}</span> : null}</F>}
       {(book || r.appears_in || (d?.citations.length ?? 0) > 0) && <F label="Citation">
-        {book && <div>{book}</div>}
+        {book && <div><span className="muted">Filed under:</span> {book}</div>}
         {r.appears_in && <div className="muted small">{r.appears_in}</div>}
         {d?.citations.map((c, i) => <div key={i} className="small">{d.sources.get(c.source_id) ?? c.source_id} · {c.raw}</div>)}
       </F>}

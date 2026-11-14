@@ -363,7 +363,7 @@ function Actions({ d, onEdit, onChanged, command, onAdvance }: { d: QuestionDeta
       {v.status === 'draft' && <button className="secondary flag" disabled={busy} onClick={() => { viaKey.current = false; setAsk(ask === 'flag' ? null : 'flag'); }} title="F">Needs review…</button>}
       {v.status === 'in_review' && <button className="secondary flag on" disabled={busy} title="Clear the Needs review flag (back to draft)" onClick={() => run(() => setStatus(q.question_id, v.version_no, 'withdraw', null))}>⚑ Needs review · clear</button>}
       {open && <>
-        <button className="approve" disabled={busy || blockers.length > 0} title={blockers.length ? `Can't approve yet: ${blockers.join('; ')}` : 'A'} onClick={() => { viaKey.current = false; approve(); }}>Approve{nearCopy ? '…' : ''}</button>
+        <button className={`approve ${blockers.length ? 'blocked' : ''}`} disabled={busy || blockers.length > 0} aria-disabled={busy || blockers.length > 0} title={blockers.length ? `Can't approve yet: ${blockers.join('; ')}` : 'A'} onClick={() => { viaKey.current = false; approve(); }}>Approve{nearCopy ? '…' : ''}</button>
         <button className="reject" disabled={busy} title="R" onClick={() => { viaKey.current = false; setAsk(ask === 'reject' ? null : 'reject'); }}>Reject…</button>
       </>}
       {open && blockers.length > 0 && <span className="muted small blockers">Approve is off until: {blockers.join(' · ')}</span>}

@@ -1,6 +1,7 @@
 :root {
   --bg: #f6f7f9; --card: #ffffff; --text: #1d2330; --muted: #667085; --line: #d9dee7;
   --accent: #2f5bd3; --accent-text: #ffffff; --error: #b42318;
+  --approve-blocked-text: #5b6475;
   --row-detail-bg: #fbf7ee; --row-detail-line: #eadfc6;
   --subtle: #fafbfc; --hover: #f3f6fd; --sel-bg: #eef2fc; --row-line: #eef0f3; --chip: #eef0f4;
   --ok: #146c3a; --ok-bg: #e3f4ea; --ok-soft: #f3fbf6; --ok-line: #9fd3b2;
@@ -22,6 +23,7 @@
   :root {
     --bg: #12151c; --card: #1a1e27; --text: #e4e7ee; --muted: #98a1b3; --line: #2e3442;
     --accent: #7c9cf2; --accent-text: #0e1118; --error: #f28b82;
+    --approve-blocked-text: #98a1b3;
     --row-detail-bg: #2a2619; --row-detail-line: #4a412a;
     --subtle: #1f2430; --hover: #232a38; --sel-bg: #243150; --row-line: #262c38; --chip: #2a303d;
     --ok: #7fd3a0; --ok-bg: #173a27; --ok-soft: #16261d; --ok-line: #2f6b47;
@@ -248,6 +250,8 @@ button.link.more { font-size: 0.86rem; text-align: left; }
 /* ---------------- Phase 5: edit, review ---------------- */
 .actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--row-line); }
 button.approve { background: var(--ok); border-color: var(--ok); }
+/* 14 Nov 2026: approval blocked (attributes, originality, picture pending): visibly disabled; the reason line stays below */
+button.approve.blocked, button.approve.blocked:hover { background: var(--chip); border-color: var(--line); color: var(--approve-blocked-text); cursor: not-allowed; opacity: 1; }
 .reason { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end; width: 100%; }
 .reason label { flex: 1; min-width: 200px; }
 .compare { margin-top: 8px; background: var(--subtle); border: 1px solid var(--line); border-radius: 6px; padding: 8px; }
