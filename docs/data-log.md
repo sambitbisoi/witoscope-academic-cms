@@ -2,6 +2,18 @@
 
 Changes to real (non-test) data that Sambit approved, with what was done and where the audit trail is.
 
+## 14 Nov 2026: Science content rows — class information (0033) — dry run only
+
+**Request (Sambit, 14 Nov 2026):** detail card + class columns; backup, migration on local, real dry run, then stop for his OK.
+
+| Step | Result |
+|---|---|
+| Backup | `~/WitoScope/CMS-backups/real-cms-2026-11-14-pre-0033.dump` (schema `cms`, read-only file) |
+| Local | `0033_content_row_classes.sql` applied; `db:verify` passes; `import:science` (local) updated 2,407 rows, 0 citations rewritten; a re-run changes nothing |
+| Real dry run | 0033 + `import:science` in **one transaction, rolled back** (the real project has no 0033 yet): import #358 not kept · 2,403 rows to update (4 near-copies still held out) · 0 citations rewritten · Also in: 314 rows, 374 IDs parsed, 374 kept, 0 unknown, 0 unparsed · Class mismatch 880. Checked afterwards: migrations still 0001–0032, columns absent |
+
+Not done (waits for Sambit): 0033 on the real project, `--confirm-real`, merge.
+
 ## 14 Nov 2026: Science — real import (step e)
 
 **Approval (Sambit, 14 Nov 2026):** "Dry-run report OK. Run (e), the real import with --confirm-real." Backup before: `~/WitoScope/CMS-backups/real-cms-2026-11-14-pre-science.{dump,sql}` (taken for step b; nothing else changed on the real project since).

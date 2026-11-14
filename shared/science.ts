@@ -8,7 +8,7 @@ export const QUESTION_USES = ['OK', 'Misconception only', 'No questions'] as con
 export const TIERS = ['L1', 'L2', 'L3'] as const;
 
 /** Columns the importer needs; the master may have more (they are ignored). */
-export const CONTENT_COLUMNS = ['File', 'Class', 'Book', 'Chapter no.', 'Chapter title', 'Row ID', 'Topic ID', 'Master chapter ID', 'Row class', 'Appears in (this chapter)',
+export const CONTENT_COLUMNS = ['File', 'Class', 'Book', 'Chapter no.', 'Chapter title', 'Row ID', 'Topic ID', 'Master chapter ID', 'Topic class (mapped)', 'Topic also taught in', 'Row class', 'Appears in (this chapter)', 'Revisit',
   'Type', 'Chapter role', 'Content', 'Why it matters / real-life link', 'Common misconceptions', 'Diagram description', 'Picture question possible (Y/N)', 'Question use',
   'Questions (direct)', 'Questions (supporting)', 'Question status', 'Safety', 'Source', 'Found in', 'NCERT printed pages', 'DAV pages', 'Confidence', 'Notes'] as const;
 export const QUESTION_COLUMNS = ['File', 'Class', 'Q ID', 'Content row ID(s)', 'Direct row ID(s)', 'Topic ID', 'Row class', 'Row type', 'Level', 'Format', 'Question',
@@ -29,6 +29,42 @@ export function notesFlags(notes: string | null) {
   const n = notes ?? '';
   const t = n.match(/TIME-SENSITIVE:\s*checked\s+(\d{4})/i);
   return { time_sensitive: /TIME-SENSITIVE/i.test(n), time_checked_year: t ? Number(t[1]) : null, accuracy_flag: /\bACCURACY:/.test(n) };
+}
+
+/** A content row ID, e.g. C6-11-023 (same rule as cms_content_rows.row_id). */
+export const ROW_ID = /^C[1-6]-[0-9A-Z]{2,4}-[0-9]{3}$/;
+
+/** Notes "Also in C6: C6-11-023, C6-11-024." → the row IDs (strict: only valid IDs; anything else is returned in `bad`).
+ *  `mentioned` is true when the notes say "also in" at all, so the caller can report a mention that gave no IDs. */
+export function alsoInRows(notes: string | null): { ids: string[]; bad: string[]; mentioned: boolean } {
+  const n = notes ?? '';
+  const ids: string[] = [], bad: string[] = [];
+  for (const m of n.matchAll(/\balso in C[1-6]\s*:\s*([^.;\n]*)/gi)) {
+    for (const tok of m[1]!.split(/[,\s]+/).map((x) => x.trim()).filter(Boolean)) (ROW_ID.test(tok) ? ids : bad).push(tok);
+  }
+  return { ids: [...new Set(ids)], bad, mentioned: /\balso in\b/i.test(n) };
+}
+
+/** "3, 5–6" (en dash or hyphen ranges, commas) → [3, 5, 6]; null when the cell is empty or not that shape. */
+export function classSet(v: string | null): number[] | null {
+  const s = (v ?? '').trim();
+  if (!/^[1-6](\s*[–-]\s*[1-6])?(\s*,\s*[1-6](\s*[–-]\s*[1-6])?)*$/.test(s)) return null;
+  const out = new Set<number>();
+  for (const part of s.split(',')) {
+    const [a, b] = part.split(/[–-]/).map((x) => Number(x.trim()));
+    for (let c = a!; c <= (b ?? a!); c++) out.add(c);
+  }
+  return [...out].sort();
+}
+
+/** The master's "Topic class (mapped)" against the topic's approved classes (home class + active links).
+ *  null = nothing to compare (empty cell); otherwise which classes are only in the master / only in the CMS. */
+export function classMismatch(mapped: string | null, approved: number[]): { onlyMaster: number[]; onlyCms: number[] } | null {
+  const m = classSet(mapped);
+  if (!m) return null;
+  const a = [...new Set(approved)].sort();
+  const onlyMaster = m.filter((c) => !a.includes(c)), onlyCms = a.filter((c) => !m.includes(c));
+  return onlyMaster.length || onlyCms.length ? { onlyMaster, onlyCms } : null;
 }
 
 /** A question's content rows: "Direct row ID(s)" are direct, the rest of "Content row ID(s)" supporting.
