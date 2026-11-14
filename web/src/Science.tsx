@@ -1,11 +1,14 @@
-// Science topic and chapter views (Sambit, 13 Nov 2026; docs/science-plan.md §4).
-// Three columns: (a) content rows, in collapsible blocks per Type · (b) the questions of the selected row
-// (or all) · (c) the question detail (the workspace's right pane). Content rows are read-only here.
+// Science topic and chapter views. Layout (Sambit, 14 Nov 2026): tree | content | questions, no fourth column.
+//   Middle: content rows in MASTER ORDER (not grouped by type, no filters); a row opens IN PLACE (one at a time)
+//           with every field of its detail card. Chapter view: rows under collapsible topic headers.
+//   Right:  no row → all questions · row → "For row <ID>": DIRECT then SUPPORTING · question → its detail with "← Back".
+// Content rows are read-only here. Selected topic, row and question live in the URL hash.
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Id } from './Id';
 import { OriginFlags } from './AddQuestions';
 import { rowDetail, scienceData, type ScienceData, type ScienceQuestion, type ScienceRow } from './scienceApi';
 import { browseHash, statusLabel } from './logic';
+import { isDimmed, listedOrder, rightPane, rowQuestions, rowsForClass, rowsInOrder, topicGroups } from './scienceLogic';
 import { classMismatch } from '../../shared/science.ts';
 
 export const CONTENT_TYPES = ['Fact', 'Concept', 'How it works', 'Experiment', 'Scenario-Case', 'Diagram', 'Vocabulary'] as const;
@@ -16,16 +19,7 @@ const STATUS: Record<ScienceRow['status'], { icon: string; label: string; cls: s
   none: { icon: '⚠', label: 'none yet', cls: 'none' },
 };
 const TIERS = ['L1', 'L2', 'L3'] as const;
-
-interface Filters { type: string; status: string; use: string; safety: string; time: string; source: string; flag: string }
-const NO_FILTERS: Filters = { type: 'all', status: 'all', use: 'all', safety: 'all', time: 'all', source: 'all', flag: 'all' };
-
-function matches(r: ScienceRow, f: Filters) {
-  return (f.type === 'all' || r.type === f.type) && (f.status === 'all' || r.status === f.status) && (f.use === 'all' || r.question_use === f.use)
-    && (f.safety === 'all' || (f.safety === 'yes') === !!r.safety) && (f.time === 'all' || (f.time === 'yes') === r.time_sensitive)
-    && (f.source === 'all' || r.source === f.source)
-    && (f.flag === 'all' || (f.flag === 'originality' ? r.originality_result === 'near_copy' : f.flag === 'accuracy' ? r.accuracy_flag : f.flag === 'missing' ? !r.in_master : f.flag === 'picture' ? r.picture_question : true));
-}
+const typeSlug = (t: string) => t.toLowerCase().replace(/[^a-z]+/g, '-');
 
 /** "6 with direct questions · 1 supporting only · 4 not eligible · 40 none yet" + questions by tier. */
 export function Coverage({ rows, questions }: { rows: ScienceRow[]; questions: ScienceQuestion[] }) {
@@ -45,130 +39,137 @@ export function Coverage({ rows, questions }: { rows: ScienceRow[]; questions: S
   );
 }
 
-export function ScienceView({ scope, cls, topicNames, row, q, onRow, onQuestion, onOrder, reload }: {
-  scope: { topicId: string } | { chapterId: string }; cls: string; topicNames: Map<string, { name: string; no: string | null }>; row: string | null; q: string | null;
-  onRow: (row: string | null) => void; onQuestion: (id: string) => void; onOrder: (ids: string[]) => void; reload: number;
+export function ScienceView({ scope, cls, topicNames, row, q, onRow, onQuestion, onBack, onOrder, reload, detail }: {
+  scope: { topicId: string } | { chapterId: string }; cls: string;
+  /** the topics to show, in their order (chapter view keeps topics without rows) */ topicNames: Map<string, { name: string; no: string | null }>;
+  row: string | null; q: string | null; onRow: (row: string | null) => void; onQuestion: (id: string) => void; onBack: () => void;
+  onOrder: (ids: string[]) => void; reload: number; /** the question detail shown in the right column when q is set */ detail: ReactNode;
 }) {
   const [data, setData] = useState<ScienceData | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [f, setF] = useState<Filters>(NO_FILTERS);
-  const [more, setMore] = useState(false);
   const key = 'topicId' in scope ? scope.topicId : scope.chapterId;
-  const [closed, setClosed] = useState<Set<string>>(() => { try { return new Set(JSON.parse(localStorage.getItem(`cms.sci.closed.${key}`) ?? '[]') as string[]); } catch { return new Set(); } });
-  const toggle = (k: string) => { const n = new Set(closed); if (n.has(k)) n.delete(k); else n.add(k); setClosed(n); try { localStorage.setItem(`cms.sci.closed.${key}`, JSON.stringify([...n])); } catch { /* best effort */ } };
+  const chapterMode = 'chapterId' in scope;
+  const [closed, setClosed] = useState<Set<string>>(() => { try { return new Set(JSON.parse(localStorage.getItem(`cms.sci.topics.${key}`) ?? '[]') as string[]); } catch { return new Set(); } });
+  const toggle = (k: string) => { const n = new Set(closed); if (n.has(k)) n.delete(k); else n.add(k); setClosed(n); try { localStorage.setItem(`cms.sci.topics.${key}`, JSON.stringify([...n])); } catch { /* best effort */ } };
   useEffect(() => { setError(null); scienceData(scope).then(setData).catch((e) => setError(e.message)); }, [key, reload]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Rows written for class N show in class N and above (as questions do, D3); lower-class rows are marked.
-  const inClass = useMemo(() => (data?.rows ?? []).filter((r) => cls === 'all' || r.row_class <= Number(cls)), [data, cls]);
-  const hidden = (data?.rows.length ?? 0) - inClass.length;
-  const shown = useMemo(() => inClass.filter((r) => matches(r, f)), [inClass, f]);
+  const rows = useMemo(() => rowsInOrder(rowsForClass(data?.rows ?? [], cls)), [data, cls]);
+  const hidden = (data?.rows.length ?? 0) - rows.length;
   const qs = useMemo(() => (data?.questions ?? []).filter((x) => cls === 'all' || x.effective_level <= Number(cls)), [data, cls]);
-  const selRow = row ? data?.rows.find((r) => r.row_id === row) ?? null : null;
-  const listed = useMemo(() => {
-    const roleOf = (x: ScienceQuestion) => (row ? x.links.find((l) => l.row_id === row)?.role ?? null : null);
-    const list = row ? qs.filter((x) => roleOf(x)) : qs;
-    return list.map((x) => ({ q: x, role: roleOf(x) }))
-      .sort((a, b) => (a.role === b.role ? 0 : a.role === 'direct' ? -1 : 1) || (a.q.level_tier ?? 'L9').localeCompare(b.q.level_tier ?? 'L9') || a.q.question_id.localeCompare(b.q.question_id));
-  }, [qs, row]);
-  useEffect(() => { onOrder(listed.map((x) => x.q.question_id)); }, [listed, onOrder]);
+  const order = useMemo(() => listedOrder(qs, row), [qs, row]);
+  useEffect(() => { onOrder(order); }, [order, onOrder]);
   useEffect(() => () => onOrder([]), [onOrder]);
-  const chapterMode = 'chapterId' in scope;
-  const byTopic = useMemo(() => {
-    const m = new Map<string, ScienceRow[]>();
-    for (const r of shown) m.set(r.topic_id, [...(m.get(r.topic_id) ?? []), r]);
-    return [...m].sort((a, b) => (topicNames.get(a[0])?.no ?? '~').localeCompare(topicNames.get(b[0])?.no ?? '~', undefined, { numeric: true }) || a[0].localeCompare(b[0]));
-  }, [shown, topicNames]);
+  const groups = useMemo(() => topicGroups(rows, [...topicNames.keys()]), [rows, topicNames]);
 
   if (error) return <p className="error">Couldn't load the content rows: {error}</p>;
   if (!data) return <p className="muted">Loading…</p>;
-  const set = (k: keyof Filters) => (v: string) => setF({ ...f, [k]: v });
-  const filtered = Object.values(f).some((v) => v !== 'all');
-
-  const typeBlocks = (rows: ScienceRow[], prefix: string) => CONTENT_TYPES.filter((t) => rows.some((r) => r.type === t)).map((t) => {
-    const list = rows.filter((r) => r.type === t);
-    const k = `${prefix}${t}`;
-    const open = !closed.has(k);
-    const nq = list.filter((r) => r.status === 'direct').length;
-    return (
-      <div key={k} className={`sci-block ${open ? 'open' : ''}`}>
-        <button className="sci-block-head" aria-expanded={open} onClick={() => toggle(k)}>
-          <span className="caret" aria-hidden>{open ? '▾' : '▸'}</span><strong>{t}</strong>
-          <span className="muted small"> · {list.length} row{list.length === 1 ? '' : 's'} · {nq} with direct questions</span>
-        </button>
-        {open && list.map((r) => <RowItem key={r.row_id} r={r} cls={cls} selected={r.row_id === row} onPick={() => onRow(r.row_id === row ? null : r.row_id)} />)}
-      </div>
-    );
-  });
+  const selRow = row ? data.rows.find((r) => r.row_id === row) ?? null : null;
+  const inScope = (id: string) => data.rows.some((x) => x.row_id === id);
+  const list = (rs: ScienceRow[]) => (
+    <ol className="sci-list">
+      {rs.map((r, i) => <RowItem key={r.row_id} n={i + 1} r={r} cls={cls} open={r.row_id === row} onPick={() => onRow(r.row_id === row ? null : r.row_id)} inScope={inScope} onRow={onRow} />)}
+    </ol>
+  );
+  const pane = rightPane(row, q, chapterMode ? 'chapter' : 'topic');
+  const where = chapterMode ? 'chapter' : 'topic';
 
   return (
     <div className="sci">
-      <Coverage rows={inClass} questions={qs} />
-      <div className="filters sci-filters">
-        <span className="muted small">Filter</span>
-        <Sel label="Type" value={f.type} onChange={set('type')} options={[['all', 'Type: all'], ...CONTENT_TYPES.map((t) => [t, t] as [string, string])]} />
-        <Sel label="Row status" value={f.status} onChange={set('status')} options={[['all', 'Row status: all'], ['direct', '✓ Has questions'], ['supporting', '✓ Supporting only'], ['none', '⚠ None yet'], ['not_eligible', '○ Not eligible']]} />
-        <Sel label="Question use" value={f.use} onChange={set('use')} options={[['all', 'Question use: all'], ['OK', 'OK'], ['Misconception only', 'Misconception only'], ['No questions', 'No questions']]} />
-        <Sel label="Safety" value={f.safety} onChange={set('safety')} options={[['all', 'Safety: all'], ['yes', 'Has a safety note'], ['no', 'No safety note']]} />
-        <Sel label="Time-sensitive" value={f.time} onChange={set('time')} options={[['all', 'Time-sensitive: all'], ['yes', 'Time-sensitive'], ['no', 'Not time-sensitive']]} />
-        <button className="link small" onClick={() => setMore(!more)}>{more ? 'Less' : 'More'}</button>
-        {more && <>
-          <Sel label="Source" value={f.source} onChange={set('source')} options={[['all', 'Source: all'], ['Book', 'Book'], ['Claude-added', 'Claude-added']]} />
-          <Sel label="Flags" value={f.flag} onChange={set('flag')} options={[['all', 'Flags: all'], ['originality', 'Originality flagged'], ['accuracy', 'Accuracy note'], ['picture', 'Picture question possible'], ['missing', 'Not in master']]} />
-        </>}
-        <span className="muted small">{shown.length} of {inClass.length} rows{hidden > 0 ? ` · ${hidden} of a higher class not shown` : ''}</span>
-        {filtered && <button className="link small" onClick={() => setF(NO_FILTERS)}>Clear</button>}
-      </div>
+      <Coverage rows={rows} questions={qs} />
       <div className="sci-cols">
         <section className="sci-content" aria-label="Content rows">
-          <div className="eyebrow">Content</div>
-          {shown.length === 0 && <p className="muted small">{inClass.length ? 'No rows with these filters.' : 'No content rows for this topic yet.'}</p>}
-          {chapterMode ? byTopic.map(([tid, rows]) => (
-            <div key={tid} className="sci-topic">
-              <div className="sci-topic-name">{topicNames.get(tid)?.no ? `${topicNames.get(tid)!.no} ` : ''}{topicNames.get(tid)?.name ?? tid} <Id>{tid}</Id>
-                <span className="muted small"> · {rows.length} rows · {qs.filter((x) => x.topic_id === tid).length} Qs</span></div>
-              {typeBlocks(rows, `${tid}:`)}
-            </div>
-          )) : typeBlocks(shown, '')}
+          <div className="eyebrow">Content · master order{hidden > 0 ? <span className="muted"> · {hidden} row{hidden === 1 ? '' : 's'} of a higher class not shown</span> : null}</div>
+          {!chapterMode ? (rows.length ? list(rows) : <p className="muted small">No content rows for this topic yet.</p>)
+            : groups.map((g) => {
+              const t = topicNames.get(g.topic_id);
+              const open = !closed.has(g.topic_id) || g.rows.some((r) => r.row_id === row);
+              const nq = qs.filter((x) => x.topic_id === g.topic_id).length;
+              return (
+                <div key={g.topic_id} className={`sci-topic ${open ? 'open' : ''}`}>
+                  <button className="sci-topic-head" aria-expanded={open} onClick={() => toggle(g.topic_id)}>
+                    <span className="caret" aria-hidden>{open ? '▾' : '▸'}</span>
+                    <span className="sci-topic-name">{t?.no ? `${t.no} ` : ''}{t?.name ?? g.topic_id} <Id>{g.topic_id}</Id></span>
+                    <span className="muted small">{g.rows.length ? `${g.rows.length} row${g.rows.length === 1 ? '' : 's'}` : 'no content rows'} · {nq} Q{nq === 1 ? '' : 's'}</span>
+                  </button>
+                  {open && (g.rows.length ? list(g.rows) : <p className="muted small sci-empty">no content rows</p>)}
+                </div>
+              );
+            })}
         </section>
-        <section className="sci-questions" aria-label="Questions">
-          <div className="sci-q-head">
-            <div className="eyebrow">Questions</div>
-            {selRow ? <div className="small"><span className="sel-row">For row: {selRow.content.length > 90 ? `${selRow.content.slice(0, 90)}…` : selRow.content} <Id>{selRow.row_id}</Id></span>
-              {' '}<button className="link small" onClick={() => onRow(null)}>All for this {chapterMode ? 'chapter' : 'topic'}</button></div>
-              : <div className="small muted">All for this {chapterMode ? 'chapter' : 'topic'} · pick a content row to narrow</div>}
-          </div>
-          {selRow && <RowDetail r={selRow} inScope={(id) => !!data.rows.some((x) => x.row_id === id)} onRow={onRow} />}
-          {selRow && <div className="eyebrow sci-q-sub">Questions for this row</div>}
-          {listed.length === 0 ? <p className="muted small">{selRow ? (selRow.question_use !== 'OK' ? `No questions: this row is "${selRow.question_use}".` : 'No questions use this row yet.') : 'No questions yet.'}</p>
-            : chapterMode && !row ? [...new Set(listed.map((x) => x.q.topic_id))].map((tid) => (
-              <div key={tid}><div className="sci-topic-name small">{topicNames.get(tid)?.name ?? tid} <Id>{tid}</Id></div>
-                {listed.filter((x) => x.q.topic_id === tid).map((x) => <QItem key={x.q.question_id} x={x} selected={x.q.question_id === q} onPick={() => onQuestion(x.q.question_id)} />)}</div>))
-            : listed.map((x) => <QItem key={x.q.question_id} x={x} selected={x.q.question_id === q} onPick={() => onQuestion(x.q.question_id)} />)}
+        <section className="sci-questions" aria-label={pane.kind === 'detail' ? 'Question detail' : 'Questions'}>
+          {pane.kind === 'detail' ? <>
+            <div className="sci-q-head sci-detail-nav">
+              <button className="link" onClick={onBack}>{pane.back}</button>
+              <a className="small" href={`#/q/${encodeURIComponent(pane.q)}`}>Open full page ↗</a>
+            </div>
+            <div className="sci-q-detail">{detail}</div>
+          </> : pane.kind === 'row' ? (() => {
+            const s = rowQuestions(qs, pane.row);
+            return <>
+              <div className="sci-q-head">
+                <div className="eyebrow">Questions</div>
+                <div className="sci-for-row"><strong>For row {pane.row}</strong>{' '}
+                  <button className="link small" onClick={() => onRow(null)}>show all {qs.length} in {where}</button></div>
+                {selRow && <div className="muted small sci-for-text">{selRow.content.length > 110 ? `${selRow.content.slice(0, 110)}…` : selRow.content}</div>}
+              </div>
+              <QSection title="Direct" hint="tests this row" items={s.direct} q={q} onQuestion={onQuestion}
+                empty={selRow && selRow.question_use !== 'OK' ? `No questions: this row is "${selRow.question_use}".` : 'No question tests this row yet.'} />
+              <QSection title="Supporting" hint="uses it as background" items={s.supporting} q={q} onQuestion={onQuestion} empty="None." />
+            </>;
+          })() : <>
+            <div className="sci-q-head">
+              <div className="eyebrow">Questions · {qs.length}</div>
+              <div className="small muted">All for this {where} · open a content row to narrow</div>
+            </div>
+            {qs.length === 0 ? <p className="muted small sci-empty">No questions yet.</p>
+              : chapterMode ? [...topicNames.keys()].filter((tid) => qs.some((x) => x.topic_id === tid)).map((tid) => (
+                <div key={tid}><div className="sci-q-topic small">{topicNames.get(tid)?.name ?? tid} <Id>{tid}</Id></div>
+                  {order.map((id) => qs.find((x) => x.question_id === id)!).filter((x) => x.topic_id === tid).map((x) => <QItem key={x.question_id} q={x} selected={x.question_id === q} onPick={() => onQuestion(x.question_id)} />)}</div>))
+              : order.map((id) => qs.find((x) => x.question_id === id)!).map((x) => <QItem key={x.question_id} q={x} selected={x.question_id === q} onPick={() => onQuestion(x.question_id)} />)}
+          </>}
         </section>
       </div>
     </div>
   );
 }
 
-function RowItem({ r, cls, selected, onPick }: { r: ScienceRow; cls: string; selected: boolean; onPick: () => void }) {
-  const s = STATUS[r.status];
+function QSection({ title, hint, items, q, onQuestion, empty }: { title: string; hint: string; items: ScienceQuestion[]; q: string | null; onQuestion: (id: string) => void; empty: string }) {
   return (
-    <button className={`sci-row ${selected ? 'sel' : ''} ${r.in_master ? '' : 'gone'}`} onClick={onPick} aria-pressed={selected}
-      ref={selected ? (el) => el?.scrollIntoView({ block: 'nearest' }) : undefined}>
-      <span className="sci-row-text">{r.content}</span>
-      <span className="sci-row-meta small">
-        <span className={`cov ${s.cls}`} title={`Row status: ${s.label}`}>{s.icon} {s.label}</span>
-        <span className="muted">&nbsp;· {r.n_direct} direct · {r.n_supporting} supporting</span>
-        {r.chapter_role && <span className={`tag role-${r.chapter_role.toLowerCase()}`} title="Chapter role">{r.chapter_role}</span>}
-        {cls !== 'all' && r.row_class < Number(cls) && <span className="tag revision" title="Written for a lower class">Class {r.row_class} row</span>}
-        <RowTags r={r} />
-        <Id>{r.row_id}</Id>
-      </span>
-    </button>
+    <div className="sci-q-section">
+      <div className="sci-q-section-head"><span className="eyebrow">{title} · {items.length}</span> <span className="muted small">{hint}</span></div>
+      {items.length ? items.map((x) => <QItem key={x.question_id} q={x} selected={x.question_id === q} onPick={() => onQuestion(x.question_id)} />) : <p className="muted small sci-empty">{empty}</p>}
+    </div>
   );
 }
 
-/** The row's flags (list and detail card): question use, Claude-added, Safety, Time-sensitive, Accuracy, Originality, Not in master. */
+function RowItem({ n, r, cls, open, onPick, inScope, onRow }: { n: number; r: ScienceRow; cls: string; open: boolean; onPick: () => void; inScope: (id: string) => boolean; onRow: (id: string) => void }) {
+  const s = STATUS[r.status];
+  return (
+    <li className={`sci-row ${open ? 'sel open' : ''} ${isDimmed(r) ? 'dim' : ''} ${r.in_master ? '' : 'gone'}`} ref={open ? (el) => el?.scrollIntoView({ block: 'nearest' }) : undefined}>
+      <button className="sci-row-head" onClick={onPick} aria-expanded={open}>
+        <span className="sci-row-no" aria-label={`Row ${n}`}>{n}</span>
+        <span className="sci-row-body">
+          <span className="sci-row-tags small">
+            <span className={`tag type type-${typeSlug(r.type)}`} title="Type">{r.type}</span>
+            {r.chapter_role && <span className={`tag role-${r.chapter_role.toLowerCase()}`} title="Chapter role">{r.chapter_role}</span>}
+          </span>
+          <span className="sci-row-text">{r.content}</span>
+          <span className="sci-row-meta small">
+            <span className={`cov ${s.cls}`} title={`Row status: ${s.label}`}>{s.icon} {s.label}</span>
+            <span className="muted">&nbsp;· {r.n_direct} direct · {r.n_supporting} supporting</span>
+            {cls !== 'all' && r.row_class < Number(cls) && <span className="tag revision" title="Written for a lower class">Class {r.row_class} row</span>}
+            <RowTags r={r} />
+            <Id>{r.row_id}</Id>
+          </span>
+        </span>
+      </button>
+      {open && <RowDetail r={r} inScope={inScope} onRow={onRow} />}
+    </li>
+  );
+}
+
+/** The row's flags: question use, Claude-added, Safety, Time-sensitive, Accuracy, Originality, Not in master. */
 function RowTags({ r }: { r: ScienceRow }) {
   return <>
     {r.question_use !== 'OK' && <span className="tag use">{r.question_use}</span>}
@@ -181,7 +182,7 @@ function RowTags({ r }: { r: ScienceRow }) {
   </>;
 }
 
-/** Detail card of the selected content row (read-only). Empty fields are hidden. */
+/** The open row's fields (the 0033 detail card), shown in place under the row. Empty fields are hidden. */
 function RowDetail({ r, inScope, onRow }: { r: ScienceRow; inScope: (id: string) => boolean; onRow: (id: string) => void }) {
   const [d, setD] = useState<Awaited<ReturnType<typeof rowDetail>> | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -190,20 +191,14 @@ function RowDetail({ r, inScope, onRow }: { r: ScienceRow; inScope: (id: string)
   const F = ({ label, children }: { label: string; children: ReactNode }) => <div className="sci-f"><div className="sci-f-l">{label}</div><div className="sci-f-v">{children}</div></div>;
   const book = [r.book, r.book_chapter_no !== null ? `Ch ${r.book_chapter_no}${r.book_chapter_title ? ` ${r.book_chapter_title}` : ''}` : r.book_chapter_title].filter(Boolean).join(' · ');
   return (
-    <div className="sci-detail" aria-label="Content row detail">
-      <div className="sci-detail-tags small"><RowTags r={r} /><Id>{r.row_id}</Id></div>
-      <F label="Type">{r.type}</F>
-      {r.chapter_role && <F label="Chapter role">{r.chapter_role}</F>}
-      <F label="Content">{r.content}</F>
+    <div className="sci-detail" aria-label={`Details of ${r.row_id}`}>
       {r.why_it_matters && <F label="Why it matters / real-life link">{r.why_it_matters}</F>}
       {r.misconceptions && <F label="Common misconceptions">{r.misconceptions}</F>}
       {r.diagram_description && <F label="Diagram description">{r.diagram_description}</F>}
-      {(r.topic_classes_mapped || r.topic_taught_in || r.revisit) && <F label="Classes">
-        {r.topic_classes_mapped && <div>NCERT classes: {r.topic_classes_mapped} · CMS classes: {d ? (d.classes.join(', ') || '—') : '…'}
-          {mm && <span className="tag mismatch" title={`Master names class ${mm.onlyMaster.join(', ')}, which this topic is not linked to. Nothing is changed.`}>Class mismatch</span>}</div>}
-        {r.topic_taught_in && <div className="muted small">Also taught in: {r.topic_taught_in}</div>}
-        {r.revisit && <div className="muted small">Revisit: {r.revisit}</div>}
-      </F>}
+      {r.topic_classes_mapped && <F label="Classes">NCERT classes: {r.topic_classes_mapped} · CMS classes: {d ? (d.classes.join(', ') || '—') : '…'}
+        {mm && <span className="tag mismatch" title={`Master names class ${mm.onlyMaster.join(', ')}, which this topic is not linked to. Nothing is changed.`}>Class mismatch</span>}</F>}
+      {r.topic_taught_in && <F label="Also taught in">{r.topic_taught_in}</F>}
+      {r.revisit && <F label="Revisit">{r.revisit}</F>}
       {r.also_in_rows.length > 0 && <F label="Also in">
         {(d?.alsoIn ?? r.also_in_rows.map((id) => ({ row_id: id, at: null }))).map((x, i) => <span key={x.row_id}>{i > 0 && ' · '}
           {inScope(x.row_id) ? <button className="link" onClick={() => onRow(x.row_id)} title={x.at?.content}>{x.row_id}</button>
@@ -211,7 +206,7 @@ function RowDetail({ r, inScope, onRow }: { r: ScienceRow; inScope: (id: string)
             : <span className="muted">{x.row_id}</span>}</span>)}
       </F>}
       {(r.source || r.found_in) && <F label="Source / Found in">{[r.source, r.found_in].filter(Boolean).join(' · ')}{r.confidence ? <span className="muted small"> · confidence {r.confidence}</span> : null}</F>}
-      {(book || r.appears_in || (d?.citations.length ?? 0) > 0) && <F label="Book citation">
+      {(book || r.appears_in || (d?.citations.length ?? 0) > 0) && <F label="Citation">
         {book && <div>{book}</div>}
         {r.appears_in && <div className="muted small">{r.appears_in}</div>}
         {d?.citations.map((c, i) => <div key={i} className="small">{d.sources.get(c.source_id) ?? c.source_id} · {c.raw}</div>)}
@@ -222,15 +217,14 @@ function RowDetail({ r, inScope, onRow }: { r: ScienceRow; inScope: (id: string)
   );
 }
 
-function QItem({ x, selected, onPick }: { x: { q: ScienceQuestion; role: 'direct' | 'supporting' | null }; selected: boolean; onPick: () => void }) {
-  const { q, role } = x;
+function QItem({ q, selected, onPick }: { q: ScienceQuestion; selected: boolean; onPick: () => void }) {
   const nd = q.links.filter((l) => l.role === 'direct').length, ns = q.links.length - nd;
   return (
     <button className={`qrow sci-qrow ${selected ? 'sel' : ''}`} onClick={onPick} title={q.text} ref={selected ? (el) => el?.scrollIntoView({ block: 'nearest' }) : undefined}>
       <span className="qtext">{q.text}</span>
       <span className="sci-q-meta small">
         {q.level_tier && <span className={`tag tier tier-${q.level_tier}`} title="Tier (L1–L3)">{q.level_tier}</span>}
-        {role ? <span className={`tag role-${role}`}>{role}</span> : <span className="muted">{nd} direct{ns ? ` · ${ns} supporting` : ''}</span>}
+        <span className="muted">{nd} direct{ns ? ` · ${ns} supporting` : ''}</span>
         {q.display_format && <span className="muted">{q.display_format}</span>}
         {q.safety_note && <span className="tag safety" title={q.safety_note}>Safety</span>}
         <OriginFlags q={q} compact />
@@ -238,16 +232,6 @@ function QItem({ x, selected, onPick }: { x: { q: ScienceQuestion; role: 'direct
         <Id>{q.question_id}</Id>
       </span>
     </button>
-  );
-}
-
-function Sel({ label, value, onChange, options }: { label: string; value: string; onChange: (v: string) => void; options: [string, string][] }) {
-  return (
-    <label className="filter"><span className="sr-only">{label}</span>
-      <select value={value} onChange={(e) => onChange(e.target.value)} className={value !== 'all' ? 'active' : ''}>
-        {options.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-      </select>
-    </label>
   );
 }
 

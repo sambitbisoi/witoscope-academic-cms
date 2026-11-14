@@ -131,6 +131,10 @@ export function Workspace(r: R) {
     </>
   );
 
+  const qDetail = r.q ? <QuestionDetail id={r.q} versionNo={r.v} reloadKey={reload} onVersion={(v) => go({ v })} onEdit={() => go({ edit: true, v: null })}
+    onChanged={() => setReload((x) => x + 1)} command={command} onAdvance={() => step(1)} /> : null;
+  // Science (Sambit, 14 Nov 2026): tree | content | questions — the question detail opens in the right column, no fourth column
+  const sciLayout = r.subject === 'science';
   const style = { '--tree-w': `${panes.pinned ? panes.tree : 34}px`, '--detail-w': `${panes.detail}px` } as CSSProperties;
   return (
     <div className="workspace">
@@ -160,7 +164,7 @@ export function Workspace(r: R) {
           <input type="checkbox" checked={extra} onChange={(e) => setExtra(e.target.checked)} /> Include extra topics (lower / higher class){nExtra ? <span className="muted"> · {nExtra}</span> : null}</label>}
         <span className="muted small keys" title="Keyboard shortcuts in Browse">Keys: <kbd>A</kbd> approve · <kbd>R</kbd> reject · <kbd>F</kbd> needs review · <kbd>↓</kbd><kbd>↑</kbd> next / previous · <kbd>[</kbd> tree</span>
       </div>
-      <div className={`ws-cols ${panes.pinned ? '' : 'unpinned'}`} style={style}>
+      <div className={`ws-cols ${panes.pinned ? '' : 'unpinned'} ${sciLayout ? 'sci-layout' : ''}`} style={style}>
         {panes.pinned ? <nav className="ws-tree" aria-label="Chapters and topics">{treeEl}</nav> : (
           <nav className="ws-rail" aria-label="Chapters and topics">
             <button className="rail-btn" title="Show the topic tree ([)" onClick={() => setOverlay(!overlay)}>☰<span>Topics</span></button>
@@ -170,18 +174,18 @@ export function Workspace(r: R) {
         <Handle side="tree" disabled={!panes.pinned} onDrag={(dx) => setPanes({ ...panes, tree: clamp(panes.tree + dx, 200, 560) })} onReset={() => setPanes({ ...panes, tree: PANES.tree })} />
         <section className="ws-main" aria-label="Questions">
           {r.edit && r.q ? <EditForm key={r.q} questionId={r.q} onDone={(saved) => { go({ edit: false, v: null }); if (saved) setReload((x) => x + 1); }} />
-            : r.chview && r.ch && !r.topic && r.subject === 'science' ? (!data ? <p className="muted">Loading…</p> : <ChapterView key={r.ch} r={r} go={go} data={data} seq={seq} reload={reload} onOrder={setOrder} />)
+            : r.chview && r.ch && !r.topic && r.subject === 'science' ? (!data ? <p className="muted">Loading…</p> : <ChapterView key={r.ch} r={r} go={go} data={data} seq={seq} reload={reload} onOrder={setOrder} detail={qDetail} />)
             : !r.topic ? <Pick subject={r.subject} cls={r.cls} ch={chapters.find((c) => c.chapter_id === r.ch)} n={data ? shownTopics.filter((t) => (!r.ch || t.chapter_id === r.ch) && (!r.strand || chapterOf.get(t.chapter_id)?.strand_id === r.strand)).length : undefined} />
             : !data ? <p className="muted">Loading…</p>
             : !topic ? <p>Topic {r.topic} isn't in {subjectLabel(r.subject)}{r.cls !== 'all' ? ` class ${r.cls}` : ''}. <a href={browseHash({ ...r, cls: 'all' })}>Look in all classes</a></p>
-            : <TopicView key={topic.topic_id} reload={reload} topic={topic} no={seq?.topic.get(topic.topic_id) ?? null} chapterNo={seq?.chapter.get(topic.chapter_id) ?? null} review={data.reviews.get(topic.topic_id)} chapter={data.chapters.find((c) => c.chapter_id === topic.chapter_id)} r={r} go={go} onOrder={setOrder} onChanged={() => setReload((x) => x + 1)} />}
+            : <TopicView key={topic.topic_id} reload={reload} topic={topic} no={seq?.topic.get(topic.topic_id) ?? null} chapterNo={seq?.chapter.get(topic.chapter_id) ?? null} review={data.reviews.get(topic.topic_id)} chapter={data.chapters.find((c) => c.chapter_id === topic.chapter_id)} r={r} go={go} onOrder={setOrder} onChanged={() => setReload((x) => x + 1)} detail={qDetail} />}
         </section>
-        <Handle side="detail" onDrag={(dx) => setPanes({ ...panes, detail: clamp(panes.detail - dx, 320, 900) })} onReset={() => setPanes({ ...panes, detail: PANES.detail })} />
-        <aside className="ws-detail" aria-label="Question detail">
-          {r.q ? <QuestionDetail id={r.q} versionNo={r.v} reloadKey={reload} onVersion={(v) => go({ v })} onEdit={() => go({ edit: true, v: null })}
-              onChanged={() => setReload((x) => x + 1)} command={command} onAdvance={() => step(1)} />
-            : <p className="muted">Select a question to see it here.</p>}
-        </aside>
+        {!sciLayout && <>
+          <Handle side="detail" onDrag={(dx) => setPanes({ ...panes, detail: clamp(panes.detail - dx, 320, 900) })} onReset={() => setPanes({ ...panes, detail: PANES.detail })} />
+          <aside className="ws-detail" aria-label="Question detail">
+            {qDetail ?? <p className="muted">Select a question to see it here.</p>}
+          </aside>
+        </>}
       </div>
     </div>
   );
@@ -293,7 +297,7 @@ function useOpenGroups(topicId: string, tab: string) {
   return [open, setOpen] as const;
 }
 
-function TopicView({ topic, no, chapterNo, review, chapter, r, go, reload, onOrder, onChanged }: { topic: TopicWithStats; no?: string | null; chapterNo?: string | null; review?: TopicReview; chapter?: Chapter; r: R; go: (p: Partial<R>) => void; reload: number; onOrder: (ids: string[]) => void; onChanged: () => void }) {
+function TopicView({ topic, no, chapterNo, review, chapter, r, go, reload, onOrder, onChanged, detail }: { topic: TopicWithStats; no?: string | null; chapterNo?: string | null; review?: TopicReview; chapter?: Chapter; r: R; go: (p: Partial<R>) => void; reload: number; onOrder: (ids: string[]) => void; onChanged: () => void; detail: ReactNode }) {
   // D5: the add / edit form open on this topic (one at a time)
   const [form, setForm] = useState<{ kind: Kind; id: string | null; fixed?: Record<string, unknown> } | null>(null);
   // 13 Nov 2026: add a question by hand or bulk-upload an Excel file (this topic only; no AI)
@@ -396,7 +400,7 @@ function TopicView({ topic, no, chapterNo, review, chapter, r, go, reload, onOrd
       </div>
       {r.tab === 'sources' ? <SourcesTab chapterId={topic.chapter_id} chapterName={chapter?.name ?? ''} cls={topic.class} topicId={topic.topic_id} />
         : <ScienceView scope={{ topicId: topic.topic_id }} cls={r.cls} topicNames={new Map([[topic.topic_id, { name: topic.name, no: no ?? null }]])} row={r.row} q={r.q} reload={reload}
-            onRow={(row) => go({ row, q: null, v: null, edit: false })} onQuestion={(id) => go({ q: id, v: null, edit: false })} onOrder={onOrder} />}
+            onRow={(row) => go({ row, q: null, v: null, edit: false })} onQuestion={(id) => go({ q: id, v: null, edit: false })} onBack={() => go({ q: null, v: null, edit: false })} onOrder={onOrder} detail={detail} />}
       </> : <>
       <div role="tablist" className="tabs">
         <button role="tab" aria-selected={r.tab === 'types'} className={r.tab === 'types' ? 'on' : ''} onClick={() => go({ tab: 'types' })}>By question type</button>
@@ -499,18 +503,21 @@ function TopicView({ topic, no, chapterNo, review, chapter, r, go, reload, onOrd
 }
 
 /** Science chapter view (13 Nov 2026): the same three columns over every topic of the chapter, grouped by topic. */
-function ChapterView({ r, go, data, seq, reload, onOrder }: { r: R; go: (p: Partial<R>) => void; data: Awaited<ReturnType<typeof tree>>; seq: ReturnType<typeof numbersOf> | null; reload: number; onOrder: (ids: string[]) => void }) {
+function ChapterView({ r, go, data, seq, reload, onOrder, detail }: { r: R; go: (p: Partial<R>) => void; data: Awaited<ReturnType<typeof tree>>; seq: ReturnType<typeof numbersOf> | null; reload: number; onOrder: (ids: string[]) => void; detail: ReactNode }) {
   const ch = data.chapters.find((c) => c.chapter_id === r.ch);
-  const topics = data.topics.filter((t) => t.chapter_id === r.ch);
+  // topics in the class's order (sequencing), then by class and seq; topics without content rows are kept
+  const rank = (id: string) => seq?.topicRank.get(id) ?? 1e9;
+  const topics = data.topics.filter((t) => t.chapter_id === r.ch && t.status === 'active')
+    .sort((a, b) => rank(a.topic_id) - rank(b.topic_id) || a.class - b.class || (a.seq ?? 999) - (b.seq ?? 999) || a.topic_id.localeCompare(b.topic_id));
   const names = new Map(topics.map((t) => [t.topic_id, { name: t.name, no: seq?.topic.get(t.topic_id) ?? null }]));
   return (
     <>
       <div className="topic-head">
         <h1>{ch ? <>{numbered(seq?.chapter.get(ch.chapter_id), ch.name)} <Id>{ch.chapter_id}</Id></> : r.ch}</h1>
-        <div className="muted small">Chapter view · {topics.length} topic{topics.length === 1 ? '' : 's'}{r.cls !== 'all' ? ` in Class ${r.cls}` : ''} · content rows and questions of every topic, grouped by topic</div>
+        <div className="muted small">Chapter view · {topics.length} topic{topics.length === 1 ? '' : 's'}{r.cls !== 'all' ? ` in Class ${r.cls}` : ''} · content rows of every topic in master order, under their topic</div>
       </div>
       <ScienceView scope={{ chapterId: r.ch! }} cls={r.cls} topicNames={names} row={r.row} q={r.q} reload={reload}
-        onRow={(row) => go({ row, q: null, v: null, edit: false })} onQuestion={(id) => go({ q: id, v: null, edit: false })} onOrder={onOrder} />
+        onRow={(row) => go({ row, q: null, v: null, edit: false })} onQuestion={(id) => go({ q: id, v: null, edit: false })} onBack={() => go({ q: null, v: null, edit: false })} onOrder={onOrder} detail={detail} />
     </>
   );
 }
