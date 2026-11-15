@@ -43,10 +43,10 @@ export function topicGroups<T extends RowLike>(rows: T[], topicIds: string[]): {
   return ids.map((topic_id) => ({ topic_id, rows: ordered.filter((r) => r.topic_id === topic_id) }));
 }
 
-/** The open row's Classes line: "NCERT classes: <mapped or none> · CMS classes: <approved>". An empty or "–" master cell
+/** The open row's Classes line: "Mapped classes: <mapped or none> · CMS classes: <approved>". An empty or "–" master cell
  *  (DAV-only rows) reads "none" and never raises Class mismatch (Sambit, 14 Nov 2026). */
 export function classesLine(mapped: string | null, approved: number[] | null): { text: string; mismatch: number[] } {
   const m = mapped && mapped.trim() !== '' && mapped.trim() !== '–' && mapped.trim() !== '—' ? mapped.trim() : null;
   const cms = approved === null ? '…' : [...approved].sort().join(', ') || '—';
-  return { text: `NCERT classes: ${m ?? 'none'} · CMS classes: ${cms}`, mismatch: approved && m ? classMismatch(m, approved)?.onlyMaster ?? [] : [] };
+  return { text: `Mapped classes: ${m ?? 'none'} · CMS classes: ${cms}`, mismatch: approved && m ? classMismatch(m, approved)?.onlyMaster ?? [] : [] };
 }

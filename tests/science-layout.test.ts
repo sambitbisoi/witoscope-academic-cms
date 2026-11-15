@@ -57,10 +57,10 @@ describe('deep links', () => {
 
 describe('Classes line (A3)', () => {
   it('an empty or "–" master cell reads "none" and is never a mismatch', () => {
-    expect(classesLine(null, [6])).toEqual({ text: 'NCERT classes: none · CMS classes: 6', mismatch: [] });
-    expect(classesLine('–', [4, 6])).toEqual({ text: 'NCERT classes: none · CMS classes: 4, 6', mismatch: [] });
-    expect(classesLine('6', [6])).toEqual({ text: 'NCERT classes: 6 · CMS classes: 6', mismatch: [] });
-    expect(classesLine('5–6', [6])).toEqual({ text: 'NCERT classes: 5–6 · CMS classes: 6', mismatch: [5] });
-    expect(classesLine(null, null).text).toBe('NCERT classes: none · CMS classes: …');
+    expect(classesLine(null, [6])).toEqual({ text: 'Mapped classes: none · CMS classes: 6', mismatch: [] });
+    expect(classesLine('–', [4, 6])).toEqual({ text: 'Mapped classes: none · CMS classes: 4, 6', mismatch: [] });
+    expect(classesLine('6', [6])).toEqual({ text: 'Mapped classes: 6 · CMS classes: 6', mismatch: [] });
+    expect(classesLine('5–6', [6])).toEqual({ text: 'Mapped classes: 5–6 · CMS classes: 6', mismatch: [5] });
+    expect(classesLine(null, null).text).toBe('Mapped classes: none · CMS classes: …');
   });
 });

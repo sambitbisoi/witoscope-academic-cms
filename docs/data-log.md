@@ -2,6 +2,20 @@
 
 Changes to real (non-test) data that Sambit approved, with what was done and where the audit trail is.
 
+## 15 Nov 2026: Science master with Class 4 (import #365)
+
+**Request (Sambit, 15 Nov 2026):** import the rebuilt Science master (Class 4 added; Classes 5–6: "Topic class (mapped)" = the topic's home class, Revisit fixed) into the real CMS from a dated snapshot, with stop conditions; then rename the card line "NCERT classes" to "Mapped classes" and ship.
+
+| Step | Result |
+|---|---|
+| Snapshot | `~/WitoScope/ContentResearch/Science/_snapshots/WitoScope_Science_Master_2026-11-15_import.xlsx` (byte-identical to the master when copied, sha256 `4bf2b994…1258`); everything below read only this copy |
+| Originality | `check:originality -- --science <snapshot>` (book texts from `Science/`, 44 books, 83 page sets): rows 2,688 clear · 178 flagged · **4 near-copy** (the known C5-01-011, C5-01-072, C5-06-009, C6-08-018; no new ones) · questions 117 clear · 17 flagged · 0 near-copy. First run read 0 books because the book folder was taken as the snapshot's folder; fixed (`scienceRootFor`) and re-run |
+| Backup | `~/WitoScope/CMS-backups/real-cms-2026-11-15-pre-science-c4.dump` (schema `cms`, read-only file) |
+| Dry run | import #363 rolled back: same numbers as the real run below. Column check (importer run in a rolled-back transaction, audit diffs tallied): Class 5–6 rows change only `topic_classes_mapped`, `revisit` and `sort`; `sort` moves by exactly +463 on all 2,403 rows (Class 4 takes 1–463, order unchanged); 0 citations rewritten; 10 Class 4 NCERT sources (deev101–110, 0 citations) get the Legend title, 9 of them a page offset |
+| Real | `import-science.ts <snapshot> --confirm-real` → **import #365**: sources 1 new (DAV-class-iv-science) · 10 changed · 33 unchanged; content rows **463 new** (Class 4) · **2,403 updated** · 0 flagged "not in master"; **4 held out** (near-copy); 501 citations for the new rows; 13 topic–class links proposed (1 new: ST0088 · class 4); questions 134 unchanged; Also in 558 IDs kept, 0 unknown; Class mismatch **0**. `db:verify` on real: all checks passed |
+
+Report: `.local-import/science-import-real-2026-11-151213.json` (IDs, counts and citations only).
+
 ## 14 Nov 2026: Achievers for every class a Math chapter is present in (0034)
 
 **Approval (Sambit, 14 Nov 2026):** "PR #27 review: OK, with one screen rule added to #27 before going real" (an Achievers row of a chapter that is in a class only through links is extra: shown only with "Include extra topics", unnumbered), "Then: tests + db:verify on local → apply 0034 to real (batched) → db:verify on real → merge #27 → deploy."
