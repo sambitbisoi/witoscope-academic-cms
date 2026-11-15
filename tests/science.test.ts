@@ -5,7 +5,7 @@ import {
   sourcesFromLegend, storedFormat, taughtIn,
 } from '../shared/science.ts';
 import { nearCopyCover, scienceOverrides } from '../scripts/lib/science-import.ts';
-import { ocrFileFor } from '../scripts/lib/science-originality.ts';
+import { ocrFileFor, scienceRootFor } from '../scripts/lib/science-originality.ts';
 
 const LEGEND = [
   { Section: 'Book short names', Name: 'NCERT C6 Ch4', Description: 'Curiosity – Ch 4 Exploring Magnets', File: 'NCERT/Class6_Curiosity/Class-6-Chapter-4.pdf', Class: 6, 'Offset (printed = PDF + offset)': 60, 'Printed pages': '61–78' },
@@ -129,5 +129,12 @@ describe('near-copy overrides (Sambit, 13 Nov 2026)', () => {
   });
   it('a request needs a reason', () => {
     expect(scienceOverrides('file_key,field,reason\nC5-01-072,content,short\n').problems).toHaveLength(1);
+  });
+});
+
+describe('scienceRootFor (15 Nov 2026: imports read a dated snapshot of the master)', () => {
+  it('uses the master folder, or its parent for a copy in _snapshots/', () => {
+    expect(scienceRootFor('/m/Science/WitoScope_Science_Master.xlsx')).toBe('/m/Science');
+    expect(scienceRootFor('/m/Science/_snapshots/WitoScope_Science_Master_2026-11-15_import.xlsx')).toBe('/m/Science');
   });
 });

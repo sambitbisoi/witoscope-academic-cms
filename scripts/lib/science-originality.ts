@@ -8,7 +8,7 @@
 // numbers rule on the text, figure description and options.
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { checkText, corpus, MIN_WORDS, NEAR_COPY_DEFAULT, NUMBERS_RULE_FIELD, worse, type BookPage, type Corpus, type FieldResult, type OriginalityResult } from '../../shared/originality.ts';
 import type { LegendBook, ScienceSource } from '../../shared/science.ts';
 import { pdfPages } from './local-books.ts';
@@ -26,6 +26,13 @@ export interface ScienceReport {
   read: { source_id: string; pages: string }[]; missing: string[];
   rows: ScienceCheck[]; questions: ScienceCheck[];
 }
+
+/** The Science folder that holds NCERT/, DAV/ and DAV_OCR/: the master's folder, or its parent when the
+ *  master is a dated copy in Science/_snapshots/ (15 Nov 2026: imports read a snapshot, not the live master). */
+export const scienceRootFor = (masterPath: string) => {
+  const dir = dirname(masterPath);
+  return basename(dir) === '_snapshots' ? dirname(dir) : dir;
+};
 
 /** The local OCR text file of a DAV scan: DAV/Source/Class 6/Magnets.pdf → DAV_OCR/Class_6__Magnets.txt */
 export const ocrFileFor = (scienceRoot: string, file: string, cls: number) =>

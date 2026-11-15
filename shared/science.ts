@@ -57,7 +57,7 @@ export function classSet(v: string | null): number[] | null {
   return [...out].sort();
 }
 
-/** The master's "Topic class (mapped)" (the NCERT classes) against the topic's approved classes (home class + active links).
+/** The master's "Topic class (mapped)" (15 Nov 2026: the topic's home class from the master; shown as "Mapped classes") against the topic's approved classes (home class + active links).
  *  A mismatch (Sambit, 14 Nov 2026) is ONLY a class the master names that the topic is not linked to; extra CMS classes are fine.
  *  null = no mismatch or nothing to compare (empty cell). */
 export function classMismatch(mapped: string | null, approved: number[]): { onlyMaster: number[] } | null {
