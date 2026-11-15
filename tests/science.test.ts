@@ -5,7 +5,7 @@ import {
   sourcesFromLegend, storedFormat, taughtIn,
 } from '../shared/science.ts';
 import { nearCopyCover, scienceOverrides } from '../scripts/lib/science-import.ts';
-import { ocrFileFor, scienceRootFor } from '../scripts/lib/science-originality.ts';
+import { corpusPlan, ocrFileFor, scienceRootFor } from '../scripts/lib/science-originality.ts';
 
 const LEGEND = [
   { Section: 'Book short names', Name: 'NCERT C6 Ch4', Description: 'Curiosity – Ch 4 Exploring Magnets', File: 'NCERT/Class6_Curiosity/Class-6-Chapter-4.pdf', Class: 6, 'Offset (printed = PDF + offset)': 60, 'Printed pages': '61–78' },
@@ -136,5 +136,20 @@ describe('scienceRootFor (15 Nov 2026: imports read a dated snapshot of the mast
   it('uses the master folder, or its parent for a copy in _snapshots/', () => {
     expect(scienceRootFor('/m/Science/WitoScope_Science_Master.xlsx')).toBe('/m/Science');
     expect(scienceRootFor('/m/Science/_snapshots/WitoScope_Science_Master_2026-11-15_import.xlsx')).toBe('/m/Science');
+  });
+});
+
+describe('DAV Class 1–2 spread scans (15 Nov 2026)', () => {
+  it('use the named OCR file and the whole book; other DAV sources keep the cited range', () => {
+    expect(ocrFileFor('/S', 'DAV/Source/Class 1/My Living World Class 1.pdf', 1, 'DAV-my-living-world-class-1')).toBe('/S/DAV_OCR/Class_1__My_living_world_class_1_(evs).txt');
+    expect(ocrFileFor('/S', 'DAV/Source/Class 6/Magnets.pdf', 6, 'DAV-magnets')).toBe('/S/DAV_OCR/Class_6__Magnets.txt');
+    const sources = [
+      { source_id: 'DAV-my-living-world-class-1', publisher: 'DAV', page_offset: 2 },
+      { source_id: 'DAV-magnets', publisher: 'DAV', page_offset: 1 },
+    ] as never[];
+    const rows = [{ citations: [{ source_id: 'DAV-my-living-world-class-1', page_from: 58, page_to: 58 }, { source_id: 'DAV-magnets', page_from: 10, page_to: 11 }] }] as never[];
+    const plan = corpusPlan(rows, sources);
+    expect(plan.get('DAV-my-living-world-class-1')).toBe('all');
+    expect(plan.get('DAV-magnets')).toEqual({ from: 8, to: 15 });
   });
 });

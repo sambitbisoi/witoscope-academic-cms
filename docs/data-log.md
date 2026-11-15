@@ -2,6 +2,20 @@
 
 Changes to real (non-test) data that Sambit approved, with what was done and where the audit trail is.
 
+## 15 Nov 2026: Science master with Classes 1–3 (import #369)
+
+**Request (Sambit, 15 Nov 2026):** import the rebuilt Science master (Classes 1–3 added; Classes 4–6 unchanged) into the real CMS from a dated snapshot, same process as import #365, with stop conditions.
+
+| Step | Result |
+|---|---|
+| Snapshot | `~/WitoScope/ContentResearch/Science/_snapshots/WitoScope_Science_Master_2026-11-15_import2.xlsx` (byte-identical to the master when copied, sha256 `32625790…1da7`; 3,509 rows) |
+| Originality | First run: 256 rows (all of C1–C2) "no-sources": the Legend's file name for the DAV "My Living World" Class 1–2 scans differs from their OCR text, and the scans are two-page spreads the single page offset cannot map. Fixed (`DAV_WHOLE_BOOK`: those two sources are checked against the whole book, 46 and 54 scans; no other source changes) and re-run: 58 books, rows 3,325 clear · 180 flagged · **4 near-copy** (the known C5-01-011, C5-01-072, C5-06-009, C6-08-018; no new ones) · 0 no-sources; questions 117 clear · 17 flagged · 0 near-copy |
+| Backup | `~/WitoScope/CMS-backups/real-cms-2026-11-15-pre-science-c1-3.dump` (schema `cms`, read-only file) |
+| Dry run | import #366 rolled back (#367–368: the column-check runs, also rolled back): same numbers as below. Column check: the 2,866 existing rows change only `sort` (+639 on every row, order kept); 0 citations rewritten; 12 NCERT Class 3 sources (ceev101–112) get the Legend title, 11 a page offset (their 255 citations all belong to the new Class 3 rows) |
+| Real | `import-science.ts <snapshot> --confirm-real` → **import #369**: sources 3 new (DAV-std-3-science, DAV-my-living-world-class-1, -class-2) · 12 changed · 44 unchanged; content rows **639 new** (C1 104 · C2 152 · C3 383; C1-DWA-007 is a Class 2 row) · **2,866 updated** (`sort` only) · 0 flagged "not in master"; **4 held out**; 691 citations for the new rows; 17 topic–class links proposed (4 new: ST0021 · 1, ST0032 · 3, ST0042 · 2, ST0043 · 3; not approved); questions 134 unchanged; Also in 799 of 800 IDs kept (C3-06-029 names C4-01-002, not a row; C3-07-014's note is not fully parsed); Class mismatch **0**. `db:verify` on real: all checks passed |
+
+Report: `.local-import/science-import-real-2026-11-151343.json` (IDs, counts and citations only).
+
 ## 15 Nov 2026: Science master with Class 4 (import #365)
 
 **Request (Sambit, 15 Nov 2026):** import the rebuilt Science master (Class 4 added; Classes 5–6: "Topic class (mapped)" = the topic's home class, Revisit fixed) into the real CMS from a dated snapshot, with stop conditions; then rename the card line "NCERT classes" to "Mapped classes" and ship.
