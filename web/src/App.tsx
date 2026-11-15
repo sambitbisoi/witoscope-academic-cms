@@ -84,11 +84,11 @@ function Home({ email }: { email?: string }) {
   return (
     <Shell email={email} route={route}>
       {route.name === 'home' ? <HomeScreen grade={route.grade} />
-        : route.name === 'browse' ? <Workspace subject={route.subject} cls={route.cls} strand={route.strand} ch={route.ch} topic={route.topic} q={route.q} v={route.v} tab={route.tab} edit={route.edit} row={route.row} chview={route.chview} />
+        : route.name === 'browse' ? <Workspace subject={route.subject} cls={route.cls} strand={route.strand} ch={route.ch} topic={route.topic} q={route.q} v={route.v} tab={route.tab} edit={route.edit} row={route.row} chview={route.chview} item={route.item} />
         : route.name === 'question' ? <OpenQuestion id={route.id} />
         : route.name === 'review' ? <main className="wide"><ReviewQueue /></main>
         : route.name === 'map' ? <main className="wide"><CurriculumMap {...route} /></main>
-        : route.name === 'proposed' ? <main className="wide"><ProposedList kind={route.kind} /></main>
+        : route.name === 'proposed' ? <main className="wide proposed-main"><ProposedList kind={route.kind} item={route.item} /></main>
         : route.name === 'generate' ? <GenerateScreen questionId={route.q} setId={route.set} topicId={route.topic} />
         : route.name === 'run' ? <RunScreen runId={route.id} />
         : route.name === 'model-check' ? <ModelCheckScreen runId={route.id} />
