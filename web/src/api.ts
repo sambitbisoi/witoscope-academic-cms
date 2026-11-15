@@ -112,6 +112,19 @@ export async function tree(subject: Subject, cls: string) {
   };
 }
 
+/**
+ * Q1 (15 Nov 2026): the Level of every counted question (production, not retired; as the tree counts), per topic,
+ * for the "+ N higher" split when "Show higher-level questions" is on. Read only; Levels are never changed.
+ */
+export async function questionLevels(subject: Subject): Promise<Map<string, number[]>> {
+  const pre = `${prefixOf(subject)}*`;
+  const rows = await all<{ topic_id: string; effective_level: number }>((a, b) => supabase.from('cms_question_list').select('topic_id, effective_level')
+    .like('chapter_id', pre).eq('counted', true).order('question_id').range(a, b));
+  const m = new Map<string, number[]>();
+  for (const r of rows) m.set(r.topic_id, [...(m.get(r.topic_id) ?? []), r.effective_level]);
+  return m;
+}
+
 // ---------------------------------------------------------------- Topic
 export type QuestionRow = ListQuestion & { subject: string; file_key: string | null; chapter_id: string; topic_id: string; class: number;
   version_id: number; format: string; tier: string | null; gold_use: string | null; clone_batch_id: string | null;

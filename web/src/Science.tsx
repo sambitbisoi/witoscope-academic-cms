@@ -8,7 +8,7 @@ import { Id } from './Id';
 import { LevelTag } from './Tags';
 import { OriginFlags } from './AddQuestions';
 import { rowDetail, scienceData, type ScienceData, type ScienceQuestion, type ScienceRow } from './scienceApi';
-import { browseHash, statusLabel } from './logic';
+import { browseHash, showsAtLevel, statusLabel } from './logic';
 import { classesLine, isDimmed, listedOrder, rightPane, rowQuestions, rowsForClass, rowsInOrder, topicGroups } from './scienceLogic';
 
 export const CONTENT_TYPES = ['Fact', 'Concept', 'How it works', 'Experiment', 'Scenario-Case', 'Diagram', 'Vocabulary'] as const;
@@ -39,8 +39,8 @@ export function Coverage({ rows, questions }: { rows: ScienceRow[]; questions: S
   );
 }
 
-export function ScienceView({ scope, cls, topicNames, row, q, onRow, onQuestion, onBack, onOrder, reload, detail }: {
-  scope: { topicId: string } | { chapterId: string }; cls: string;
+export function ScienceView({ scope, cls, higher = false, topicNames, row, q, onRow, onQuestion, onBack, onOrder, reload, detail }: {
+  scope: { topicId: string } | { chapterId: string }; cls: string; /** Q1: also questions above the class */ higher?: boolean;
   /** the topics to show, in their order (chapter view keeps topics without rows) */ topicNames: Map<string, { name: string; no: string | null }>;
   row: string | null; q: string | null; onRow: (row: string | null) => void; onQuestion: (id: string) => void; onBack: () => void;
   onOrder: (ids: string[]) => void; reload: number; /** the question detail shown in the right column when q is set */ detail: ReactNode;
@@ -57,7 +57,7 @@ export function ScienceView({ scope, cls, topicNames, row, q, onRow, onQuestion,
   const rows = useMemo(() => rowsInOrder(rowsForClass(data?.rows ?? [], cls)), [data, cls]);
   const hidden = (data?.rows.length ?? 0) - rows.length;
   const ceiling = cls === 'all' ? null : Number(cls);
-  const qs = useMemo(() => (data?.questions ?? []).filter((x) => cls === 'all' || x.effective_level <= Number(cls)), [data, cls]);
+  const qs = useMemo(() => (data?.questions ?? []).filter((x) => showsAtLevel(x.effective_level, ceiling, higher)), [data, ceiling, higher]);
   const order = useMemo(() => listedOrder(qs, row), [qs, row]);
   useEffect(() => { onOrder(order); }, [order, onOrder]);
   useEffect(() => () => onOrder([]), [onOrder]);
