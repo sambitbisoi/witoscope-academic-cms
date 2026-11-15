@@ -34,9 +34,17 @@ export const scienceRootFor = (masterPath: string) => {
   return basename(dir) === '_snapshots' ? dirname(dir) : dir;
 };
 
+/** DAV scans the Legend's page offset cannot map (15 Nov 2026): the Class 1–2 "My Living World" scans are two-page
+ *  spreads (printed ≈ 2 × PDF − k), and their OCR text is named after the scan, not the Legend's file name. Their
+ *  rows are checked against the WHOLE book (46 and 54 scans), never a cited range. Every other source is unchanged. */
+export const DAV_WHOLE_BOOK: Record<string, string> = {
+  'DAV-my-living-world-class-1': 'Class_1__My_living_world_class_1_(evs).txt',
+  'DAV-my-living-world-class-2': 'Class_2__My_living_world_class_2(evs).txt',
+};
+
 /** The local OCR text file of a DAV scan: DAV/Source/Class 6/Magnets.pdf → DAV_OCR/Class_6__Magnets.txt */
-export const ocrFileFor = (scienceRoot: string, file: string, cls: number) =>
-  join(scienceRoot, 'DAV_OCR', `Class_${cls}__${file.split('/').pop()!.replace(/\.pdf$/i, '').replace(/ /g, '_')}.txt`);
+export const ocrFileFor = (scienceRoot: string, file: string, cls: number, sourceId?: string) =>
+  join(scienceRoot, 'DAV_OCR', (sourceId && DAV_WHOLE_BOOK[sourceId]) || `Class_${cls}__${file.split('/').pop()!.replace(/\.pdf$/i, '').replace(/ /g, '_')}.txt`);
 
 export function ocrPages(path: string, sourceId: string, from?: number, to?: number): BookPage[] {
   const out: BookPage[] = [];
@@ -58,7 +66,7 @@ export function corpusPlan(rows: MasterRow[], sources: ScienceSource[]) {
   for (const r of rows) {
     for (const c of r.citations) {
       const s = sources.find((x) => x.source_id === c.source_id)!;
-      if (s.publisher === 'NCERT') { want.set(s.source_id, 'all'); continue; }
+      if (s.publisher === 'NCERT' || DAV_WHOLE_BOOK[s.source_id]) { want.set(s.source_id, 'all'); continue; }
       // printed → pdf: pdf = printed + page_offset (CMS convention: printed = pdf − offset)
       const a = Math.max(1, c.page_from + s.page_offset - DAV_MARGIN), b = c.page_to + s.page_offset + DAV_MARGIN;
       const w = want.get(s.source_id);
@@ -83,7 +91,7 @@ export class ScienceBooks {
       const pdf = join(this.scienceRoot, s.file);
       if (existsSync(pdf)) pages = pdfPages(pdf, sourceId, from ?? null, to ?? null);
     } else {
-      const ocr = ocrFileFor(this.scienceRoot, s.file, s.class);
+      const ocr = ocrFileFor(this.scienceRoot, s.file, s.class, s.source_id);
       if (existsSync(ocr)) pages = ocrPages(ocr, sourceId, from, to);
     }
     if (!pages.length) this.missing.add(sourceId);
