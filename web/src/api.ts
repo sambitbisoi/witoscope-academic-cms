@@ -1,6 +1,6 @@
 // All Browse reads, typed. Everything goes through RLS as the signed-in admin;
 // counts come from the security_invoker views in migration 0010.
-import { rollUp, safeSearch, SUBJECTS, type ListQuestion, type ReviewStatus, type RollUp, type Subject, type TopicStats, type VersionRow } from './logic';
+import { classSel, rollUp, safeSearch, SUBJECTS, topicCeiling, type ListQuestion, type ReviewStatus, type RollUp, type Subject, type TopicStats, type VersionRow } from './logic';
 import { supabase } from './supabase';
 import type { SeqOrders } from '../../shared/sequence.ts';
 
@@ -95,20 +95,26 @@ export async function seqOrders(subject: Subject): Promise<SeqOrders> {
 
 export async function tree(subject: Subject, cls: string) {
   const pre = `${prefixOf(subject)}*`;
+  // Q5 (15 Nov 2026): one class, several ("3,4") or all
+  const sel = classSel(cls);
   const [chapters, topics, stats, strands] = await Promise.all([
     supabase.from('cms_chapters').select('chapter_id, name, strand_id, sort, display_code, status').eq('subject', subject).order('sort'),
     topicsWithClasses(subject),
-    cls === 'all' ? all<ClassStats & { topic_id: string }>((a, b) => supabase.from('cms_topic_stats').select('*').like('chapter_id', pre).range(a, b))
-      : all<ClassStats & { topic_id: string }>((a, b) => supabase.from('cms_topic_class_stats').select('*').like('chapter_id', pre).eq('class', Number(cls)).range(a, b)),
+    !sel.length ? all<ClassStats & { topic_id: string; class: number }>((a, b) => supabase.from('cms_topic_stats').select('*').like('chapter_id', pre).range(a, b))
+      : all<ClassStats & { topic_id: string; class: number }>((a, b) => supabase.from('cms_topic_class_stats').select('*').like('chapter_id', pre).in('class', sel).order('topic_id').order('class').range(a, b)),
     supabase.from('cms_strands').select('strand_id, name, sort').eq('subject', subject).order('sort'),
   ]);
   const [reviews, orders] = await Promise.all([topicReviews(), seqOrders(subject)]);
-  const byId = new Map(stats.map((s) => [s.topic_id, s]));
+  // one stats row per topic: for several classes, the row of the topic's ceiling class (the highest selected class it is in),
+  // whose Level ≤ class rule already covers the lower selected classes, so nothing is counted twice
+  const byTopic = new Map<string, Map<number, ClassStats>>();
+  for (const s of stats) byTopic.set(s.topic_id, (byTopic.get(s.topic_id) ?? new Map()).set(sel.length ? s.class : 0, s));
+  const statsOf = (t: { topic_id: string; classes: number[] }) => byTopic.get(t.topic_id)?.get(sel.length ? topicCeiling(t.classes, sel)! : 0);
   return {
     reviews, orders,
     chapters: must<Chapter[]>(chapters),
     strands: must<{ strand_id: string; name: string; sort: number }[]>(strands),
-    topics: topics.filter((t) => cls === 'all' || t.classes.includes(Number(cls))).map((t) => ({ ...t, stats: byId.get(t.topic_id) })) as TopicWithStats[],
+    topics: topics.filter((t) => !sel.length || t.classes.some((c) => sel.includes(c))).map((t) => ({ ...t, stats: statsOf(t) })) as TopicWithStats[],
   };
 }
 

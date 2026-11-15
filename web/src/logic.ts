@@ -44,10 +44,11 @@ export function parseRoute(hash: string): Route {
   if (p[0] === 'run' && p[1] && /^\d+$/.test(p[1])) return { name: 'run', id: Number(p[1]) };
   if (p[0] === 'model-check') return { name: 'model-check', id: p[1] && /^\d+$/.test(p[1]) ? Number(p[1]) : null };
   if (p[0] === 'browse' && SUBJECTS.some((s) => s.id === p[1])) {
-    const cls = p[2] && /^([1-6]|all)$/.test(p[2]) ? p[2] : 'all';
+    // Q5 (15 Nov 2026): one class, several ("3,4") or all; strands and chapters may be lists too
+    const cls = p[2] && /^([1-6](,[1-6])*|all)$/.test(p[2]) ? classParam(classSel(p[2])) : 'all';
     const v = qs.get('v');
-    const ch = qs.get('ch');
-    return { name: 'browse', subject: p[1] as Subject, cls, strand: strandParam(qs.get('strand')), ch: ch && /^(MC|SC|GC)[0-9]{2}$/.test(ch) ? ch : null, topic: p[3] ?? null, q: qs.get('q'), v: v && /^\d+$/.test(v) ? Number(v) : null,
+    const ch = joinParam(listParam(qs.get('ch')).filter((x) => /^(MC|SC|GC)[0-9]{2}$/.test(x)));
+    return { name: 'browse', subject: p[1] as Subject, cls, strand: joinParam(listParam(qs.get('strand')).map(strandParam).filter((x): x is string => !!x)), ch, topic: p[3] ?? null, q: qs.get('q'), v: v && /^\d+$/.test(v) ? Number(v) : null,
       tab: qs.get('tab') === 'concepts' ? 'concepts' : qs.get('tab') === 'sources' ? 'sources' : qs.get('tab') === 'content' ? 'content' : 'types', edit: qs.get('edit') === '1',
       // Science (13 Nov 2026): the selected content row, and the chapter view (all topics of a chapter)
       row: /^C[1-6]-[0-9A-Z]{2,4}-[0-9]{3}$/.test(qs.get('row') ?? '') ? qs.get('row') : null, chview: qs.get('view') === 'chapter' && !!ch && /^SC[0-9]{2}$/.test(ch),
@@ -528,3 +529,29 @@ export function conceptClassesByVersion(links: { version_id: number; concept_id:
   }
   return m;
 }
+
+// ---------------------------------------------------------------- Q5: several classes, strands and chapters in Browse
+/** "3,4" → [3, 4]; "all" → [] (= all classes). */
+export const classSel = (cls: string): number[] =>
+  cls === 'all' ? [] : [...new Set(cls.split(',').map(Number).filter((n) => Number.isInteger(n) && n >= 1 && n <= 6))].sort((a, b) => a - b);
+/** [4, 3] → "3,4"; nothing or all six → "all". */
+export const classParam = (xs: number[]): string => {
+  const u = [...new Set(xs)].sort((a, b) => a - b);
+  return u.length === 0 || u.length === 6 ? 'all' : u.join(',');
+};
+/** "a,b" → ["a", "b"]; null → []. */
+export const listParam = (x: string | null | undefined): string[] => (x ? [...new Set(x.split(',').map((y) => y.trim()).filter(Boolean))] : []);
+export const joinParam = (xs: string[]): string | null => (xs.length ? [...new Set(xs)].join(',') : null);
+/**
+ * Q5 rule (Sambit, 15 Nov 2026): a topic's questions follow Level ≤ the HIGHEST selected class the topic is in
+ * (a topic shown without being in any selected class uses the highest selected class). null = all classes.
+ */
+export function topicCeiling(topicClasses: number[], sel: number[]): number | null {
+  if (!sel.length) return null;
+  const inSel = topicClasses.filter((c) => sel.includes(c));
+  return Math.max(...(inSel.length ? inSel : sel));
+}
+/** Q5: a topic shows if it is core (home class, not an extra Achievers row) in ANY selected class. */
+export const coreInAny = (t: { class: number; topic_id: string }, sel: number[], extraAch: Set<string>) =>
+  !sel.length || (sel.includes(t.class) && !extraAch.has(t.topic_id));
+export const classesText = (sel: number[]) => (sel.length === 0 ? 'all classes' : sel.length === 1 ? `Class ${sel[0]}` : `Classes ${sel.join(', ')}`);

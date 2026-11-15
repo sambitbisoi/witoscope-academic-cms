@@ -89,3 +89,40 @@ describe('Q8: Kind line and the item in the URL', async () => {
     expect(parseRoute('#/proposed?kind=pattern&item=x%3Cscript').name === 'proposed' && (parseRoute('#/proposed?item=x%3Cscript') as { item: string | null }).item).toBeNull();
   });
 });
+
+describe('Q5: several classes, strands and chapters', async () => {
+  const { classSel, classParam, coreInAny, joinParam, listParam, topicCeiling, parseRoute, browseHash } = await import('../web/src/logic.ts');
+  it('class selection: "3,4" ↔ [3, 4]; nothing or all six = all', () => {
+    expect(classSel('4,3,4')).toEqual([3, 4]);
+    expect(classSel('all')).toEqual([]);
+    expect(classParam([4, 3])).toBe('3,4');
+    expect(classParam([])).toBe('all');
+    expect(classParam([1, 2, 3, 4, 5, 6])).toBe('all');
+    expect(listParam('a,b,a')).toEqual(['a', 'b']);
+    expect(joinParam([])).toBeNull();
+  });
+  it('rule: core in ANY selected class; questions follow Level ≤ the highest selected class the topic is in', () => {
+    expect(coreInAny({ class: 4, topic_id: 'MT1' }, [3, 4], new Set())).toBe(true);
+    expect(coreInAny({ class: 5, topic_id: 'MT1' }, [3, 4], new Set())).toBe(false);
+    expect(coreInAny({ class: 4, topic_id: 'ACH-1' }, [3, 4], new Set(['ACH-1']))).toBe(false);
+    expect(coreInAny({ class: 5, topic_id: 'MT1' }, [], new Set())).toBe(true);
+    expect(topicCeiling([3, 4, 5], [3, 4])).toBe(4);
+    expect(topicCeiling([4], [3, 4, 6])).toBe(4);
+    expect(topicCeiling([5], [3, 4])).toBe(4); // shown without being in a selected class (selected topic): highest selected
+    expect(topicCeiling([4], [])).toBeNull();
+  });
+  it('routes: lists round-trip; old single-value links still work; bad values are dropped', () => {
+    const h = browseHash({ subject: 'math', cls: '3,4', strand: 'math-FDP,math-NUM', ch: 'MC18,MC19' });
+    expect(h).toBe('#/browse/math/3,4?strand=math-FDP%2Cmath-NUM&ch=MC18%2CMC19');
+    const r = parseRoute(h);
+    expect(r.name === 'browse' && [r.cls, r.strand, r.ch]).toEqual(['3,4', 'math-FDP,math-NUM', 'MC18,MC19']);
+    const old = parseRoute('#/browse/math/4/MT0332?strand=math-FDP&ch=MC18');
+    expect(old.name === 'browse' && [old.cls, old.strand, old.ch, old.topic]).toEqual(['4', 'math-FDP', 'MC18', 'MT0332']);
+    const bad = parseRoute('#/browse/math/3,9?strand=math-FDP,evil&ch=MC18,XX1');
+    expect(bad.name === 'browse' && [bad.cls, bad.strand, bad.ch]).toEqual(['all', 'math-FDP', 'MC18']);
+    const all6 = parseRoute('#/browse/math/1,2,3,4,5,6');
+    expect(all6.name === 'browse' && all6.cls).toBe('all');
+    const chv = parseRoute('#/browse/science/6?ch=SC01,SC02&view=chapter');
+    expect(chv.name === 'browse' && chv.chview).toBe(false); // the chapter view needs one chapter
+  });
+});
