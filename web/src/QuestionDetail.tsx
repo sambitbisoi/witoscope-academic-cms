@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { questionDetail, type QuestionDetailData } from './api';
-import { browseHash, classesLabel, derivedRows, involvementOf, signatureRows, STATUS_LABEL, subjectOfChapter, TAG_LABEL } from './logic';
+import { browseHash, derivedRows, involvementOf, signatureRows, STATUS_LABEL, subjectOfChapter, TAG_LABEL } from './logic';
 import { latestOriginality, officialLink, sourceItems, type OriginalityCheck } from './sourcesApi';
 import { questionFromDb } from '../../shared/fromDb.ts';
 import { structureDiff } from '../../shared/save.ts';
@@ -43,7 +43,8 @@ export function QuestionDetail({ id, versionNo, onVersion, onEdit, reloadKey = 0
       <div className="detail-head">
         <div>
           <div className="detail-id">{q.question_id}{q.bank === 'gold' && <span className="tag gold">Gold · never published</span>}
-            {classesLabel(d.topicClasses) && <span className="pill-multi" title="Its topic is taught in several classes">{classesLabel(d.topicClasses)}</span>}</div>
+            {/* Q4 (15 Nov 2026): the question's own Level, not its topic's classes */}
+            <span className={`tag level lv-here${q.level === null ? ' lv-unset' : ''}`} title={q.level === null ? `No Level yet: its topic's class ${d.effectiveLevel} is used` : `Level ${q.level}: written for class ${q.level}`}>{q.level === null ? `Level — (class ${d.effectiveLevel} used)` : `Level ${q.level}`}</span></div>
           <div className="muted small">{q.file_key ? `${q.file_key} · ` : ''}{v.format}</div>
         </div>
         <div className="muted small right">

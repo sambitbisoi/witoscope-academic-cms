@@ -468,3 +468,27 @@ export const classesLabel = (classes: number[]) => {
   const c = [...new Set(classes)].sort((a, b) => a - b);
   return c.length > 1 ? `Classes ${c.join(' · ')}` : null;
 };
+
+// ---------------------------------------------------------------- review UX (15 Nov 2026, docs/plan-2026-11-15-review-ux.md)
+/**
+ * Q2 / Q7 / Q10: a catalogue item's class (where it was first catalogued): its own field, else the
+ * ID prefix (G6-…, TS-G3-…, G6-M-…). Information only: it never changes what is shown.
+ */
+export function classFromId(id: string | null | undefined): number | null {
+  const m = /^(?:TS-)?G([1-6])-/.exec(id ?? '');
+  return m ? Number(m[1]) : null;
+}
+export const catalogueClass = (id: string, cls?: number | null) => (cls ?? null) ?? classFromId(id);
+
+/** Q3: what a question row's Level tag says. `ceiling` = the class being viewed (null = all classes). The Level itself is never changed. */
+export type LevelKind = 'here' | 'revision' | 'above';
+export function levelTag(q: { level: number | null; effective_level: number }, ceiling: number | null): { text: string; kind: LevelKind; unset: boolean; title: string } {
+  const eff = q.effective_level;
+  const unset = q.level === null;
+  const kind: LevelKind = ceiling === null || eff === ceiling ? 'here' : eff < ceiling ? 'revision' : 'above';
+  const base = unset ? `Level — (class ${eff} used)` : `Level ${eff}`;
+  const text = kind === 'revision' ? `${base} · revision` : kind === 'above' ? `${base} · above class` : base;
+  const title = (unset ? `The question has no Level yet; its topic's class ${eff} is used. ` : `Written for class ${eff}. `)
+    + (kind === 'revision' ? `Revision in Class ${ceiling}.` : kind === 'above' ? `Above Class ${ceiling}: shown only with "Show higher-level questions".` : '');
+  return { text, kind, unset, title: title.trim() };
+}

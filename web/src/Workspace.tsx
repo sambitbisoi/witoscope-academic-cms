@@ -5,7 +5,7 @@ import { buildSequence, extraAchievers, numbered, numbersOf, topicRole } from '.
 import { Id } from './Id';
 import { ReviewControl, ReviewFilterSelect, RollUpIcon, TopicReviewIcon } from './ReviewStatus';
 import {
-  applyFilters, browseHash, classesLabel, FLAG_FILTERS, matchesReview, rollUp, type ReviewFilter, type RollUp, cloneGroups, countsLabel, distinctTexts, sameWording, type CloneInfo, gapLabel, groupBySet, involvementOf, mixLabel, NO_FILTERS, statusCountsLabel, statusLabel,
+  applyFilters, browseHash, catalogueClass, classesLabel, FLAG_FILTERS, matchesReview, rollUp, type ReviewFilter, type RollUp, cloneGroups, countsLabel, distinctTexts, sameWording, type CloneInfo, gapLabel, groupBySet, involvementOf, mixLabel, NO_FILTERS, statusCountsLabel, statusLabel,
   subjectLabel, SUBJECTS, summarize, type Filters, type Subject,
 } from './logic';
 import { EditForm } from './EditForm';
@@ -15,6 +15,7 @@ import { SourcesTab } from './Sources';
 import { chapterSourceCount } from './sourcesApi';
 import { rememberBrowse } from './Shell';
 import { ScienceView } from './Science';
+import { ClassTag, LevelTag } from './Tags';
 
 type R = { subject: Subject; cls: string; strand: string | null; ch: string | null; topic: string | null; q: string | null; v: number | null; tab: 'types' | 'concepts' | 'sources' | 'content'; edit: boolean; row: string | null; chview: boolean };
 const SOURCE_LABEL: Record<string, string> = { ncert: 'NCERT', dav: 'DAV', ixl: 'IXL', imo: 'IMO', iso: 'ISO', ieo: 'IEO' };
@@ -335,6 +336,7 @@ function TopicView({ topic, no, chapterNo, review, chapter, r, go, reload, onOrd
     return { groups: gs, clones: info };
   }, [data, qs, topic.topic_id]);
   const nGroups = useMemo(() => new Set(inClass.filter((q) => q.bank === 'production' && !q.retired_at).map((q) => q.clone_key ?? `solo:${q.question_id}`)).size, [inClass]);
+  const ceiling = r.cls === 'all' ? null : Number(r.cls);
   const nRevision = r.cls === 'all' ? 0 : inClass.filter((q) => q.effective_level < Number(r.cls)).length;
   const hiddenHigher = r.cls === 'all' || !data ? 0 : data.questions.length - inClass.length;
   const settingsUsed = useMemo(() => (data ? [...data.settings.values()].sort((a, b) => a.name.localeCompare(b.name)) : []), [data]);
@@ -446,10 +448,10 @@ function TopicView({ topic, no, chapterNo, review, chapter, r, go, reload, onOrd
           const sameOf = new Map(all.map((q, i) => [q.question_id, same[i]!]));
           return (
             <Group key={id} open={open.has(id)} onToggle={() => toggle(id)} summary={summarize(all)}
-              title={g.setId ? <>{g.setId} · {set?.name ?? ''}<Proposed status={set?.status} /></> : 'No typical set'}
+              title={g.setId ? <>{g.setId} · {set?.name ?? ''}<ClassTag cls={catalogueClass(g.setId, set?.class)} what="question type" /><Proposed status={set?.status} /></> : 'No typical set'}
               extra={g.setId && <><a className="small fill-link" href={`#/generate?set=${encodeURIComponent(g.setId)}&topic=${encodeURIComponent(topic.topic_id)}`} onClick={(e) => e.stopPropagation()}>Fill gaps</a>
                 <button className="link small" onClick={edit('typical_set', g.setId)}>Edit</button></>}
-              sub={set && <>Class {set.class} · {set.parent_visible ? 'parent-visible' : 'hidden from parents'} · {set.status}
+              sub={set && <>{set.parent_visible ? 'parent-visible' : 'hidden from parents'} · {set.status}
                 {set.instruction_pattern && ` · "${set.instruction_pattern}"`}{main.length ? ` · concepts ${main.join(', ')}` : ''}
                 {set.topic_id && set.topic_id !== topic.topic_id ? ` · set belongs to ${set.topic_id}` : ''}</>}>
               {g.count === 0 && <div className="muted small pad">No questions yet{filtered ? ' (with these filters)' : ''}.</div>}
@@ -467,7 +469,7 @@ function TopicView({ topic, no, chapterNo, review, chapter, r, go, reload, onOrd
                       return <div key={q.question_id}>
                         {c && c.size > 1 && c.index === 1 && <div className={`clone-head small ${first ? 'gap' : ''}`}>Clone group · {c.size} interchangeable</div>}
                         <QRow q={q} shown={textOf.get(q.question_id)} same={sameOf.get(q.question_id)} clone={c} setting={q.setting_id ? data.settings.get(q.setting_id)?.name : undefined}
-                          revision={r.cls !== 'all' && q.effective_level < Number(r.cls) ? q.effective_level : undefined}
+                          ceiling={ceiling}
                           selected={q.question_id === r.q} onPick={() => go({ q: q.question_id, v: null, edit: false })} />
                       </div>;
                     })}
@@ -486,12 +488,12 @@ function TopicView({ topic, no, chapterNo, review, chapter, r, go, reload, onOrd
             const same = sameWording(list.map((x) => x.q.text));
             return (
               <Group key={c.concept_id} open={open.has(c.concept_id)} onToggle={() => toggle(c.concept_id)} summary={summarize(list.map((x) => x.q))}
-                title={<>{c.concept_id} · {c.name}<Proposed status={c.status} /><button className="link small" onClick={edit('concept', c.concept_id)}>Edit</button></>}
-                sub={<>Class {c.class}{c.type ? ` · ${c.type}` : ''} · {c.status}{c.description ? ` · ${c.description}` : ''}</>}>
+                title={<>{c.concept_id} · {c.name}<ClassTag cls={catalogueClass(c.concept_id, c.class)} what="concept" /><Proposed status={c.status} /><button className="link small" onClick={edit('concept', c.concept_id)}>Edit</button></>}
+                sub={<>{c.type ? `${c.type} · ` : ''}{c.status}{c.description ? ` · ${c.description}` : ''}</>}>
                 {list.length === 0 ? <div className="muted small pad">No questions use this concept{qs.length < data.questions.length ? ' (with these filters)' : ''}.</div>
                   : list.map(({ q, inv }, i) => {
                     const lab = involvementOf(inv);
-                    return <QRow key={q.question_id} q={q} shown={shown[i]} same={same[i]} selected={q.question_id === r.q} onPick={() => go({ q: q.question_id, v: null, edit: false })}
+                    return <QRow key={q.question_id} q={q} shown={shown[i]} same={same[i]} ceiling={ceiling} selected={q.question_id === r.q} onPick={() => go({ q: q.question_id, v: null, edit: false })}
                       extra={<span className="inv" title={lab.title}>{lab.label} {Number(inv).toFixed(1)}</span>} />;
                   })}
               </Group>
@@ -562,8 +564,8 @@ export function ClassesPill({ classes }: { classes: number[] }) {
   return l ? <span className="pill-multi" title="This topic is taught in several classes (D2)">{l}</span> : null;
 }
 
-function QRow({ q, shown, same, clone, setting, revision, selected, onPick, extra }: {
-  q: QuestionRow; shown?: string; same?: number; clone?: CloneInfo; setting?: string; revision?: number; selected: boolean; onPick: () => void; extra?: ReactNode;
+function QRow({ q, shown, same, clone, setting, ceiling, selected, onPick, extra }: {
+  q: QuestionRow; shown?: string; same?: number; clone?: CloneInfo; setting?: string; /** the class being viewed (null = all) */ ceiling: number | null; selected: boolean; onPick: () => void; extra?: ReactNode;
 }) {
   return (
     <button className={`qrow ${selected ? 'sel' : ''}`} onClick={onPick} title={q.text}
@@ -574,7 +576,7 @@ function QRow({ q, shown, same, clone, setting, revision, selected, onPick, extr
         : clone?.nearIdentical ? <span className="tag same" title="A clone with the same wording apart from the numbers (kept; never removed)">near-identical</span> : null}
       {clone && clone.size > 1 && <span className="muted small nowrap" title="Clones: same pattern, signature and concepts">{clone.index} of {clone.size}</span>}
       {setting && <span className="tag setting" title="Setting (the story or context)">{setting}</span>}
-      {revision !== undefined && <span className="tag revision" title={`Level ${revision}: revision in this class`}>Revision · L{revision}</span>}
+      <LevelTag q={q} ceiling={ceiling} />
       {q.bank === 'gold' && <span className="tag gold">Gold</span>}
       <OriginFlags q={q} compact />
       {extra && <span className="muted small">{extra}</span>}

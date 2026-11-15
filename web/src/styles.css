@@ -434,6 +434,15 @@ h1 .pill-multi { font-size: 0.78rem; }
 .clone-head { padding: 3px 14px 3px 110px; color: var(--muted); background: var(--subtle); border-top: 1px dashed var(--line); font-size: 0.75rem; }
 .tag.setting { background: var(--chip); color: var(--text); flex: none; white-space: nowrap; }
 .tag.revision { background: var(--multi-bg); color: var(--multi); flex: none; white-space: nowrap; }
+/* review UX (15 Nov 2026): Level on every question row (Q3) and in the panel (Q4); catalogue class (Q2, Q7) */
+.tag.level { flex: none; white-space: nowrap; font-weight: 600; background: var(--chip); color: var(--text); }
+/* a narrow middle column: the row's text keeps room, the tags wrap under it */
+.qrow { flex-wrap: wrap; row-gap: 4px; }
+.qrow .qtext { min-width: 12rem; }
+.tag.level.lv-revision { background: var(--multi-bg); color: var(--multi); font-weight: 500; }
+.tag.level.lv-above { background: var(--warn-bg); color: var(--warn); }
+.tag.level.lv-unset { font-style: italic; font-weight: 500; color: var(--muted); }
+.tag.cat-class { background: var(--sig-bg); color: var(--accent); border: 1px solid var(--sig-line); font-weight: 600; white-space: nowrap; }
 .prereqs { margin-top: 2px; }
 .placement { display: flex; flex-direction: column; gap: 3px; margin-bottom: 8px; }
 /* S1: curriculum map */
