@@ -492,3 +492,34 @@ export function levelTag(q: { level: number | null; effective_level: number }, c
     + (kind === 'revision' ? `Revision in Class ${ceiling}.` : kind === 'above' ? `Above Class ${ceiling}: shown only with "Show higher-level questions".` : '');
   return { text, kind, unset, title: title.trim() };
 }
+
+/** Q1: does a question show in class `ceiling` (null = all classes)? Level ≤ class always; above it only with "Show higher-level questions". */
+export const showsAtLevel = (effectiveLevel: number, ceiling: number | null, higher: boolean) =>
+  ceiling === null || higher || effectiveLevel <= ceiling;
+/** Q1: "106" or "0 + 113 higher". */
+export const splitLabel = (n: number, higherN: number, higher: boolean) => (higher && higherN > 0 ? `${n} + ${higherN} higher` : String(n));
+/** Q1: questions above class `ceiling`, from a topic's list of question levels (counted questions only). */
+export const higherCount = (levels: number[] | undefined, ceiling: number | null) => (ceiling === null ? 0 : (levels ?? []).filter((l) => l > ceiling).length);
+
+/** Q6: nothing chosen = all; else at least one of the values is chosen. */
+export const matchesAny = (chosen: number[], values: Iterable<number>) => {
+  if (!chosen.length) return true;
+  for (const v of values) if (chosen.includes(v)) return true;
+  return false;
+};
+/** Q6 / Q10: how many items have each value (an item with a value twice counts once). */
+export function valueCounts<T>(items: T[], valuesOf: (x: T) => Iterable<number | string>): Map<string, number> {
+  const m = new Map<string, number>();
+  for (const x of items) for (const v of new Set(valuesOf(x))) m.set(String(v), (m.get(String(v)) ?? 0) + 1);
+  return m;
+}
+/** Q6: the classes of every concept a question version uses (any part, any involvement). */
+export function conceptClassesByVersion(links: { version_id: number; concept_id: string }[], classOf: (conceptId: string) => number | null): Map<number, Set<number>> {
+  const m = new Map<number, Set<number>>();
+  for (const l of links) {
+    const c = classOf(l.concept_id);
+    if (c === null) continue;
+    m.set(l.version_id, (m.get(l.version_id) ?? new Set()).add(c));
+  }
+  return m;
+}
