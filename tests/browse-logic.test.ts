@@ -17,13 +17,13 @@ describe('routes', () => {
     ['#/generate?q=MQ000010', { name: 'generate', q: 'MQ000010', set: null, topic: null }],
     ['#/generate?set=TS-G6-X&topic=MT0393', { name: 'generate', q: null, set: 'TS-G6-X', topic: 'MT0393' }],
     ['#/run/12', { name: 'run', id: 12 }],
-    ['#/browse/math/6/MT0393?q=MQ000010&edit=1', { name: 'browse', subject: 'math', cls: '6', strand: null, ch: null, topic: 'MT0393', q: 'MQ000010', v: null, tab: 'types', edit: true, row: null, chview: false }],
+    ['#/browse/math/6/MT0393?q=MQ000010&edit=1', { name: 'browse', subject: 'math', cls: '6', strand: null, ch: null, topic: 'MT0393', q: 'MQ000010', v: null, tab: 'types', edit: true, row: null, chview: false, item: null }],
     ['#/imports/12', { name: 'import', id: 12 }],
     ['#/q/G5-007', { name: 'question', id: 'G5-007' }],
-    ['#/browse/math/6', { name: 'browse', subject: 'math', cls: '6', strand: null, ch: null, topic: null, q: null, v: null, tab: 'types', edit: false, row: null, chview: false }],
-    ['#/browse/science/all/ST0001?q=SQ000001&v=2&tab=concepts', { name: 'browse', subject: 'science', cls: 'all', strand: null, ch: null, topic: 'ST0001', q: 'SQ000001', v: 2, tab: 'concepts', edit: false, row: null, chview: false }],
-    ['#/browse/math/6/MT0393?tab=sources', { name: 'browse', subject: 'math', cls: '6', strand: null, ch: null, topic: 'MT0393', q: null, v: null, tab: 'sources', edit: false, row: null, chview: false }],
-    ['#/browse/math/9', { name: 'browse', subject: 'math', cls: 'all', strand: null, ch: null, topic: null, q: null, v: null, tab: 'types', edit: false, row: null, chview: false }],
+    ['#/browse/math/6', { name: 'browse', subject: 'math', cls: '6', strand: null, ch: null, topic: null, q: null, v: null, tab: 'types', edit: false, row: null, chview: false, item: null }],
+    ['#/browse/science/all/ST0001?q=SQ000001&v=2&tab=concepts', { name: 'browse', subject: 'science', cls: 'all', strand: null, ch: null, topic: 'ST0001', q: 'SQ000001', v: 2, tab: 'concepts', edit: false, row: null, chview: false, item: null }],
+    ['#/browse/math/6/MT0393?tab=sources', { name: 'browse', subject: 'math', cls: '6', strand: null, ch: null, topic: 'MT0393', q: null, v: null, tab: 'sources', edit: false, row: null, chview: false, item: null }],
+    ['#/browse/math/9', { name: 'browse', subject: 'math', cls: 'all', strand: null, ch: null, topic: null, q: null, v: null, tab: 'types', edit: false, row: null, chview: false, item: null }],
     ['#/browse/art/6', { name: 'notfound' }],
   ])('%s', (hash, route) => expect(parseRoute(hash)).toEqual(route));
 
@@ -140,7 +140,7 @@ describe('queue 12 Nov 2026 (PR A)', () => {
     expect(parseRoute('#/browse/math/5?ch=bad')).toMatchObject({ ch: null });
   });
   it('U2: the proposed list route', () => {
-    expect(parseRoute('#/proposed?kind=pattern')).toEqual({ name: 'proposed', kind: 'pattern' });
+    expect(parseRoute('#/proposed?kind=pattern')).toEqual({ name: 'proposed', kind: 'pattern', item: null });
   });
   it('U8: texts that share a long opening show the part that differs', () => {
     const a = 'A fish made a quarter turn. Look at it before and after. Did it turn clockwise or anti-clockwise? (red fish)';

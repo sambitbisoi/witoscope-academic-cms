@@ -13,9 +13,9 @@ export const subjectOfChapter = (chapterId: string): Subject =>
 // ---------------------------------------------------------------- routes (hash)
 export type Route =
   | { name: 'home'; grade: string | null }
-  | { name: 'browse'; subject: Subject; cls: string; strand: string | null; ch: string | null; topic: string | null; q: string | null; v: number | null; tab: 'types' | 'concepts' | 'sources' | 'content'; edit: boolean; row: string | null; chview: boolean }
+  | { name: 'browse'; subject: Subject; cls: string; strand: string | null; ch: string | null; topic: string | null; q: string | null; v: number | null; tab: 'types' | 'concepts' | 'sources' | 'content'; edit: boolean; row: string | null; chview: boolean; item: string | null }
   | { name: 'review' }
-  | { name: 'proposed'; kind: string | null }
+  | { name: 'proposed'; kind: string | null; item: string | null }
   | { name: 'map'; tab: 'topics' | 'sources'; cls: string; subject: string; strand: string | null; ch: string | null; show: MapShow; q: string; chapters: boolean; topics: boolean }
   | { name: 'generate'; q: string | null; set: string | null; topic: string | null }
   | { name: 'run'; id: number }
@@ -33,7 +33,7 @@ export function parseRoute(hash: string): Route {
   if (p[0] === 'imports') return p[1] && /^\d+$/.test(p[1]) ? { name: 'import', id: Number(p[1]) } : { name: 'imports' };
   if (p[0] === 'q' && p[1]) return { name: 'question', id: p[1] };
   if (p[0] === 'review') return { name: 'review' };
-  if (p[0] === 'proposed') return { name: 'proposed', kind: qs.get('kind') };
+  if (p[0] === 'proposed') return { name: 'proposed', kind: qs.get('kind'), item: itemParamOk(qs.get('item')) };
   if (p[0] === 'map') {
     const show = qs.get('show');
     return { name: 'map', tab: p[1] === 'sources' ? 'sources' : 'topics', cls: /^[1-6]$/.test(qs.get('cls') ?? '') ? qs.get('cls')! : 'all',
@@ -50,14 +50,18 @@ export function parseRoute(hash: string): Route {
     return { name: 'browse', subject: p[1] as Subject, cls, strand: strandParam(qs.get('strand')), ch: ch && /^(MC|SC|GC)[0-9]{2}$/.test(ch) ? ch : null, topic: p[3] ?? null, q: qs.get('q'), v: v && /^\d+$/.test(v) ? Number(v) : null,
       tab: qs.get('tab') === 'concepts' ? 'concepts' : qs.get('tab') === 'sources' ? 'sources' : qs.get('tab') === 'content' ? 'content' : 'types', edit: qs.get('edit') === '1',
       // Science (13 Nov 2026): the selected content row, and the chapter view (all topics of a chapter)
-      row: /^C[1-6]-[0-9A-Z]{2,4}-[0-9]{3}$/.test(qs.get('row') ?? '') ? qs.get('row') : null, chview: qs.get('view') === 'chapter' && !!ch && /^SC[0-9]{2}$/.test(ch) };
+      row: /^C[1-6]-[0-9A-Z]{2,4}-[0-9]{3}$/.test(qs.get('row') ?? '') ? qs.get('row') : null, chview: qs.get('view') === 'chapter' && !!ch && /^SC[0-9]{2}$/.test(ch),
+      // Q8 (15 Nov 2026): a catalogue item open in the right-hand pane, as kind:id
+      item: itemParamOk(qs.get('item')) };
   }
   return { name: 'notfound' };
 }
 
+/** Q8: `kind:id` of a catalogue item (concept, misconception, typical_set, pattern, setting, topic_class). */
+const itemParamOk = (x: string | null) => (x && /^(concept|misconception|typical_set|pattern|setting|topic_class):[A-Za-z0-9·_.\-]{1,60}$/.test(x) ? x : null);
 const strandParam = (x: string | null) => (x && /^(math|science|grammar)-[A-Z]{2,4}$/.test(x) ? x : null);
 
-export function browseHash(r: { subject: string; cls: string; strand?: string | null; ch?: string | null; topic?: string | null; q?: string | null; v?: number | null; tab?: string; edit?: boolean; row?: string | null; chview?: boolean }): string {
+export function browseHash(r: { subject: string; cls: string; strand?: string | null; ch?: string | null; topic?: string | null; q?: string | null; v?: number | null; tab?: string; edit?: boolean; row?: string | null; chview?: boolean; item?: string | null }): string {
   const parts = ['#/browse', r.subject, r.cls, ...(r.topic ? [encodeURIComponent(r.topic)] : [])].join('/');
   const qs = new URLSearchParams();
   if (r.strand) qs.set('strand', r.strand);
@@ -68,6 +72,7 @@ export function browseHash(r: { subject: string; cls: string; strand?: string | 
   if (r.edit && r.q) qs.set('edit', '1');
   if (r.row) qs.set('row', r.row);
   if (r.chview && r.ch && !r.topic) qs.set('view', 'chapter');
+  if (r.item && !r.q) qs.set('item', r.item);
   const s = qs.toString();
   return s ? `${parts}?${s}` : parts;
 }

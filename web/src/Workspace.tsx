@@ -10,7 +10,9 @@ import {
 } from './logic';
 import { EditForm } from './EditForm';
 import { CurriculumForm, type Kind } from './CurriculumForms';
-import { Proposed, QuestionDetail, type ReviewCommand } from './QuestionDetail';
+import { QuestionDetail, type ReviewCommand } from './QuestionDetail';
+import { CatalogueDetail, InlineDecide, ProposedChip } from './CatalogueDetail';
+import { itemParam, parseItem, type CatKind } from './catalogueApi';
 import { SourcesTab } from './Sources';
 import { chapterSourceCount } from './sourcesApi';
 import { rememberBrowse } from './Shell';
@@ -18,7 +20,8 @@ import { ScienceView } from './Science';
 import { ClassTag, LevelTag } from './Tags';
 import { MultiSelect } from './MultiSelect';
 
-type R = { subject: Subject; cls: string; strand: string | null; ch: string | null; topic: string | null; q: string | null; v: number | null; tab: 'types' | 'concepts' | 'sources' | 'content'; edit: boolean; row: string | null; chview: boolean };
+type R = { subject: Subject; cls: string; strand: string | null; ch: string | null; topic: string | null; q: string | null; v: number | null; tab: 'types' | 'concepts' | 'sources' | 'content'; edit: boolean; row: string | null; chview: boolean;
+  /** Q8: a catalogue item open in the right-hand pane (kind:id); a question and an item never show together */ item: string | null };
 const SOURCE_LABEL: Record<string, string> = { ncert: 'NCERT', dav: 'DAV', ixl: 'IXL', imo: 'IMO', iso: 'ISO', ieo: 'IEO' };
 
 // ---------------------------------------------------------------- small persisted preferences (best effort)
@@ -63,7 +66,18 @@ export function Workspace(r: R) {
   const showHigher = higher && r.cls !== 'all';
   const higherOf = useCallback((t: { topic_id: string }) => (showHigher && levels ? higherCount(levels.get(t.topic_id), r.cls === 'all' ? null : Number(r.cls)) : 0), [showHigher, levels, r.cls]);
 
-  const go = useCallback((patch: Partial<R>) => { location.hash = browseHash({ ...r, ...patch }); }, [r.subject, r.cls, r.strand, r.ch, r.topic, r.q, r.v, r.tab, r.edit, r.row, r.chview]);
+  const go = useCallback((patch: Partial<R>) => {
+    const next = { ...r, ...patch };
+    // Q8: opening a question closes the item pane, and the other way round; another topic closes both
+    if (patch.q) next.item = null;
+    if (patch.item) { next.q = null; next.v = null; next.edit = false; }
+    if ('topic' in patch && patch.topic !== r.topic && !('item' in patch)) next.item = null;
+    location.hash = browseHash(next);
+  }, [r.subject, r.cls, r.strand, r.ch, r.topic, r.q, r.v, r.tab, r.edit, r.row, r.chview, r.item]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Q8 / Q9: an item decided in the pane or on a header; the topic view updates its headers in place
+  const [decided, setDecided] = useState<{ kind: CatKind; id: string; status: string; n: number } | null>(null);
+  const openItem = useCallback((kind: CatKind, id: string) => go({ item: itemParam(kind, id) }), [go]);
+  const item = parseItem(r.item);
   const topic = data?.topics.find((t) => t.topic_id === r.topic) ?? null;
   const step = useCallback((d: 1 | -1) => {
     if (!order.length) return;
@@ -79,13 +93,13 @@ export function Workspace(r: R) {
       if (e.key === '[') { e.preventDefault(); setPanes({ ...panes, pinned: !panes.pinned }); setOverlay(false); return; }
       if (e.key === 'ArrowDown' || e.key === 'j') { e.preventDefault(); step(1); return; }
       if (e.key === 'ArrowUp' || e.key === 'k') { e.preventDefault(); step(-1); return; }
-      if (!r.q || r.v) return;
+      if (!r.q || r.v || r.item) return; // never approve a question while a catalogue item is open
       const kind = ({ a: 'approve', r: 'reject', f: 'flag' } as const)[e.key.toLowerCase() as 'a' | 'r' | 'f'];
       if (kind) { e.preventDefault(); setCommand({ kind, n: Date.now() }); }
     };
     window.addEventListener('keydown', on);
     return () => window.removeEventListener('keydown', on);
-  }, [step, r.q, r.v, r.edit, panes, setPanes]);
+  }, [step, r.q, r.v, r.edit, r.item, panes, setPanes]);
 
   // R1: the topics this class shows (core, plus extra ones when asked); the selected topic always shows
   // 0034: an Achievers row of a chapter that is in this class only through links is extra too
@@ -147,6 +161,9 @@ export function Workspace(r: R) {
     </>
   );
 
+  const itemPane = item ? <CatalogueDetail key={r.item!} kind={item.kind} id={item.id} where="in Browse"
+    onDecided={(kind, id, status) => setDecided({ kind, id, status, n: Date.now() })} onOpenItem={openItem}
+    onOpenQuestion={(q) => go({ q, v: null, edit: false })} onClose={() => go({ item: null })} /> : null;
   const qDetail = r.q ? <QuestionDetail id={r.q} versionNo={r.v} reloadKey={reload} onVersion={(v) => go({ v })} onEdit={() => go({ edit: true, v: null })}
     onChanged={() => setReload((x) => x + 1)} command={command} onAdvance={() => step(1)} /> : null;
   // Science (Sambit, 14 Nov 2026): tree | content | questions — the question detail opens in the right column, no fourth column
@@ -196,12 +213,12 @@ export function Workspace(r: R) {
             : !r.topic ? <Pick subject={r.subject} cls={r.cls} ch={chapters.find((c) => c.chapter_id === r.ch)} n={data ? shownTopics.filter((t) => (!r.ch || t.chapter_id === r.ch) && (!r.strand || chapterOf.get(t.chapter_id)?.strand_id === r.strand)).length : undefined} />
             : !data ? <p className="muted">Loading…</p>
             : !topic ? <p>Topic {r.topic} isn't in {subjectLabel(r.subject)}{r.cls !== 'all' ? ` class ${r.cls}` : ''}. <a href={browseHash({ ...r, cls: 'all' })}>Look in all classes</a></p>
-            : <TopicView key={topic.topic_id} reload={reload} higher={showHigher} topic={topic} no={seq?.topic.get(topic.topic_id) ?? null} chapterNo={seq?.chapter.get(topic.chapter_id) ?? null} review={data.reviews.get(topic.topic_id)} chapter={data.chapters.find((c) => c.chapter_id === topic.chapter_id)} r={r} go={go} onOrder={setOrder} onChanged={() => setReload((x) => x + 1)} detail={qDetail} />}
+            : <TopicView key={topic.topic_id} reload={reload} higher={showHigher} decided={decided} onOpenItem={openItem} selItem={r.item} topic={topic} no={seq?.topic.get(topic.topic_id) ?? null} chapterNo={seq?.chapter.get(topic.chapter_id) ?? null} review={data.reviews.get(topic.topic_id)} chapter={data.chapters.find((c) => c.chapter_id === topic.chapter_id)} r={r} go={go} onOrder={setOrder} onChanged={() => setReload((x) => x + 1)} detail={qDetail} />}
         </section>
         {!sciLayout && <>
           <Handle side="detail" onDrag={(dx) => setPanes({ ...panes, detail: clamp(panes.detail - dx, 320, 900) })} onReset={() => setPanes({ ...panes, detail: PANES.detail })} />
           <aside className="ws-detail" aria-label="Question detail">
-            {qDetail ?? <p className="muted">Select a question to see it here.</p>}
+            {itemPane ?? qDetail ?? <p className="muted">Select a question to see it here.</p>}
           </aside>
         </>}
       </div>
@@ -319,7 +336,8 @@ function useOpenGroups(topicId: string, tab: string) {
   return [open, setOpen] as const;
 }
 
-function TopicView({ topic, no, chapterNo, review, chapter, r, go, reload, higher, onOrder, onChanged, detail }: { topic: TopicWithStats; /** Q1 */ higher: boolean; no?: string | null; chapterNo?: string | null; review?: TopicReview; chapter?: Chapter; r: R; go: (p: Partial<R>) => void; reload: number; onOrder: (ids: string[]) => void; onChanged: () => void; detail: ReactNode }) {
+function TopicView({ topic, no, chapterNo, review, chapter, r, go, reload, higher, decided, onOpenItem, selItem, onOrder, onChanged, detail }: { topic: TopicWithStats; /** Q1 */ higher: boolean;
+  /** Q8 / Q9 */ decided: { kind: CatKind; id: string; status: string; n: number } | null; onOpenItem: (kind: CatKind, id: string) => void; selItem: string | null; no?: string | null; chapterNo?: string | null; review?: TopicReview; chapter?: Chapter; r: R; go: (p: Partial<R>) => void; reload: number; onOrder: (ids: string[]) => void; onChanged: () => void; detail: ReactNode }) {
   // D5: the add / edit form open on this topic (one at a time)
   const [form, setForm] = useState<{ kind: Kind; id: string | null; fixed?: Record<string, unknown> } | null>(null);
   // 13 Nov 2026: add a question by hand or bulk-upload an Excel file (this topic only; no AI)
@@ -339,6 +357,16 @@ function TopicView({ topic, no, chapterNo, review, chapter, r, go, reload, highe
     setError(null);
     topicData(topic.topic_id).then(setData).catch((e) => setError(e.message));
   }, [topic.topic_id, reload]);
+  // Q8 / Q9: a decision updates the header in place (Proposed → Approved / Rejected), no reload
+  const [justDecided, setJustDecided] = useState<Map<string, string>>(new Map());
+  const patchStatus = useCallback((kind: CatKind, id: string, status: string) => {
+    setData((d) => (!d ? d : kind === 'pattern' ? { ...d, patterns: d.patterns.map((p) => (p.pattern_id === id ? { ...p, status } : p)) }
+      : kind === 'typical_set' ? { ...d, sets: d.sets.map((x) => (x.typical_set_id === id ? { ...x, status } : x)) }
+      : kind === 'concept' ? { ...d, concepts: d.concepts.map((c) => (c.concept_id === id ? { ...c, status } : c)) } : d));
+    setJustDecided((m) => new Map(m).set(`${kind}:${id}`, status));
+  }, []);
+  useEffect(() => { if (decided) patchStatus(decided.kind, decided.id, decided.status); }, [decided, patchStatus]);
+  const statusBadge = (kind: CatKind, id: string) => { const s = justDecided.get(`${kind}:${id}`); return s && s !== 'proposed' ? <span className={`tag ${s === 'active' ? 'created' : 'blocked'}`}>{s === 'active' ? 'Approved' : 'Rejected'}</span> : null; };
   useEffect(() => { setNSources(null); chapterSourceCount(topic.chapter_id).then(setNSources).catch(() => setNSources(null)); }, [topic.chapter_id]);
 
   const sources = Object.entries(topic.source_flags ?? {}).map(([k, v]) => `${SOURCE_LABEL[k] ?? k.toUpperCase()} ${v}`).join(' · ');
@@ -484,7 +512,8 @@ function TopicView({ topic, no, chapterNo, review, chapter, r, go, reload, highe
           const sameOf = new Map(all.map((q, i) => [q.question_id, same[i]!]));
           return (
             <Group key={id} open={open.has(id)} onToggle={() => toggle(id)} summary={summarize(all)}
-              title={g.setId ? <>{g.setId} · {set?.name ?? ''}<ClassTag cls={catalogueClass(g.setId, set?.class)} what="question type" /><Proposed status={set?.status} /></> : 'No typical set'}
+              title={g.setId ? <>{g.setId} · {set?.name ?? ''}<ClassTag cls={catalogueClass(g.setId, set?.class)} what="question type" />
+                {set?.status === 'proposed' ? <ProposedChip kind="typical_set" id={g.setId} cls={catalogueClass(g.setId, set.class)} onOpen={onOpenItem} /> : statusBadge('typical_set', g.setId)}</> : 'No typical set'}
               extra={g.setId && <><a className="small fill-link" href={`#/generate?set=${encodeURIComponent(g.setId)}&topic=${encodeURIComponent(topic.topic_id)}`} onClick={(e) => e.stopPropagation()}>Fill gaps</a>
                 <button className="link small" onClick={edit('typical_set', g.setId)}>Edit</button></>}
               sub={set && <>{set.parent_visible ? 'parent-visible' : 'hidden from parents'} · {set.status}
@@ -496,8 +525,11 @@ function TopicView({ topic, no, chapterNo, review, chapter, r, go, reload, highe
                 return (
                   <div key={p.patternId ?? 'none'}>
                     {(p.patternId || g.patterns.length > 1) && (
-                      <div className="pattern-head small">{p.patternId ? <>{p.patternId} · {pat?.name ?? ''}<Proposed status={pat?.status} />{pat?.target_misconceptions?.length ? <span className="muted"> · targets {pat.target_misconceptions.join(', ')}</span> : null}
-                        <button className="link small" onClick={edit('pattern', p.patternId)}>Edit</button></> : <span className="muted">No pattern</span>}</div>
+                      <div className={`pattern-head small ${selItem === `pattern:${p.patternId}` ? 'sel' : ''}`}>{p.patternId ? <>{p.patternId} · {pat?.name ?? ''}
+                        {pat?.status === 'proposed' ? <ProposedChip kind="pattern" id={p.patternId} cls={g.setId ? catalogueClass(g.setId, set?.class) : null} via="via its question type" onOpen={onOpenItem} /> : statusBadge('pattern', p.patternId)}
+                        {pat?.target_misconceptions?.length ? <span className="muted"> · targets {pat.target_misconceptions.join(', ')}</span> : null}
+                        <button className="link small" onClick={edit('pattern', p.patternId)}>Edit</button>
+                        {pat?.status === 'proposed' && <InlineDecide kind="pattern" id={p.patternId} where="in Browse (pattern header)" onDone={(st) => patchStatus('pattern', p.patternId!, st)} />}</> : <span className="muted">No pattern</span>}</div>
                     )}
                     {p.questions.map((q, i) => {
                       const c = clones.get(q.question_id);
@@ -524,7 +556,8 @@ function TopicView({ topic, no, chapterNo, review, chapter, r, go, reload, highe
             const same = sameWording(list.map((x) => x.q.text));
             return (
               <Group key={c.concept_id} open={open.has(c.concept_id)} onToggle={() => toggle(c.concept_id)} summary={summarize(list.map((x) => x.q))}
-                title={<>{c.concept_id} · {c.name}<ClassTag cls={catalogueClass(c.concept_id, c.class)} what="concept" /><Proposed status={c.status} /><button className="link small" onClick={edit('concept', c.concept_id)}>Edit</button></>}
+                title={<>{c.concept_id} · {c.name}<ClassTag cls={catalogueClass(c.concept_id, c.class)} what="concept" />
+                  {c.status === 'proposed' ? <ProposedChip kind="concept" id={c.concept_id} cls={catalogueClass(c.concept_id, c.class)} onOpen={onOpenItem} /> : statusBadge('concept', c.concept_id)}<button className="link small" onClick={edit('concept', c.concept_id)}>Edit</button></>}
                 sub={<>{c.type ? `${c.type} · ` : ''}{c.status}{c.description ? ` · ${c.description}` : ''}</>}>
                 {list.length === 0 ? <div className="muted small pad">No questions use this concept{qs.length < data.questions.length ? ' (with these filters)' : ''}.</div>
                   : list.map(({ q, inv }, i) => {

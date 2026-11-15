@@ -641,3 +641,31 @@ table.map-table tr.warn-row td:first-child { box-shadow: inset 3px 0 0 var(--war
 .msel-count { flex: none; }
 /* Q1: the higher-level checkbox and split counts */
 .higher-n { color: var(--warn); }
+/* Q8: catalogue item pane, proposed chips; Q10: Proposed screen with the pane */
+.cat-detail .detail-head .right { text-align: right; }
+.cat-desc { margin: 0; }
+.cat-facts { grid-template-columns: 90px 1fr; margin: 0; }
+.cat-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.cat-reject { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border: 1px solid var(--err-line); background: var(--err-soft); border-radius: 8px; }
+.cat-reject textarea { font: inherit; padding: 7px 9px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); }
+.cat-linked .eyebrow { margin-bottom: 4px; }
+.cat-qs li { padding: 6px 0; border-top: 1px solid var(--row-line); }
+.cat-qtext { color: var(--muted); margin-top: 2px; }
+button.chip-btn { cursor: pointer; border: none; font: inherit; font-size: 0.78rem; font-weight: 600; padding: 1px 7px; }
+button.chip-btn:hover { text-decoration: underline; }
+.inline-decide { display: inline-flex; gap: 6px; align-items: center; margin-left: 8px; flex-wrap: wrap; }
+.inline-decide button { padding: 2px 9px; font-size: 0.8rem; }
+.inline-decide input { padding: 3px 7px; font-size: 0.85rem; width: 220px; }
+.proposed-layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 18px; align-items: start; }
+.proposed-layout.with-pane { grid-template-columns: minmax(0, 1fr) minmax(360px, 440px); }
+.proposed-pane { position: sticky; top: 12px; max-height: calc(100vh - 24px); overflow: auto; background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; }
+.proposed-layout.with-pane .col-wide { display: none; }
+table.proposed-table tbody tr.row-pick { cursor: pointer; }
+table.proposed-table tbody tr.sel { background: var(--sel-bg); box-shadow: inset 3px 0 0 var(--accent); }
+.kind-line { font-size: 0.78rem; font-weight: 600; color: var(--proposed); }
+.kind-line.decided { color: var(--muted); }
+.pattern-head.sel { background: var(--sel-bg); box-shadow: inset 3px 0 0 var(--accent); }
+.proposed-layout > div:first-child { min-width: 0; overflow-x: auto; }
+table.proposed-table td.col-name { min-width: 240px; }
+main.wide.proposed-main { max-width: 1440px; }
+table.proposed-table td.col-topic { min-width: 160px; }

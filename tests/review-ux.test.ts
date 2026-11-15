@@ -61,3 +61,31 @@ describe('Q6: Concept class and Question Level filters', () => {
     expect(Object.fromEntries(valueCounts([[5, 5, 6], [6]], (x) => x))).toEqual({ 5: 1, 6: 2 });
   });
 });
+
+describe('Q8: Kind line and the item in the URL', async () => {
+  const { kindLine, itemParam, parseItem, decidable } = await import('../web/src/catalogueLogic.ts');
+  const { parseRoute, browseHash } = await import('../web/src/logic.ts');
+  it('says Kind and Class', () => {
+    expect(kindLine({ kind: 'typical_set', id: 'TS-G3-X', status: 'proposed', cls: 3, via: null, topic_id: null })).toBe('Proposed question type · Class 3');
+    expect(kindLine({ kind: 'pattern', id: 'MP1', status: 'proposed', cls: 3, via: 'via its question type', topic_id: null })).toBe('Proposed pattern · Class 3 (via its question type)');
+    expect(kindLine({ kind: 'topic_class', id: 'MT0261·6', status: 'proposed', cls: 6, via: null, topic_id: 'MT0261' })).toBe('Proposed topic–class link MT0261 → Class 6');
+    expect(kindLine({ kind: 'concept', id: 'G6-A', status: 'active', cls: 6, via: null, topic_id: null })).toBe('Concept · Class 6');
+    expect(kindLine({ kind: 'setting', id: 'SET001', status: 'proposed', cls: null, via: null, topic_id: null })).toBe('Proposed setting');
+  });
+  it('settings are read-only; every other kind can be decided', () => {
+    expect(decidable('setting')).toBe(false);
+    expect(decidable('pattern')).toBe(true);
+  });
+  it('item=kind:id round-trips through Browse and Proposed routes; a question closes it', () => {
+    expect(parseItem(itemParam('pattern', 'MP0376'))).toEqual({ kind: 'pattern', id: 'MP0376' });
+    expect(parseItem('topic_class:MT0261·6')).toEqual({ kind: 'topic_class', id: 'MT0261·6' });
+    expect(parseItem('bogus:X')).toBeNull();
+    const h = browseHash({ subject: 'math', cls: '4', topic: 'MT0332', item: 'pattern:MP0376' });
+    const r = parseRoute(h);
+    expect(r.name === 'browse' && r.item).toBe('pattern:MP0376');
+    expect(browseHash({ subject: 'math', cls: '4', topic: 'MT0332', item: 'pattern:MP0376', q: 'MQ1' })).not.toContain('item=');
+    const p = parseRoute('#/proposed?kind=pattern&item=pattern%3AMP0376');
+    expect(p.name === 'proposed' && p.item).toBe('pattern:MP0376');
+    expect(parseRoute('#/proposed?kind=pattern&item=x%3Cscript').name === 'proposed' && (parseRoute('#/proposed?item=x%3Cscript') as { item: string | null }).item).toBeNull();
+  });
+});
