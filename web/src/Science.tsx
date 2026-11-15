@@ -5,6 +5,7 @@
 // Content rows are read-only here. Selected topic, row and question live in the URL hash.
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Id } from './Id';
+import { LevelTag } from './Tags';
 import { OriginFlags } from './AddQuestions';
 import { rowDetail, scienceData, type ScienceData, type ScienceQuestion, type ScienceRow } from './scienceApi';
 import { browseHash, statusLabel } from './logic';
@@ -55,6 +56,7 @@ export function ScienceView({ scope, cls, topicNames, row, q, onRow, onQuestion,
   // Rows written for class N show in class N and above (as questions do, D3); lower-class rows are marked.
   const rows = useMemo(() => rowsInOrder(rowsForClass(data?.rows ?? [], cls)), [data, cls]);
   const hidden = (data?.rows.length ?? 0) - rows.length;
+  const ceiling = cls === 'all' ? null : Number(cls);
   const qs = useMemo(() => (data?.questions ?? []).filter((x) => cls === 'all' || x.effective_level <= Number(cls)), [data, cls]);
   const order = useMemo(() => listedOrder(qs, row), [qs, row]);
   useEffect(() => { onOrder(order); }, [order, onOrder]);
@@ -112,9 +114,9 @@ export function ScienceView({ scope, cls, topicNames, row, q, onRow, onQuestion,
                   <button className="link small" onClick={() => onRow(null)}>show all {qs.length} in {where}</button></div>
                 {selRow && <div className="muted small sci-for-text">{selRow.content.length > 110 ? `${selRow.content.slice(0, 110)}…` : selRow.content}</div>}
               </div>
-              <QSection title="Direct" hint="tests this row" items={s.direct} q={q} onQuestion={onQuestion}
+              <QSection title="Direct" hint="tests this row" items={s.direct} q={q} ceiling={ceiling} onQuestion={onQuestion}
                 empty={selRow && selRow.question_use !== 'OK' ? `No questions: this row is "${selRow.question_use}".` : 'No question tests this row yet.'} />
-              <QSection title="Supporting" hint="uses it as background" items={s.supporting} q={q} onQuestion={onQuestion} empty="None." />
+              <QSection title="Supporting" hint="uses it as background" items={s.supporting} q={q} ceiling={ceiling} onQuestion={onQuestion} empty="None." />
             </>;
           })() : <>
             <div className="sci-q-head">
@@ -124,8 +126,8 @@ export function ScienceView({ scope, cls, topicNames, row, q, onRow, onQuestion,
             {qs.length === 0 ? <p className="muted small sci-empty">No questions yet.</p>
               : chapterMode ? [...topicNames.keys()].filter((tid) => qs.some((x) => x.topic_id === tid)).map((tid) => (
                 <div key={tid}><div className="sci-q-topic small">{topicNames.get(tid)?.name ?? tid} <Id>{tid}</Id></div>
-                  {order.map((id) => qs.find((x) => x.question_id === id)!).filter((x) => x.topic_id === tid).map((x) => <QItem key={x.question_id} q={x} selected={x.question_id === q} onPick={() => onQuestion(x.question_id)} />)}</div>))
-              : order.map((id) => qs.find((x) => x.question_id === id)!).map((x) => <QItem key={x.question_id} q={x} selected={x.question_id === q} onPick={() => onQuestion(x.question_id)} />)}
+                  {order.map((id) => qs.find((x) => x.question_id === id)!).filter((x) => x.topic_id === tid).map((x) => <QItem key={x.question_id} q={x} ceiling={ceiling} selected={x.question_id === q} onPick={() => onQuestion(x.question_id)} />)}</div>))
+              : order.map((id) => qs.find((x) => x.question_id === id)!).map((x) => <QItem key={x.question_id} q={x} ceiling={ceiling} selected={x.question_id === q} onPick={() => onQuestion(x.question_id)} />)}
           </>}
         </section>
       </div>
@@ -133,11 +135,11 @@ export function ScienceView({ scope, cls, topicNames, row, q, onRow, onQuestion,
   );
 }
 
-function QSection({ title, hint, items, q, onQuestion, empty }: { title: string; hint: string; items: ScienceQuestion[]; q: string | null; onQuestion: (id: string) => void; empty: string }) {
+function QSection({ title, hint, items, q, ceiling, onQuestion, empty }: { title: string; hint: string; items: ScienceQuestion[]; q: string | null; ceiling: number | null; onQuestion: (id: string) => void; empty: string }) {
   return (
     <div className="sci-q-section">
       <div className="sci-q-section-head"><span className="eyebrow">{title} · {items.length}</span> <span className="muted small">{hint}</span></div>
-      {items.length ? items.map((x) => <QItem key={x.question_id} q={x} selected={x.question_id === q} onPick={() => onQuestion(x.question_id)} />) : <p className="muted small sci-empty">{empty}</p>}
+      {items.length ? items.map((x) => <QItem key={x.question_id} q={x} ceiling={ceiling} selected={x.question_id === q} onPick={() => onQuestion(x.question_id)} />) : <p className="muted small sci-empty">{empty}</p>}
     </div>
   );
 }
@@ -217,13 +219,14 @@ function RowDetail({ r, inScope, onRow }: { r: ScienceRow; inScope: (id: string)
   );
 }
 
-function QItem({ q, selected, onPick }: { q: ScienceQuestion; selected: boolean; onPick: () => void }) {
+function QItem({ q, ceiling, selected, onPick }: { q: ScienceQuestion; /** the class being viewed (null = all) */ ceiling: number | null; selected: boolean; onPick: () => void }) {
   const nd = q.links.filter((l) => l.role === 'direct').length, ns = q.links.length - nd;
   return (
     <button className={`qrow sci-qrow ${selected ? 'sel' : ''}`} onClick={onPick} title={q.text} ref={selected ? (el) => el?.scrollIntoView({ block: 'nearest' }) : undefined}>
       <span className="qtext">{q.text}</span>
       <span className="sci-q-meta small">
         {q.level_tier && <span className={`tag tier tier-${q.level_tier}`} title="Tier (L1–L3)">{q.level_tier}</span>}
+        <LevelTag q={q} ceiling={ceiling} />
         <span className="muted">{nd} direct{ns ? ` · ${ns} supporting` : ''}</span>
         {q.display_format && <span className="muted">{q.display_format}</span>}
         {q.safety_note && <span className="tag safety" title={q.safety_note}>Safety</span>}
