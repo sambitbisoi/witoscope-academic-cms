@@ -5,7 +5,7 @@ import { buildSequence, extraAchievers, numbered, numbersOf, topicRole } from '.
 import { Id } from './Id';
 import { ReviewControl, ReviewFilterSelect, RollUpIcon, TopicReviewIcon } from './ReviewStatus';
 import {
-  applyFilters, browseHash, catalogueClass, classesLabel, classFromId, conceptClassesByVersion, higherCount, matchesAny, showsAtLevel, splitLabel, valueCounts, FLAG_FILTERS, matchesReview, rollUp, type ReviewFilter, type RollUp, cloneGroups, countsLabel, distinctTexts, sameWording, type CloneInfo, gapLabel, groupBySet, involvementOf, mixLabel, NO_FILTERS, statusCountsLabel, statusLabel,
+  applyFilters, browseHash, catalogueClass, classesLabel, classesText, classParam, classSel, coreInAny, joinParam, listParam, topicCeiling, classFromId, conceptClassesByVersion, higherCount, matchesAny, showsAtLevel, splitLabel, valueCounts, FLAG_FILTERS, matchesReview, rollUp, type ReviewFilter, type RollUp, cloneGroups, countsLabel, distinctTexts, sameWording, type CloneInfo, gapLabel, groupBySet, involvementOf, mixLabel, NO_FILTERS, statusCountsLabel, statusLabel,
   subjectLabel, SUBJECTS, summarize, type Filters, type Subject,
 } from './logic';
 import { EditForm } from './EditForm';
@@ -51,6 +51,11 @@ export function Workspace(r: R) {
   const [reload, setReload] = useState(0);
   const [order, setOrder] = useState<string[]>([]);
   const [command, setCommand] = useState<ReviewCommand | null>(null);
+  // Q5 (15 Nov 2026): the selected classes ([] = all), strands and chapters (each may be several)
+  const sel = useMemo(() => classSel(r.cls), [r.cls]);
+  const single = sel.length === 1 ? sel[0]! : null;
+  const strandSel = useMemo(() => listParam(r.strand), [r.strand]);
+  const chSel = useMemo(() => listParam(r.ch), [r.ch]);
   useEffect(() => { rememberBrowse(browseHash(r)); });
   useEffect(() => {
     setData(null); setError(null);
@@ -64,7 +69,7 @@ export function Workspace(r: R) {
     questionLevels(r.subject).then(setLevels).catch(() => setLevels(new Map()));
   }, [higher, r.subject, r.cls === 'all', reload]); // eslint-disable-line react-hooks/exhaustive-deps
   const showHigher = higher && r.cls !== 'all';
-  const higherOf = useCallback((t: { topic_id: string }) => (showHigher && levels ? higherCount(levels.get(t.topic_id), r.cls === 'all' ? null : Number(r.cls)) : 0), [showHigher, levels, r.cls]);
+  const higherOf = useCallback((t: { topic_id: string; classes: number[] }) => (showHigher && levels ? higherCount(levels.get(t.topic_id), topicCeiling(t.classes, sel)) : 0), [showHigher, levels, sel]);
 
   const go = useCallback((patch: Partial<R>) => {
     const next = { ...r, ...patch };
@@ -104,13 +109,15 @@ export function Workspace(r: R) {
   // R1: the topics this class shows (core, plus extra ones when asked); the selected topic always shows
   // 0034: an Achievers row of a chapter that is in this class only through links is extra too
   const extraAch = useMemo(() => extraAchievers(data?.topics ?? []), [data]);
-  const isCoreHere = useCallback((t: TopicWithStats) => r.cls === 'all' || (t.class === Number(r.cls) && !extraAch.has(t.topic_id)), [r.cls, extraAch]);
+  // Q5: core in ANY selected class
+  const isCoreHere = useCallback((t: TopicWithStats) => coreInAny(t, sel, extraAch), [sel, extraAch]);
   const shownTopics = useMemo(() => (data?.topics ?? []).filter((t) => r.cls === 'all' || extra || isCoreHere(t) || t.topic_id === r.topic), [data, r.cls, extra, r.topic, isCoreHere]);
   const nExtra = useMemo(() => (r.cls === 'all' ? 0 : (data?.topics ?? []).filter((t) => !isCoreHere(t)).length), [data, r.cls, isCoreHere]);
   const chapterOf = useMemo(() => new Map((data?.chapters ?? []).map((c) => [c.chapter_id, c])), [data]);
   // Sequencing (13 Nov 2026): the class's stored order and its numbers (1. / 1.2 / 1.2.3); none for "All classes"
-  const seq = useMemo(() => (data && r.cls !== 'all'
-    ? numbersOf(buildSequence(Number(r.cls), data.strands, data.chapters, data.topics, data.orders, { includeExtra: true })) : null), [data, r.cls]);
+  // numbers only when exactly one class is selected (as with All classes, several classes are unnumbered)
+  const seq = useMemo(() => (data && single !== null
+    ? numbersOf(buildSequence(single, data.strands, data.chapters, data.topics, data.orders, { includeExtra: true })) : null), [data, single]);
   const { strands, chapters } = useMemo(() => {
     if (!data) return { strands: [], chapters: [] };
     const n = new Map<string, number>(); const h = new Map<string, number>();
@@ -120,8 +127,8 @@ export function Workspace(r: R) {
       .sort((a, b) => rank(seq?.chapterRank, a.chapter_id) - rank(seq?.chapterRank, b.chapter_id) || a.sort - b.sort);
     const sts = data.strands.filter((s) => chs.some((c) => c.strand_id === s.strand_id))
       .sort((a, b) => rank(seq?.strandRank, a.strand_id) - rank(seq?.strandRank, b.strand_id) || a.sort - b.sort);
-    return { strands: sts, chapters: chs.filter((c) => !r.strand || c.strand_id === r.strand) };
-  }, [data, shownTopics, r.strand, seq, higherOf]);
+    return { strands: sts, chapters: chs.filter((c) => !strandSel.length || strandSel.includes(c.strand_id)) };
+  }, [data, shownTopics, strandSel, seq, higherOf]);
   // Review roll-ups per chapter and strand within this class: core topics only (extra rows ignored)
   const rolls = useMemo(() => {
     const ch = new Map<string, RollUp>(); const st = new Map<string, RollUp>();
@@ -155,7 +162,7 @@ export function Workspace(r: R) {
       </div>
       {error && <p className="error">Couldn't load topics: {error}</p>}
       {!data && !error && <p className="muted">Loading…</p>}
-      {data && <Tree strands={strands.filter((x) => !r.strand || x.strand_id === r.strand)} chapters={chapters.filter((c) => !r.ch || c.chapter_id === r.ch)} topics={shownTopics} extraAch={extraAch} cls={r.cls} higherOf={higherOf} showHigher={showHigher}
+      {data && <Tree strands={strands.filter((x) => !strandSel.length || strandSel.includes(x.strand_id))} chapters={chapters.filter((c) => !chSel.length || chSel.includes(c.chapter_id))} topics={shownTopics} extraAch={extraAch} sel={sel} higherOf={higherOf} showHigher={showHigher}
         selected={r.topic} gapsOnly={gapsOnly} seq={seq} reviews={data.reviews} reviewFilter={reviewFilter} rolls={rolls} isOpen={isOpen} onToggle={toggle} onPick={(t) => { setOverlay(false); go({ topic: t, q: null, v: null, row: null, chview: false }); }}
         onChapterView={r.subject === 'science' ? (ch) => { setOverlay(false); go({ ch, topic: null, q: null, v: null, row: null, chview: true }); } : undefined} chview={r.chview ? r.ch : null} />}
     </>
@@ -172,30 +179,20 @@ export function Workspace(r: R) {
   return (
     <div className="workspace">
       <div className="ws-bar">
-        <label className="sr-only" htmlFor="ws-class">Class</label>
-        <select id="ws-class" value={r.cls} onChange={(e) => go({ cls: e.target.value, topic: null, q: null, v: null })}>
-          <option value="all">All classes</option>
-          {['1', '2', '3', '4', '5', '6'].map((c) => <option key={c} value={c}>Class {c}</option>)}
-        </select>
+        <MultiSelect label="Class" className="ws-class" allText="All classes" options={[1, 2, 3, 4, 5, 6].map((c) => ({ value: String(c), label: `Class ${c}` }))}
+          selected={sel.map(String)} onChange={(v) => go({ cls: classParam(v.map(Number)), topic: null, q: null, v: null })} />
         <label className="sr-only" htmlFor="ws-subject">Subject</label>
         <select id="ws-subject" value={r.subject} onChange={(e) => go({ subject: e.target.value as Subject, ch: null, topic: null, q: null, v: null })}>
           {SUBJECTS.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
         </select>
-        <label className="sr-only" htmlFor="ws-strand">Strand</label>
-        <select id="ws-strand" className={r.strand ? 'active' : ''} value={r.strand ?? ''} onChange={(e) => go({ strand: e.target.value || null, ch: null, topic: null, q: null, v: null })}>
-          <option value="">All strands</option>
-          {strands.map((x) => <option key={x.strand_id} value={x.strand_id}>{numbered(seq?.strand.get(x.strand_id), x.name, 'strand')}</option>)}
-          {r.strand && !strands.some((x) => x.strand_id === r.strand) && <option value={r.strand}>{r.strand} (no topics in this class)</option>}
-        </select>
-        <label className="sr-only" htmlFor="ws-chapter">Chapter</label>
-        <select id="ws-chapter" className={`chapter-select ${r.ch ? 'active' : ''}`} value={r.ch ?? ''} onChange={(e) => go({ ch: e.target.value || null, topic: null, q: null, v: null })}>
-          <option value="">All chapters</option>
-          {chapters.map((c) => <option key={c.chapter_id} value={c.chapter_id}>{numbered(seq?.chapter.get(c.chapter_id), c.name)} · {c.chapter_id} · {splitLabel(c.n, c.h, showHigher)} Q{c.n + c.h === 1 ? '' : 's'}</option>)}
-          {r.ch && !chapters.some((c) => c.chapter_id === r.ch) && <option value={r.ch}>{r.ch} (no topics in this class)</option>}
-        </select>
-        {r.cls !== 'all' && <label className="check small extra-toggle" title="Topics whose home class is another class but that are also taught in this one">
+        <MultiSelect label="Strand" allText="All strands" options={strands.map((x) => ({ value: x.strand_id, label: numbered(seq?.strand.get(x.strand_id), x.name, 'strand') }))}
+          selected={strandSel} onChange={(v) => go({ strand: joinParam(v), ch: joinParam(chSel.filter((id) => !v.length || v.includes(chapterOf.get(id)?.strand_id ?? ''))), topic: null, q: null, v: null })} />
+        <MultiSelect label="Chapter" className="chapter-select" allText="All chapters"
+          options={chapters.map((c) => ({ value: c.chapter_id, label: `${numbered(seq?.chapter.get(c.chapter_id), c.name)} · ${c.chapter_id} · ${splitLabel(c.n, c.h, showHigher)} Q${c.n + c.h === 1 ? '' : 's'}` }))}
+          selected={chSel} onChange={(v) => go({ ch: joinParam(v), topic: null, q: null, v: null, chview: false })} />
+        {r.cls !== 'all' && <label className="check small extra-toggle" title={`Topics whose home class is another class but that are also taught in ${classesText(sel)}`}>
           <input type="checkbox" checked={extra} onChange={(e) => setExtra(e.target.checked)} /> Include extra topics (lower / higher class){nExtra ? <span className="muted"> · {nExtra}</span> : null}</label>}
-        {r.cls !== 'all' && <label className="check small extra-toggle" title={`Also show each topic's questions whose Level is above Class ${r.cls}, tagged "above class". Levels are never changed.`}>
+        {r.cls !== 'all' && <label className="check small extra-toggle" title={`Also show each topic's questions whose Level is above ${sel.length > 1 ? 'the highest selected class the topic is in' : `Class ${r.cls}`}, tagged "above class". Levels are never changed.`}>
           <input type="checkbox" checked={higher} onChange={(e) => setHigher(e.target.checked)} /> Show higher-level questions{showHigher && levels ? <span className="muted"> · {shownTopics.reduce((x, t) => x + higherOf(t), 0)}</span> : null}</label>}
         <span className="muted small keys" title="Keyboard shortcuts in Browse">Keys: <kbd>A</kbd> approve · <kbd>R</kbd> reject · <kbd>F</kbd> needs review · <kbd>↓</kbd><kbd>↑</kbd> next / previous · <kbd>[</kbd> tree</span>
       </div>
@@ -209,11 +206,12 @@ export function Workspace(r: R) {
         <Handle side="tree" disabled={!panes.pinned} onDrag={(dx) => setPanes({ ...panes, tree: clamp(panes.tree + dx, 200, 560) })} onReset={() => setPanes({ ...panes, tree: PANES.tree })} />
         <section className="ws-main" aria-label="Questions">
           {r.edit && r.q ? <EditForm key={r.q} questionId={r.q} onDone={(saved) => { go({ edit: false, v: null }); if (saved) setReload((x) => x + 1); }} />
-            : r.chview && r.ch && !r.topic && r.subject === 'science' ? (!data ? <p className="muted">Loading…</p> : <ChapterView key={r.ch} r={r} go={go} higher={showHigher} data={data} seq={seq} reload={reload} onOrder={setOrder} detail={qDetail} />)
-            : !r.topic ? <Pick subject={r.subject} cls={r.cls} ch={chapters.find((c) => c.chapter_id === r.ch)} n={data ? shownTopics.filter((t) => (!r.ch || t.chapter_id === r.ch) && (!r.strand || chapterOf.get(t.chapter_id)?.strand_id === r.strand)).length : undefined} />
+            : r.chview && r.ch && !r.topic && r.subject === 'science' ? (!data ? <p className="muted">Loading…</p> : <ChapterView key={r.ch} r={r} go={go} higher={showHigher} ceiling={sel.length ? Math.max(...sel) : null} data={data} seq={seq} reload={reload} onOrder={setOrder} detail={qDetail} />)
+            : !r.topic ? <Pick subject={r.subject} sel={sel} ch={chSel.length === 1 ? chapters.find((c) => c.chapter_id === chSel[0]) : undefined}
+                n={data ? shownTopics.filter((t) => (!chSel.length || chSel.includes(t.chapter_id)) && (!strandSel.length || strandSel.includes(chapterOf.get(t.chapter_id)?.strand_id ?? ''))).length : undefined} />
             : !data ? <p className="muted">Loading…</p>
-            : !topic ? <p>Topic {r.topic} isn't in {subjectLabel(r.subject)}{r.cls !== 'all' ? ` class ${r.cls}` : ''}. <a href={browseHash({ ...r, cls: 'all' })}>Look in all classes</a></p>
-            : <TopicView key={topic.topic_id} reload={reload} higher={showHigher} decided={decided} onOpenItem={openItem} selItem={r.item} topic={topic} no={seq?.topic.get(topic.topic_id) ?? null} chapterNo={seq?.chapter.get(topic.chapter_id) ?? null} review={data.reviews.get(topic.topic_id)} chapter={data.chapters.find((c) => c.chapter_id === topic.chapter_id)} r={r} go={go} onOrder={setOrder} onChanged={() => setReload((x) => x + 1)} detail={qDetail} />}
+            : !topic ? <p>Topic {r.topic} isn't in {subjectLabel(r.subject)}{r.cls !== 'all' ? ` ${classesText(sel)}` : ''}. <a href={browseHash({ ...r, cls: 'all' })}>Look in all classes</a></p>
+            : <TopicView key={topic.topic_id} reload={reload} higher={showHigher} ceiling={topicCeiling(topic.classes, sel)} decided={decided} onOpenItem={openItem} selItem={r.item} topic={topic} no={seq?.topic.get(topic.topic_id) ?? null} chapterNo={seq?.chapter.get(topic.chapter_id) ?? null} review={data.reviews.get(topic.topic_id)} chapter={data.chapters.find((c) => c.chapter_id === topic.chapter_id)} r={r} go={go} onOrder={setOrder} onChanged={() => setReload((x) => x + 1)} detail={qDetail} />}
         </section>
         {!sciLayout && <>
           <Handle side="detail" onDrag={(dx) => setPanes({ ...panes, detail: clamp(panes.detail - dx, 320, 900) })} onReset={() => setPanes({ ...panes, detail: PANES.detail })} />
@@ -247,10 +245,10 @@ function Handle({ side, onDrag, onReset, disabled }: { side: string; onDrag: (dx
     onMouseDown={down} onDoubleClick={disabled ? undefined : onReset} />;
 }
 
-function Pick({ subject, cls, ch, n }: { subject: Subject; cls: string; ch?: Chapter & { n: number }; n?: number }) {
+function Pick({ subject, sel, ch, n }: { subject: Subject; sel: number[]; ch?: Chapter & { n: number }; n?: number }) {
   return (
     <div className="empty">
-      <h1>{subjectLabel(subject)} · {cls === 'all' ? 'all classes' : `Class ${cls}`}</h1>
+      <h1>{subjectLabel(subject)} · {classesText(sel)}</h1>
       {ch && <div className="chapter-name">Chapter {ch.name} <Id>{ch.chapter_id}</Id></div>}
       <p className="muted">{n === undefined ? 'Loading…' : `${n} topics. Pick one on the left.`}</p>
     </div>
@@ -265,8 +263,8 @@ const topicChapter = (topics: TopicWithStats[] | undefined, id: string | null) =
 const qsLabel = (n: number) => `${n} Q${n === 1 ? '' : 's'}`;
 
 /** R3: Strand ▸ Chapter ▸ Topic; each branch opens and closes with the arrow on its left. */
-function Tree({ strands, chapters, topics, extraAch, cls, higherOf, showHigher, selected, gapsOnly, seq, reviews, reviewFilter, rolls, isOpen, onToggle, onPick, onChapterView, chview }: {
-  strands: { strand_id: string; name: string }[]; chapters: Chapter[]; seq: ReturnType<typeof numbersOf> | null; topics: TopicWithStats[]; /** 0034 */ extraAch: Set<string>; cls: string; selected: string | null;
+function Tree({ strands, chapters, topics, extraAch, sel, higherOf, showHigher, selected, gapsOnly, seq, reviews, reviewFilter, rolls, isOpen, onToggle, onPick, onChapterView, chview }: {
+  strands: { strand_id: string; name: string }[]; chapters: Chapter[]; seq: ReturnType<typeof numbersOf> | null; topics: TopicWithStats[]; /** 0034 */ extraAch: Set<string>; /** Q5: selected classes ([] = all) */ sel: number[]; selected: string | null;
   /** Q1: questions above the class, per topic (0 when the box is off) */ higherOf: (t: TopicWithStats) => number; showHigher: boolean;
   gapsOnly: boolean; reviews: Map<string, TopicReview>; reviewFilter: ReviewFilter; rolls: { ch: Map<string, RollUp>; st: Map<string, RollUp> }; isOpen: (id: string) => boolean; onToggle: (id: string) => void; onPick: (t: string) => void;
   /** Science: open the chapter view (all topics of the chapter) */ onChapterView?: (chapterId: string) => void; chview?: string | null;
@@ -296,11 +294,12 @@ function Tree({ strands, chapters, topics, extraAch, cls, higherOf, showHigher, 
         {onChapterView && <button className={`link small chview-link ${chview === c.chapter_id ? 'on' : ''}`} onClick={() => onChapterView(c.chapter_id)} title="All topics of this chapter: content rows and questions">Chapter view</button>}
         {open && <div className="tree-kids">{ts.map((t) => {
           const gap = topicGap(t);
-          const role = cls === 'all' ? 'core' : topicRole(t, Number(cls), topics, extraAch);
+          // Q5: core if core in any selected class; else its role in the highest selected class it is in
+          const role = !sel.length || coreInAny(t, sel, extraAch) ? 'core' : topicRole(t, topicCeiling(t.classes, sel)!, topics, extraAch);
           return (
             <button key={t.topic_id} className={`tree-topic role-${role} ${t.topic_id === selected ? 'sel' : ''} ${t.topic_kind === 'achievers' ? 'ach' : ''}`} onClick={() => onPick(t.topic_id)}
               ref={t.topic_id === selected ? (el) => el?.scrollIntoView({ block: 'nearest' }) : undefined}>
-              <span className="tt-name"><TopicReviewIcon status={reviewOf(reviews, t.topic_id)} />{t.topic_kind === 'achievers' ? t.name : <>{numbered(seq?.topic.get(t.topic_id), t.name)} <Id>{t.topic_id}</Id></>}{cls === 'all' && <span className="cls"> · C{t.class}</span>}
+              <span className="tt-name"><TopicReviewIcon status={reviewOf(reviews, t.topic_id)} />{t.topic_kind === 'achievers' ? t.name : <>{numbered(seq?.topic.get(t.topic_id), t.name)} <Id>{t.topic_id}</Id></>}{sel.length !== 1 && <span className="cls"> · C{t.class}</span>}
                 {role !== 'core' && t.topic_kind !== 'achievers' && <span className={`role-tag ${role}`}> from Class {t.class}</span>}<ClassesPill classes={t.classes} /></span>
               <span className="tt-meta">{topicCounts(t)}{higherOf(t) > 0 && <span className="higher-n" title="Questions whose Level is above this class (shown because Show higher-level questions is on)"> + {higherOf(t)} higher</span>}{gap && <span className="gap"> · ⚠ {gap}</span>}</span>
             </button>
@@ -336,7 +335,7 @@ function useOpenGroups(topicId: string, tab: string) {
   return [open, setOpen] as const;
 }
 
-function TopicView({ topic, no, chapterNo, review, chapter, r, go, reload, higher, decided, onOpenItem, selItem, onOrder, onChanged, detail }: { topic: TopicWithStats; /** Q1 */ higher: boolean;
+function TopicView({ topic, no, chapterNo, review, chapter, r, go, reload, higher, ceiling, decided, onOpenItem, selItem, onOrder, onChanged, detail }: { topic: TopicWithStats; /** Q1 */ higher: boolean; /** Q5: the highest selected class the topic is in (null = all classes) */ ceiling: number | null;
   /** Q8 / Q9 */ decided: { kind: CatKind; id: string; status: string; n: number } | null; onOpenItem: (kind: CatKind, id: string) => void; selItem: string | null; no?: string | null; chapterNo?: string | null; review?: TopicReview; chapter?: Chapter; r: R; go: (p: Partial<R>) => void; reload: number; onOrder: (ids: string[]) => void; onChanged: () => void; detail: ReactNode }) {
   // D5: the add / edit form open on this topic (one at a time)
   const [form, setForm] = useState<{ kind: Kind; id: string | null; fixed?: Record<string, unknown> } | null>(null);
@@ -373,7 +372,7 @@ function TopicView({ topic, no, chapterNo, review, chapter, r, go, reload, highe
   const s = topic.stats;
   const filtered = filters.difficulty !== 'all' || filters.status !== 'all' || filters.bank !== 'all' || (filters.flag ?? 'all') !== 'all' || conceptCls.length > 0 || levelSel.length > 0;
   // D3: in class N, only questions whose level ≤ N (lower levels are revision here); Q1: higher ones too when asked
-  const inClass = useMemo(() => (data ? data.questions.filter((q) => showsAtLevel(q.effective_level, r.cls === 'all' ? null : Number(r.cls), higher)) : []), [data, r.cls, higher]);
+  const inClass = useMemo(() => (data ? data.questions.filter((q) => showsAtLevel(q.effective_level, ceiling, higher)) : []), [data, ceiling, higher]);
   // Q6 (15 Nov 2026): Concept class (any of the question's concepts) and Question Level, both multi-select; nothing ticked = all
   const classesOfVersion = useMemo(() => {
     if (!data) return new Map<number, Set<number>>();
@@ -396,9 +395,8 @@ function TopicView({ topic, no, chapterNo, review, chapter, r, go, reload, highe
     return { groups: gs, clones: info };
   }, [data, qs, topic.topic_id]);
   const nGroups = useMemo(() => new Set(inClass.filter((q) => q.bank === 'production' && !q.retired_at).map((q) => q.clone_key ?? `solo:${q.question_id}`)).size, [inClass]);
-  const ceiling = r.cls === 'all' ? null : Number(r.cls);
-  const nRevision = r.cls === 'all' ? 0 : inClass.filter((q) => q.effective_level < Number(r.cls)).length;
-  const aboveClass = r.cls === 'all' || !data ? 0 : data.questions.filter((q) => q.effective_level > Number(r.cls)).length;
+  const nRevision = ceiling === null ? 0 : inClass.filter((q) => q.effective_level < ceiling).length;
+  const aboveClass = ceiling === null || !data ? 0 : data.questions.filter((q) => q.effective_level > ceiling).length;
   const hiddenHigher = higher ? 0 : aboveClass;
   const settingsUsed = useMemo(() => (data ? [...data.settings.values()].sort((a, b) => a.name.localeCompare(b.name)) : []), [data]);
   const conceptGroups = useMemo(() => (data ? conceptLists(data, new Set(qs.map((q) => q.question_id))) : []), [data, qs]);
@@ -430,8 +428,8 @@ function TopicView({ topic, no, chapterNo, review, chapter, r, go, reload, highe
           {science ? null : <>{data ? `${data.sets.length} question type${data.sets.length === 1 ? '' : 's'} · ` : ''}{countsLabel(s)}
           {data && <> · <strong>{nGroups} clone group{nGroups === 1 ? '' : 's'}</strong></>}</>}
           {nRevision > 0 && ` · ${nRevision} revision (lower level)`}
-          {hiddenHigher > 0 && <span title='Tick "Show higher-level questions" in the bar above to see them'> · {hiddenHigher} above Class {r.cls} not shown (Show higher-level questions)</span>}
-          {higher && aboveClass > 0 && <span className="higher-n"> · {aboveClass} above Class {r.cls} (higher level)</span>}
+          {hiddenHigher > 0 && <span title='Tick "Show higher-level questions" in the bar above to see them'> · {hiddenHigher} above Class {ceiling} not shown (Show higher-level questions)</span>}
+          {higher && aboveClass > 0 && <span className="higher-n"> · {aboveClass} above Class {ceiling} (higher level)</span>}
           {topic.status !== 'active' && <strong> · {topic.status}</strong>}
         </div>
         <div className="small prereqs">Prerequisites: {!data ? '…' : data.prereqs.length === 0 ? <span className="muted">—</span>
@@ -466,7 +464,7 @@ function TopicView({ topic, no, chapterNo, review, chapter, r, go, reload, highe
         </button>
       </div>
       {r.tab === 'sources' ? <SourcesTab chapterId={topic.chapter_id} chapterName={chapter?.name ?? ''} cls={topic.class} topicId={topic.topic_id} />
-        : <ScienceView scope={{ topicId: topic.topic_id }} cls={r.cls} higher={higher} topicNames={new Map([[topic.topic_id, { name: topic.name, no: no ?? null }]])} row={r.row} q={r.q} reload={reload}
+        : <ScienceView scope={{ topicId: topic.topic_id }} cls={ceiling === null ? 'all' : String(ceiling)} higher={higher} topicNames={new Map([[topic.topic_id, { name: topic.name, no: no ?? null }]])} row={r.row} q={r.q} reload={reload}
             onRow={(row) => go({ row, q: null, v: null, edit: false })} onQuestion={(id) => go({ q: id, v: null, edit: false })} onBack={() => go({ q: null, v: null, edit: false })} onOrder={onOrder} detail={detail} />}
       </> : <>
       <div role="tablist" className="tabs">
@@ -577,7 +575,7 @@ function TopicView({ topic, no, chapterNo, review, chapter, r, go, reload, highe
 }
 
 /** Science chapter view (13 Nov 2026): the same three columns over every topic of the chapter, grouped by topic. */
-function ChapterView({ r, go, higher, data, seq, reload, onOrder, detail }: { r: R; go: (p: Partial<R>) => void; higher: boolean; data: Awaited<ReturnType<typeof tree>>; seq: ReturnType<typeof numbersOf> | null; reload: number; onOrder: (ids: string[]) => void; detail: ReactNode }) {
+function ChapterView({ r, go, higher, ceiling, data, seq, reload, onOrder, detail }: { r: R; go: (p: Partial<R>) => void; higher: boolean; ceiling: number | null; data: Awaited<ReturnType<typeof tree>>; seq: ReturnType<typeof numbersOf> | null; reload: number; onOrder: (ids: string[]) => void; detail: ReactNode }) {
   const ch = data.chapters.find((c) => c.chapter_id === r.ch);
   // topics in the class's order (sequencing), then by class and seq; topics without content rows are kept
   const rank = (id: string) => seq?.topicRank.get(id) ?? 1e9;
@@ -588,9 +586,9 @@ function ChapterView({ r, go, higher, data, seq, reload, onOrder, detail }: { r:
     <>
       <div className="topic-head">
         <h1>{ch ? <>{numbered(seq?.chapter.get(ch.chapter_id), ch.name)} <Id>{ch.chapter_id}</Id></> : r.ch}</h1>
-        <div className="muted small">Chapter view · {topics.length} topic{topics.length === 1 ? '' : 's'}{r.cls !== 'all' ? ` in Class ${r.cls}` : ''} · content rows of every topic in master order, under their topic</div>
+        <div className="muted small">Chapter view · {topics.length} topic{topics.length === 1 ? '' : 's'}{r.cls !== 'all' ? ` in ${classesText(classSel(r.cls))}` : ''} · content rows of every topic in master order, under their topic</div>
       </div>
-      <ScienceView scope={{ chapterId: r.ch! }} cls={r.cls} higher={higher} topicNames={names} row={r.row} q={r.q} reload={reload}
+      <ScienceView scope={{ chapterId: r.ch! }} cls={ceiling === null ? 'all' : String(ceiling)} higher={higher} topicNames={names} row={r.row} q={r.q} reload={reload}
         onRow={(row) => go({ row, q: null, v: null, edit: false })} onQuestion={(id) => go({ q: id, v: null, edit: false })} onBack={() => go({ q: null, v: null, edit: false })} onOrder={onOrder} detail={detail} />
     </>
   );
