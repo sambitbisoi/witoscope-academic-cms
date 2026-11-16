@@ -1,6 +1,6 @@
 // Science workspace layout (14 Nov 2026): tree | content | questions. Synthetic rows only.
 import { describe, expect, it } from 'vitest';
-import { classesLine, isDimmed, listedOrder, rightPane, rowQuestions, rowsForClass, rowsInOrder, topicGroups } from '../web/src/scienceLogic.ts';
+import { classesLine, isDimmed, listedOrder, rightPane, rowClassLine, rowClassTag, rowQuestions, rowsForClass, rowsInOrder, rowSplit, rowSplitLabel, topicGroups } from '../web/src/scienceLogic.ts';
 import { parseRoute, browseHash } from '../web/src/logic.ts';
 
 const row = (row_id: string, sort: number, extra: Partial<{ topic_id: string; row_class: number; question_use: string }> = {}) =>
@@ -62,5 +62,30 @@ describe('Classes line (A3)', () => {
     expect(classesLine('6', [6])).toEqual({ text: 'Mapped classes: 6 · CMS classes: 6', mismatch: [] });
     expect(classesLine('5–6', [6])).toEqual({ text: 'Mapped classes: 5–6 · CMS classes: 6', mismatch: [5] });
     expect(classesLine(null, null).text).toBe('Mapped classes: none · CMS classes: …');
+  });
+});
+
+describe('Q11 / Q12: row class (16 Nov 2026)', () => {
+  const rs = [row('C5-01-001', 1, { row_class: 5 }), row('C6-01-001', 2), row('C6-01-002', 3)];
+  it('Show higher-level also shows rows above the class; All is unaffected', () => {
+    expect(rowsForClass(rs, '5', true)).toHaveLength(3);
+    expect(rowsForClass(rs, '5', false)).toHaveLength(1);
+    expect(rowsForClass(rs, 'all', false)).toHaveLength(3);
+  });
+  it('counts show the split', () => {
+    expect(rowSplit(rs, '5')).toEqual({ within: 1, above: 2 });
+    expect(rowSplitLabel(rowSplit(rs, '5'))).toBe('1 + 2 above class');
+    expect(rowSplitLabel(rowSplit(rs, '6'))).toBe('3');
+    expect(rowSplitLabel(rowSplit(rs, 'all'))).toBe('3');
+  });
+  it('tag on every row: own class, lower class, above class', () => {
+    expect(rowClassTag(6, '6').text).toBe('Class 6');
+    expect(rowClassTag(5, '6')).toMatchObject({ text: 'Class 5 row · lower class', kind: 'lower' });
+    expect(rowClassTag(6, '5')).toMatchObject({ text: 'Class 6 row · above class', kind: 'above' });
+    expect(rowClassTag(4, 'all')).toMatchObject({ text: 'Class 4', kind: 'here' });
+  });
+  it('row details line', () => {
+    expect(rowClassLine(6, 3)).toBe('Row class 6 · topic home class 3');
+    expect(rowClassLine(6, null)).toBe('Row class 6');
   });
 });

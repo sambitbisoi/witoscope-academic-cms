@@ -5,11 +5,11 @@
 // Content rows are read-only here. Selected topic, row and question live in the URL hash.
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Id } from './Id';
-import { LevelTag } from './Tags';
+import { LevelTag, RowClassTag } from './Tags';
 import { OriginFlags } from './AddQuestions';
 import { rowDetail, scienceData, type ScienceData, type ScienceQuestion, type ScienceRow } from './scienceApi';
 import { browseHash, showsAtLevel, statusLabel } from './logic';
-import { classesLine, isDimmed, listedOrder, rightPane, rowQuestions, rowsForClass, rowsInOrder, topicGroups } from './scienceLogic';
+import { classesLine, isDimmed, listedOrder, rightPane, rowClassLine, rowQuestions, rowsForClass, rowsInOrder, rowSplit, rowSplitLabel, topicGroups } from './scienceLogic';
 
 export const CONTENT_TYPES = ['Fact', 'Concept', 'How it works', 'Experiment', 'Scenario-Case', 'Diagram', 'Vocabulary'] as const;
 const STATUS: Record<ScienceRow['status'], { icon: string; label: string; cls: string }> = {
@@ -22,12 +22,12 @@ const TIERS = ['L1', 'L2', 'L3'] as const;
 const typeSlug = (t: string) => t.toLowerCase().replace(/[^a-z]+/g, '-');
 
 /** "6 with direct questions · 1 supporting only · 4 not eligible · 40 none yet" + questions by tier. */
-export function Coverage({ rows, questions }: { rows: ScienceRow[]; questions: ScienceQuestion[] }) {
+export function Coverage({ rows, questions, cls = 'all' }: { rows: ScienceRow[]; questions: ScienceQuestion[]; /** Q11: the class viewed, for the "+ N above class" split */ cls?: string }) {
   const n = (s: ScienceRow['status']) => rows.filter((r) => r.status === s).length;
   const live = questions.filter((q) => !q.retired_at && q.bank === 'production');
   return (
     <div className="sci-coverage small">
-      <span><strong>{rows.length}</strong> content rows:</span>
+      <span><strong>{rowSplitLabel(rowSplit(rows, cls))}</strong> content rows:</span>
       <span className="cov ok">✓ {n('direct')} with direct questions</span>
       <span className="cov sup">✓ {n('supporting')} supporting only</span>
       <span className="cov ne">○ {n('not_eligible')} not eligible</span>
@@ -54,7 +54,7 @@ export function ScienceView({ scope, cls, higher = false, topicNames, row, q, on
   useEffect(() => { setError(null); scienceData(scope).then(setData).catch((e) => setError(e.message)); }, [key, reload]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Rows written for class N show in class N and above (as questions do, D3); lower-class rows are marked.
-  const rows = useMemo(() => rowsInOrder(rowsForClass(data?.rows ?? [], cls)), [data, cls]);
+  const rows = useMemo(() => rowsInOrder(rowsForClass(data?.rows ?? [], cls, higher)), [data, cls, higher]);
   const hidden = (data?.rows.length ?? 0) - rows.length;
   const ceiling = cls === 'all' ? null : Number(cls);
   const qs = useMemo(() => (data?.questions ?? []).filter((x) => showsAtLevel(x.effective_level, ceiling, higher)), [data, ceiling, higher]);
@@ -77,10 +77,10 @@ export function ScienceView({ scope, cls, higher = false, topicNames, row, q, on
 
   return (
     <div className="sci">
-      <Coverage rows={rows} questions={qs} />
+      <Coverage rows={rows} questions={qs} cls={cls} />
       <div className="sci-cols">
         <section className="sci-content" aria-label="Content rows">
-          <div className="eyebrow">Content · master order{hidden > 0 ? <span className="muted"> · {hidden} row{hidden === 1 ? '' : 's'} of a higher class not shown</span> : null}</div>
+          <div className="eyebrow">Content · master order{hidden > 0 ? <span className="muted"> · {hidden} row{hidden === 1 ? '' : 's'} of a higher class not shown (tick "Show higher-level questions")</span> : null}</div>
           {!chapterMode ? (rows.length ? list(rows) : <p className="muted small">No content rows for this topic yet.</p>)
             : groups.map((g) => {
               const t = topicNames.get(g.topic_id);
@@ -159,7 +159,7 @@ function RowItem({ n, r, cls, open, onPick, inScope, onRow }: { n: number; r: Sc
           <span className="sci-row-meta small">
             <span className={`cov ${s.cls}`} title={`Row status: ${s.label}`}>{s.icon} {s.label}</span>
             <span className="muted">&nbsp;· {r.n_direct} direct · {r.n_supporting} supporting</span>
-            {cls !== 'all' && r.row_class < Number(cls) && <span className="tag revision" title="Written for a lower class">Class {r.row_class} row</span>}
+            <RowClassTag rowClass={r.row_class} cls={cls} />
             <RowTags r={r} />
             <Id>{r.row_id}</Id>
           </span>
@@ -200,7 +200,8 @@ function RowDetail({ r, inScope, onRow }: { r: ScienceRow; inScope: (id: string)
       <F label="Classes">{cl.text}
         {cl.mismatch.length > 0 && <span className="tag mismatch" title={`Master names class ${cl.mismatch.join(', ')}, which this topic is not linked to. Nothing is changed.`}>Class mismatch</span>}</F>
       {r.topic_taught_in && <F label="Also taught in">{r.topic_taught_in}</F>}
-      {r.revisit && <F label="Revisit">{r.revisit}</F>}
+      {/* Q12: the Revisit line is replaced by the row's class and the topic's home class (the master's Revisit text stays as the tooltip) */}
+      <F label="Row class"><span title={r.revisit ? `Master "Revisit": ${r.revisit}` : undefined}>{rowClassLine(r.row_class, d ? d.homeClass : null)}</span></F>
       {r.also_in_rows.length > 0 && <F label="Also in">
         {(d?.alsoIn ?? r.also_in_rows.map((id) => ({ row_id: id, at: null }))).map((x, i) => <span key={x.row_id}>{i > 0 && ' · '}
           {inScope(x.row_id) ? <button className="link" onClick={() => onRow(x.row_id)} title={x.at?.content}>{x.row_id}</button>

@@ -66,12 +66,13 @@ export async function scienceDetail(versionId: number) {
 /** A content row's detail card: its citations (with source titles), the topic's approved classes
  *  (home class + active links) and where its "Also in" rows live (to open them). */
 export async function rowDetail(r: Pick<ContentRow, 'row_id' | 'topic_id' | 'also_in_rows'>) {
-  const [cites, classes, also] = await Promise.all([
+  const [cites, classes, also, home] = await Promise.all([
     supabase.from('cms_citations').select('source_id, page_from, page_to, raw').eq('row_id', r.row_id).order('citation_id'),
     supabase.from('cms_topic_all_classes').select('class').eq('topic_id', r.topic_id),
     r.also_in_rows.length ? supabase.from('cms_content_rows').select('row_id, topic_id, chapter_id, content').in('row_id', r.also_in_rows) : Promise.resolve({ data: [], error: null }),
+    supabase.from('cms_topics').select('class').eq('topic_id', r.topic_id).maybeSingle(),
   ]);
-  for (const x of [cites, classes, also]) if (x.error) throw new Error(x.error.message);
+  for (const x of [cites, classes, also, home]) if (x.error) throw new Error(x.error.message);
   const citations = (cites.data ?? []) as Omit<Citation, 'for_row_id'>[];
   const srcIds = [...new Set(citations.map((c) => c.source_id))];
   const sources = srcIds.length ? ((await supabase.from('cms_sources').select('source_id, title').in('source_id', srcIds)).data ?? []) as { source_id: string; title: string }[] : [];
@@ -80,6 +81,8 @@ export async function rowDetail(r: Pick<ContentRow, 'row_id' | 'topic_id' | 'als
     citations, sources: new Map(sources.map((s) => [s.source_id, s.title])),
     classes: [...new Set(((classes.data ?? []) as { class: number }[]).map((c) => c.class))].sort(),
     alsoIn: r.also_in_rows.map((id) => ({ row_id: id, at: where.get(id) ?? null })),
+    /** Q12: the topic's home class (cms_topics.class) */
+    homeClass: ((home.data ?? null) as { class: number } | null)?.class ?? null,
   };
 }
 
