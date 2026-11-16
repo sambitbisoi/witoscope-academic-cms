@@ -222,7 +222,7 @@ export async function questionDetail(questionId: string, versionNo: number | nul
     supabase.from('cms_reviews').select('review_id, target_id, action, reason, field_diff, by_label, at').or(`target_id.eq.${questionId},target_id.like.${questionId} v*`).order('review_id', { ascending: false }).limit(50),
   ]);
   const v = must<Version>(version);
-  const wa = must<{ part_label: string; value: string; option_position: number | null; tag: string; misconception_id: string | null; target_concept_id: string | null; why: string | null }[]>(wrong);
+  const wa = must<{ part_label: string; value: string; option_position: number | null; tag: string; misconception_id: string | null; target_concept_id: string | null; why: string | null; mc_row_id: string | null; mc_item_no: number | null }[]>(wrong);
   const vc = must<{ part_label: string; concept_id: string; involvement: number }[]>(concepts);
   const miscIds = [...new Set(wa.map((w) => w.misconception_id).filter((x): x is string => !!x))];
   const conceptIds = [...new Set([...vc.map((c) => c.concept_id), ...wa.map((w) => w.target_concept_id).filter((x): x is string => !!x)])];

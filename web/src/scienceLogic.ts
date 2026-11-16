@@ -73,3 +73,29 @@ export function classesLine(mapped: string | null, approved: number[] | null): {
   const cms = approved === null ? '…' : [...approved].sort().join(', ') || '—';
   return { text: `Mapped classes: ${m ?? 'none'} · CMS classes: ${cms}`, mismatch: approved && m ? classMismatch(m, approved)?.onlyMaster ?? [] : [] };
 }
+
+// ---------------------------------------------------------------- 0035: ranks, items, approval (Q16 Q17 Q18)
+export const RANK_LABEL = { primary: 'Primary', secondary: 'Secondary', context: 'Supporting' } as const;
+/** "Primary · 1.0" · "Primary (proposed) · 1.0" · "Secondary · 0.5" · "Supporting · 0" */
+export const rankLabel = (l: { rank: keyof typeof RANK_LABEL; rank_proposed: boolean; weight: number }) =>
+  `${RANK_LABEL[l.rank]}${l.rank_proposed ? ' (proposed)' : ''} · ${l.weight === 0 ? '0' : l.weight.toFixed(1)}`;
+
+export interface BlockerInput {
+  solution1: string | null;
+  links: { rank: string; rank_proposed: boolean }[];
+  misconceptionText: string | null;
+  misconception: { status: string } | null;
+  wrongItems: { status: string }[];
+}
+/** Why a Science version can't be approved yet (the SQL trigger enforces the same, 0035). */
+export function scienceBlockers(x: BlockerInput): string[] {
+  const out: string[] = [];
+  if (!x.solution1?.trim()) out.push('Solution 1 is empty');
+  const primaries = x.links.filter((l) => l.rank === 'primary');
+  if (primaries.length !== 1) out.push('no primary content row');
+  else if (primaries[0]!.rank_proposed) out.push('primary row not confirmed');
+  if (x.misconceptionText?.trim()) out.push('misconception is free text');
+  if (x.misconception && x.misconception.status !== 'active') out.push('misconception item needs review');
+  if (x.wrongItems.some((w) => w.status !== 'active')) out.push("a wrong option's item needs review");
+  return out;
+}

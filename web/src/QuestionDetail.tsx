@@ -9,7 +9,9 @@ import { bundleOf, retire, setStatus } from './editApi';
 import { supabase } from './supabase';
 import { OriginFlags } from './AddQuestions';
 import { Id } from './Id';
-import { scienceDetail } from './scienceApi';
+import { scienceDetail, type ScienceDetail } from './scienceApi';
+import { rankLabel, scienceBlockers } from './scienceLogic';
+import { ScienceReview } from './ScienceReview';
 
 /** A keyboard review command from Browse (D6): A approve · R reject · F needs review. */
 export interface ReviewCommand { kind: 'approve' | 'reject' | 'flag'; n: number }
@@ -26,6 +28,11 @@ export function QuestionDetail({ id, versionNo, onVersion, onEdit, reloadKey = 0
     setD(undefined); setError(null);
     questionDetail(id, versionNo).then(setD).catch((e) => setError(e.message));
   }, [id, versionNo, reloadKey, tick]);
+  // Science (0035): content rows, ranks and items, loaded here so Approve knows the Science blockers too
+  const sciVid = d && d.question.subject === 'science' ? d.version.version_id : null;
+  const [sx, setSx] = useState<ScienceDetail | null>(null);
+  const [sxErr, setSxErr] = useState<string | null>(null);
+  useEffect(() => { setSx(null); setSxErr(null); if (sciVid) scienceDetail(sciVid).then(setSx).catch((e) => setSxErr(e.message)); }, [sciVid, tick]);
 
   if (error) return <p className="error">Couldn't load {id}: {error}</p>;
   if (d === undefined) return <p className="muted">Loading {id}…</p>;
@@ -53,8 +60,9 @@ export function QuestionDetail({ id, versionNo, onVersion, onEdit, reloadKey = 0
           {q.retired_at && <strong> · retired</strong>}
         </div>
       </div>
-      {q.subject === 'science' ? <ScienceBody d={d} isCurrent={isCurrent} onVersion={onVersion}
-        actions={isCurrent ? <Actions key={v.version_id} d={d} onEdit={onEdit} onChanged={() => { setTick((t) => t + 1); onChanged?.(); }} command={command} onAdvance={onAdvance} /> : null} /> : <>
+      {q.subject === 'science' ? <ScienceBody d={d} x={sx} err={sxErr} isCurrent={isCurrent} onVersion={onVersion} onSaved={() => { setTick((t) => t + 1); onChanged?.(); }}
+        actions={isCurrent ? <Actions key={v.version_id} d={d} onEdit={onEdit} onChanged={() => { setTick((t) => t + 1); onChanged?.(); }} command={command} onAdvance={onAdvance}
+          extra={q.bank === 'production' ? (sx ? scienceBlockersOf(d, sx) : ['checking its content rows…']) : []} /> : null} /> : <>
       {!isCurrent && <div className="notice small">You're looking at an older version. <button className="link" onClick={() => onVersion(null)}>Show current (v{q.current_version})</button></div>}
       {isCurrent && <Actions key={v.version_id} d={d} onEdit={onEdit} onChanged={() => { setTick((t) => t + 1); onChanged?.(); }} command={command} onAdvance={onAdvance} />}
 
@@ -308,7 +316,8 @@ const ACTION_LABEL: Record<string, string> = { submit: 'needs review', withdraw:
  * deleted and there is no Retire button here (a question retired earlier can be restored).
  * Keyboard (from Browse): A / R / F; after a keyboard action Browse moves to the next question.
  */
-function Actions({ d, onEdit, onChanged, command, onAdvance }: { d: QuestionDetailData; onEdit?: () => void; onChanged: () => void; command?: ReviewCommand | null; onAdvance?: () => void }) {
+function Actions({ d, onEdit, onChanged, command, onAdvance, extra }: { d: QuestionDetailData; onEdit?: () => void; onChanged: () => void; command?: ReviewCommand | null; onAdvance?: () => void;
+  /** Science (0035): Solution 1, primary row, misconception items */ extra?: string[] }) {
   const [ask, setAsk] = useState<null | 'reject' | 'flag' | 'restore' | 'override'>(null);
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
@@ -338,7 +347,7 @@ function Actions({ d, onEdit, onChanged, command, onAdvance }: { d: QuestionDeta
   };
   // 13 Nov 2026: "Approved" means ready for the app: no approval while the book check, the picture
   // (production only) or the attributes are pending. The SQL trigger enforces the same rules.
-  const blockers = approvalBlockers(d.flags, q.bank);
+  const blockers = [...approvalBlockers(d.flags, q.bank), ...(extra ?? [])];
   const approve = () => (blockers.length ? setErr(`Can't approve yet: ${blockers.join('; ')}.`) : nearCopy ? setAsk('override') : run(() => setStatus(q.question_id, v.version_no, 'approve', null)));
   useEffect(() => {
     if (!command || command.n < mounted.current || busy || q.retired_at || !open) return;
@@ -485,11 +494,21 @@ const SCIENCE_ATTRS: { k: string; col: 'reading' | 'steps' | 'inhibition' | 'has
 ];
 
 /** Column (c) for a Science question: Linked content first, then attributes, preview, safety, taught in, buttons. */
-function ScienceBody({ d, isCurrent, onVersion, actions }: { d: QuestionDetailData; isCurrent: boolean; onVersion: (v: number | null) => void; actions: ReactNode }) {
-  const [x, setX] = useState<Awaited<ReturnType<typeof scienceDetail>> | null>(null);
-  const [err, setErr] = useState<string | null>(null);
+/** Science approval blockers (0035) from the loaded detail; the SQL trigger enforces the same. */
+function scienceBlockersOf(d: QuestionDetailData, x: ScienceDetail): string[] {
+  const item = (rowId: string | null, no: number | null) => (rowId ? x.items.find((i) => i.row_id === rowId && i.item_no === no) ?? { status: 'missing' } : null);
+  return scienceBlockers({
+    solution1: d.solutions.find((s) => s.slot === 1)?.text ?? null, links: x.links, misconceptionText: x.version.misconception_targeted,
+    misconception: item(x.version.misconception_row_id, x.version.misconception_item_no),
+    wrongItems: [...x.wrongItems.values()].map((r) => { const [rowId, no] = r.split(' #'); return item(rowId!, Number(no))!; }),
+  });
+}
+
+function ScienceBody({ d, x, err, isCurrent, onVersion, onSaved, actions }: { d: QuestionDetailData; x: ScienceDetail | null; err: string | null; isCurrent: boolean;
+  onVersion: (v: number | null) => void; onSaved: () => void; actions: ReactNode }) {
   const { question: q, version: v } = d;
-  useEffect(() => { setX(null); scienceDetail(v.version_id).then(setX).catch((e) => setErr(e.message)); }, [v.version_id]);
+  const itemText = (r: string | null, n: number | null) => (r ? x?.items.find((i) => i.row_id === r && i.item_no === n) : undefined);
+  const open = isCurrent && (v.status === 'draft' || v.status === 'in_review') && !q.retired_at;
   const vr = v as unknown as Record<string, unknown>;
   const attr = (c: (typeof SCIENCE_ATTRS)[number]['col']) => (vr[c] === null || vr[c] === undefined ? PENDING : typeof vr[c] === 'boolean' ? (vr[c] ? 'yes' : 'no') : String(vr[c]));
   const subj = subjectOfChapter(q.chapter_id);
@@ -509,12 +528,21 @@ function ScienceBody({ d, isCurrent, onVersion, actions }: { d: QuestionDetailDa
         {v.figure_description && <div className="figure small prewrap"><span className="tag">{v.image_status === 'has_image' ? 'Image' : 'Image needed'}</span> {v.figure_description}</div>}
         <div className="options">
           {d.options.filter((o) => o.part_label === '').map((o) => (
-            <div key={o.position} className={`option ${o.is_correct ? 'correct' : ''}`}><span className="opt-label">{String.fromCharCode(64 + o.position)} · {o.text}{o.is_correct ? ' ✓' : ''}</span></div>
+            <div key={o.position} className={`option ${o.is_correct ? 'correct' : ''}`}><span className="opt-label">{String.fromCharCode(64 + o.position)} · {o.text}{o.is_correct ? ' ✓' : ''}</span>
+              {x?.wrongItems.get(o.position) && <span className="muted small mono" title={x.items.find((i) => `${i.row_id} #${i.item_no}` === x.wrongItems.get(o.position))?.text}> → {x.wrongItems.get(o.position)}</span>}</div>
           ))}
         </div>
       </div>
-      {d.solutions[0] && <Section title="Explanation"><div className="small prewrap">{d.solutions[0].text}</div></Section>}
-      {x?.version.misconception_targeted && <Section title="Misconception targeted"><div className="small">{x.version.misconception_targeted}</div></Section>}
+      <Section title="Solution 1">{d.solutions.find((s) => s.slot === 1)?.text ? <div className="small prewrap">{d.solutions.find((s) => s.slot === 1)!.text}</div>
+        : <div className="small warn-text">Empty: approval needs the answer + short reasoning from its content rows.</div>}</Section>
+      {x && (x.version.misconception_row_id || x.version.misconception_targeted || x.version.misconception_targeted_legacy) && <Section title="Misconception targeted">
+        {x.version.misconception_row_id ? <div className="small">{itemText(x.version.misconception_row_id, x.version.misconception_item_no)?.text ?? '—'}{' '}
+          {itemText(x.version.misconception_row_id, x.version.misconception_item_no)?.status === 'needs_review' && <span className="tag proposed">Needs review</span>}
+          <span className="mono muted small">{x.version.misconception_row_id} #{x.version.misconception_item_no}</span></div>
+          : x.version.misconception_targeted ? <div className="small">{x.version.misconception_targeted} <span className="tag mismatch">Free text</span></div>
+          : <div className="muted small">None.</div>}
+        {x.version.misconception_targeted_legacy && <div className="muted small">Before 16 Nov: “{x.version.misconception_targeted_legacy}”</div>}
+      </Section>}
       {x?.version.safety_note && <Section title="Safety note"><div className="small banner safety">{x.version.safety_note}</div></Section>}
       {hasCites && <Section title="Taught in (citations)">
         {x!.citations.length > 0 && <ul className="plain small">{x!.citations.map((c, i) => (
@@ -533,22 +561,28 @@ function ScienceBody({ d, isCurrent, onVersion, actions }: { d: QuestionDetailDa
 
       {isCurrent && d.flags && <PendingBanners f={d.flags} gold={q.bank === 'gold'} />}
       <div className="tint-box linked">
-        <div className="tint-title">Linked content{x ? ` · ${x.links.filter((l) => l.role === 'direct').length} direct · ${x.links.filter((l) => l.role === 'supporting').length} supporting` : ''}</div>
+        <div className="tint-title">Linked content{x ? ` · ${x.links.filter((l) => l.role === 'direct').length} direct · ${x.links.filter((l) => l.role === 'supporting').length} supporting` : ''}
+          <span className="muted small"> · weights: primary 1.0 · secondary 0.5 · supporting 0</span></div>
         {!x ? <div className="muted small">Loading…</div> : x.links.length === 0 ? <div className="muted small">No content rows linked.</div> : (
           <ul className="plain linked-rows">
             {x.links.map((l) => (
               <li key={l.row_id} className={`linked-row ${l.role}`}>
-                <div className="small"><span className={`tag role-${l.role}`}>{l.role}</span>
+                <div className="small"><span className={`tag role-${l.role} rank-${l.rank}${l.rank_proposed ? ' rank-proposed' : ''}`} title={l.role === 'direct' ? 'tests this row' : 'uses it as background'}>{rankLabel(l)}</span>
                   {l.row && <> <span className="muted">{l.row.type} · {l.row.chapter_role} · {l.row.source === 'Claude-added' ? <span className="tag claude">Claude-added</span> : `Book · ${l.row.found_in === 'Both' ? 'NCERT + DAV' : l.row.found_in === 'DAV only' ? 'DAV' : l.row.found_in ?? '—'}`}</span>
                     {l.row.question_use !== 'OK' && <span className="tag use">{l.row.question_use}</span>}</>}
                   {' '}<a className="small" href={browseHash({ subject: subj, cls: String(l.row?.row_class ?? 'all'), topic: l.row?.topic_id ?? q.topic_id, row: l.row_id, q: q.question_id, tab: 'content' })}><Id>{l.row_id}</Id></a></div>
                 {l.row ? <div className="linked-text">{l.row.content}</div> : <div className="muted small">Row not found.</div>}
-                {l.row?.misconceptions && <div className="small"><span className="muted">Misconception:</span> {l.row.misconceptions}</div>}
+                {(x.items.filter((i) => i.row_id === l.row_id && i.status !== 'retired')).map((i) => (
+                  <div key={i.item_no} className="small"><span className="muted">Misconception</span> <span className="mono muted">#{i.item_no}</span> {i.text}
+                    {i.status === 'needs_review' && <span className="tag proposed">Needs review</span>}</div>))}
               </li>
             ))}
           </ul>
         )}
       </div>
+
+      {open && x && <ScienceReview key={`${v.version_id}-${x.links.map((l) => l.rank + l.rank_proposed).join()}-${x.version.misconception_row_id}`} questionId={q.question_id} versionNo={v.version_no} x={x}
+        options={d.options.filter((o) => o.part_label === '')} solution1={d.solutions.find((s) => s.slot === 1)?.text ?? null} onSaved={onSaved} />}
 
       <div className="tint-box signature">
         <div className="tint-title">Attributes{d.flags?.attributes_pending ? <span className="muted small"> · pending</span> : ''}</div>

@@ -9,6 +9,7 @@ import { CAT_KINDS, decidable, decide, itemParam, kindLine, loadItems, loadPlace
 import { Id } from './Id';
 import { browseHash, safeSearch, subjectLabel, SUBJECTS, valueCounts } from './logic';
 import { MultiSelect, type MOption } from './MultiSelect';
+import { RowItemsTab } from './ProposedItems';
 
 type Facet = 'subject' | 'cls' | 'strand' | 'chapter' | 'topic';
 const FACETS: { id: Facet; label: string }[] = [
@@ -22,6 +23,8 @@ const topicLink = (i: CatItem) => browseHash({ subject: i.subject ?? 'math', cls
 export function ProposedList({ kind: routeKind, item: routeItem }: { kind: string | null; item?: string | null }) {
   const kind: CatKind = CAT_KINDS.includes(routeKind as CatKind) ? routeKind as CatKind : 'concept';
   const sel = parseItem(routeItem);
+  /** 0035: Science misconception items (status only), a tab of its own */
+  const rowItemsTab = routeKind === 'row_item';
   const [show, setShow] = useState<Show>('proposed');
   const [places, setPlaces] = useState<Places | null>(null);
   const [items, setItems] = useState<CatItem[] | null>(null);
@@ -91,11 +94,13 @@ export function ProposedList({ kind: routeKind, item: routeItem }: { kind: strin
         A class is where an item was first catalogued; it is information only. Nothing is deleted: Reject retires an item and keeps it. Every change is logged. Select a row to see its details.</p>
       <div role="tablist" className="tabs">
         {CAT_KINDS.map((k) => (
-          <button key={k} role="tab" aria-selected={k === kind} className={k === kind ? 'on' : ''} onClick={() => open(k, null)}>
+          <button key={k} role="tab" aria-selected={k === kind && !rowItemsTab} className={k === kind && !rowItemsTab ? 'on' : ''} onClick={() => open(k, null)}>
             {TAB_LABEL[k]}{items ? ` · ${tabCounts.get(k) ?? 0}` : ''}
           </button>
         ))}
+        <button role="tab" aria-selected={rowItemsTab} className={rowItemsTab ? 'on' : ''} onClick={() => { location.hash = '#/proposed?kind=row_item'; }}>Misconception items</button>
       </div>
+      {rowItemsTab ? <RowItemsTab show={show} /> : <>
       <div className="filters">
         {kind !== 'setting' && FACETS.map((f) => (
           <MultiSelect key={f.id} label={f.label} options={options[f.id] ?? []} selected={facets[f.id]} onChange={(v) => { setFacets({ ...facets, [f.id]: v }); setPicked(new Set()); }} />
@@ -149,6 +154,7 @@ export function ProposedList({ kind: routeKind, item: routeItem }: { kind: strin
           </aside>
         )}
       </div>
+      </>}
     </>
   );
 }

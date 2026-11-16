@@ -89,3 +89,20 @@ describe('Q11 / Q12: row class (16 Nov 2026)', () => {
     expect(rowClassLine(6, null)).toBe('Row class 6');
   });
 });
+
+describe('0035: ranks and Science approval blockers', () => {
+  it('rank labels', async () => {
+    const { rankLabel } = await import('../web/src/scienceLogic.ts');
+    expect(rankLabel({ rank: 'primary', rank_proposed: true, weight: 1 })).toBe('Primary (proposed) · 1.0');
+    expect(rankLabel({ rank: 'secondary', rank_proposed: false, weight: 0.5 })).toBe('Secondary · 0.5');
+    expect(rankLabel({ rank: 'context', rank_proposed: false, weight: 0 })).toBe('Supporting · 0');
+  });
+  it('blockers', async () => {
+    const { scienceBlockers } = await import('../web/src/scienceLogic.ts');
+    const ok = { solution1: 'Y. Because…', links: [{ rank: 'primary', rank_proposed: false }], misconceptionText: null, misconception: { status: 'active' }, wrongItems: [] };
+    expect(scienceBlockers(ok)).toEqual([]);
+    expect(scienceBlockers({ ...ok, solution1: ' ', links: [{ rank: 'primary', rank_proposed: true }], misconception: { status: 'needs_review' } }))
+      .toEqual(['Solution 1 is empty', 'primary row not confirmed', 'misconception item needs review']);
+    expect(scienceBlockers({ ...ok, links: [], misconceptionText: 'x', wrongItems: [{ status: 'needs_review' }] })).toEqual(['no primary content row', 'misconception is free text', "a wrong option's item needs review"]);
+  });
+});

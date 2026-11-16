@@ -15,6 +15,8 @@ import { rowHash } from './science-master.ts';
 import type { ScienceCheck, ScienceReport } from './science-originality.ts';
 import { SCIENCE_REPORT_SCHEMA } from './science-originality.ts';
 import { parseCsv } from './updates.ts';
+import { syncRowItems, type ItemSyncResult } from './science-items-db.ts';
+import { itemRef, matchItem, proposePrimary, type Item } from '../../shared/science-items.ts';
 
 export type Target = 'local' | 'real';
 export interface ScienceOptions { dryRun: boolean; target: Target; overrides?: Map<string, string>; byLabel?: string; /** run inside the caller's transaction (tests) */ inTx?: postgres.TransactionSql }
@@ -34,6 +36,10 @@ export interface ScienceResult {
   /** rows whose "Topic class (mapped)" names a class the topic is not linked to (home + active links); shown, never changed */
   class_mismatch: { row_id: string; topic_id: string; mapped: string; approved: number[]; only_master: number[] }[];
   problems: string[];
+  /** 0035 (16 Nov 2026): misconception items kept in step with the rows; updated items list every question that uses them */
+  items: ItemSyncResult | null;
+  /** 0035: each imported question's misconception as an item reference (the text goes to misconception_targeted_legacy) and its primary row */
+  misconceptions: { matched: number; linked_supporting: { qid: string; item: string }[]; unmatched: { qid: string; text: string }[]; primary_proposed: { qid: string; row_id: string; reason: string }[] };
 }
 
 /** override_requests.csv rows for Science: file_key = content Row ID or Q ID, field, reason. */
@@ -77,6 +83,7 @@ export async function runScience(sql: Sql, master: Master, report: ScienceReport
     citations: { rows: 0, questions: 0 }, proposals: [], questions: { created: [], replaced: [], unchanged: 0, skipped: [], blocked: [], not_in_master: [] },
     links: { direct: 0, supporting: 0 }, originality: { rows: {}, questions: {} }, status_mismatch: [],
     also_in: { rows_with_ids: 0, ids_parsed: 0, ids_kept: 0, unparsed: [...(master.also_in_unparsed ?? [])], unknown: [] }, class_mismatch: [], problems: [],
+    items: null, misconceptions: { matched: 0, linked_supporting: [], unmatched: [], primary_proposed: [] },
   };
   const errors = master.problems.filter((p) => p.level === 'error');
   if (errors.length) throw new Error(`the master has ${errors.length} error(s), e.g. ${errors[0]!.where}: ${errors[0]!.message}`);
@@ -224,6 +231,9 @@ export async function runScience(sql: Sql, master: Master, report: ScienceReport
       for (let i = 0; i < cits.length; i += 1000) await tx`insert into cms.cms_citations ${tx(cits.slice(i, i + 1000) as never[])}`;
       res.citations.rows = cits.length;
 
+      // ------------------------------------------------ misconception items (0035): every row of the master, in step with its text
+      res.items = await syncRowItems(tx, master.rows.filter((r) => !held.has(r.row_id)).map((r) => ({ row_id: r.row_id, misconceptions: r.misconceptions })), importId, by);
+
       // ------------------------------------------------ PROPOSED topic–class links (never active from here)
       const links = new Set((await tx`select topic_id, class from cms.cms_topic_classes`).map((l) => `${l.topic_id}|${l.class}`));
       const props = new Map((await tx`select topic_id, class from cms.cms_topic_class_proposals`).map((p) => [`${p.topic_id}|${p.class}`, p]));
@@ -278,6 +288,7 @@ export async function runScience(sql: Sql, master: Master, report: ScienceReport
         res.citations.questions += cs.length;
         await tx`insert into cms.cms_question_content_rows ${tx(q.links.map((l) => ({ version_id: versionId, row_id: l.row_id, role: l.role })) as never[])}`;
         for (const l of q.links) res.links[l.role]++;
+        await linkMisconceptionAndPrimary(q, questionId, versionId);
         const c = qCheck.get(q.qid)!;
         const [chk] = await tx`insert into cms.cms_originality_checks ${tx({ version_id: versionId, checked_at: report.checked_at, result: c.result, similarity: c.similarity, same_numbers: c.same_numbers,
           closest_ref: c.closest_ref, field: c.field ?? null, checked: tx.json(report.read as never), missing: tx.json(report.missing as never), threshold: Number(cfg!.th ?? report.threshold),
@@ -288,9 +299,42 @@ export async function runScience(sql: Sql, master: Master, report: ScienceReport
             values (${questionId}, ${versionId}, ${q.qid}, ${f}, ${cov.reasons[i]!}, 'Science master', ${chk!.check_id}, ${importId}) on conflict do nothing`;
         }
       };
+      // 0035: the master's "Misconception targeted" text → an item of the question's rows (exact / fuzzy; else an item
+      // on an unlinked row → that row linked as supporting; else reported). The text is kept in misconception_targeted_legacy.
+      // One direct row → primary; several → a PROPOSED primary (Sambit confirms it in the Science review box).
+      const linkMisconceptionAndPrimary = async (q: MasterQuestion, questionId: string, versionId: number) => {
+        const rowsInfo = new Map((await tx<{ row_id: string; content: string; sort: number }[]>`select row_id, content, sort from cms.cms_content_rows where row_id = any(${q.links.map((l) => l.row_id)})`).map((r) => [r.row_id, r]));
+        const direct = q.links.filter((l) => l.role === 'direct').map((l) => rowsInfo.get(l.row_id)!).filter(Boolean).sort((a, b) => a.sort - b.sort);
+        const ordered = [...direct.map((r) => r.row_id), ...q.links.filter((l) => l.role === 'supporting').map((l) => l.row_id)];
+        const items = (await tx<Item[]>`select row_id, item_no, text, status from cms.cms_row_misconceptions where row_id = any(${ordered}) and status <> 'retired'`)
+          .sort((a, b) => ordered.indexOf(a.row_id) - ordered.indexOf(b.row_id) || a.item_no - b.item_no);
+        let miscRow: string | null = null;
+        if (q.misconception_targeted) {
+          const m = matchItem(q.misconception_targeted, items);
+          let it: Item | null = m.kind === 'none' ? null : m.best;
+          if (!it) {
+            const other = matchItem(q.misconception_targeted, await tx<Item[]>`select row_id, item_no, text, status from cms.cms_row_misconceptions where status <> 'retired' and row_id <> all(${ordered}) order by row_id, item_no`);
+            if (other.kind === 'exact' || other.kind === 'fuzzy') {
+              it = other.best!;
+              await tx`insert into cms.cms_question_content_rows (version_id, row_id, role, rank) values (${versionId}, ${it.row_id}, 'supporting', 'context')`;
+              res.misconceptions.linked_supporting.push({ qid: q.qid, item: itemRef(it) });
+            }
+          }
+          if (it) {
+            await tx`update cms.cms_question_versions set misconception_row_id = ${it.row_id}, misconception_item_no = ${it.item_no} where version_id = ${versionId}`;
+            miscRow = it.row_id; res.misconceptions.matched++;
+          } else res.misconceptions.unmatched.push({ qid: q.qid, text: q.misconception_targeted });
+        }
+        if (direct.length) {
+          const p = proposePrimary(direct, { text: q.text, correct: q.correct }, miscRow);
+          await tx`update cms.cms_question_content_rows set rank = 'primary', rank_proposed = ${direct.length > 1} where version_id = ${versionId} and row_id = ${p.row_id}`;
+          if (direct.length > 1) res.misconceptions.primary_proposed.push({ qid: q.qid, row_id: p.row_id, reason: p.reason });
+        }
+        void questionId;
+      };
       const versionCols = (q: MasterQuestion) => ({
         text: q.text, figure_description: q.figure_description, image_status: q.picture_needed ? 'needs_image' : null, format: q.format, correct: q.correct,
-        author_notes: q.notes, content_hash: q.hash, level_tier: q.tier, display_format: q.sheet_format, misconception_targeted: q.misconception_targeted,
+        author_notes: q.notes, content_hash: q.hash, level_tier: q.tier, display_format: q.sheet_format, misconception_targeted: null, misconception_targeted_legacy: q.misconception_targeted,
         safety_note: q.safety_note, confidence: q.confidence,
       });
 
@@ -352,7 +396,9 @@ export async function runScience(sql: Sql, master: Master, report: ScienceReport
           citations: res.citations, proposals: res.proposals.length, questions: { created: res.questions.created.length, replaced: res.questions.replaced.length, unchanged: res.questions.unchanged,
           skipped: res.questions.skipped.length, blocked: res.questions.blocked.length }, links: res.links, originality: res.originality,
           also_in: { rows_with_ids: res.also_in.rows_with_ids, ids_parsed: res.also_in.ids_parsed, ids_kept: res.also_in.ids_kept, unparsed: res.also_in.unparsed.length, unknown: res.also_in.unknown.length },
-          class_mismatch: res.class_mismatch.length } as never)},
+          class_mismatch: res.class_mismatch.length,
+          items: res.items ? { created: res.items.items_created, updated: res.items.updated.length, retired: res.items.retired.length, unclear: res.items.unclear.length } : null,
+          misconceptions: { matched: res.misconceptions.matched, linked_supporting: res.misconceptions.linked_supporting.length, unmatched: res.misconceptions.unmatched.length, primary_proposed: res.misconceptions.primary_proposed.length } } as never)},
         error_report = ${tx.json([...res.questions.blocked, ...res.questions.skipped, ...res.rows.held_out.map((id) => ({ row_id: id, why: 'near-copy, held out' }))] as never)}
         where import_id = ${importId}`;
       if (opts.dryRun && !opts.inTx) throw new Rollback(res);

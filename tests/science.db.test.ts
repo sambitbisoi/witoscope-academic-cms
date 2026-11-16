@@ -76,13 +76,18 @@ describe('import:science (local, rolled back)', () => {
 
       // the question: Needs review, attributes pending, image pending, tier stored apart from the class Level
       const [v] = await tx`select q.subject, q.level, q.class, q.source_qid, v.status, v.created_from, v.attributes_pending, v.originality_pending, v.image_status, v.level_tier,
-          v.display_format, v.misconception_targeted, v.safety_note, v.format, v.correct, v.version_id,
+          v.display_format, v.misconception_targeted, v.misconception_targeted_legacy, v.safety_note, v.format, v.correct, v.version_id,
           (select count(*)::int from cms.cms_originality_checks c where c.version_id = v.version_id) as checks
         from cms.cms_questions q join cms.cms_question_versions v on v.question_id = q.question_id and v.version_no = q.current_version where q.source_qid = 'ZZ-Q001'`;
       expect(v).toMatchObject({ subject: 'science', level: 6, class: 6, status: 'in_review', created_from: 'import', attributes_pending: true, originality_pending: false,
-        image_status: 'needs_image', level_tier: 'L2', display_format: 'Scenario MCQ', misconception_targeted: 'Thinks w.', safety_note: 'Adult only.', format: 'MCQ-4', correct: 'y', checks: 1 });
+        image_status: 'needs_image', level_tier: 'L2', display_format: 'Scenario MCQ', misconception_targeted: null, misconception_targeted_legacy: 'Thinks w.', safety_note: 'Adult only.', format: 'MCQ-4', correct: 'y', checks: 1 });
       const links = await tx`select row_id, role from cms.cms_question_content_rows where version_id = ${v!.version_id} order by row_id`;
       expect(links.map((l) => `${l.row_id}:${l.role}`)).toEqual(['C6-ZZ-001:direct', 'C6-ZZ-002:supporting']);
+      // 0035: rows' misconceptions are split into items; the only direct row is the primary; "Thinks w." matches no item → reported, kept as legacy
+      expect((await tx`select text from cms.cms_row_misconceptions where row_id = 'C6-ZZ-001'`).map((x) => x.text)).toEqual(['A test belief.']);
+      expect((await tx`select row_id, rank, rank_proposed from cms.cms_question_content_rows where version_id = ${v!.version_id} order by row_id`).map((l) => `${l.row_id}:${l.rank}:${l.rank_proposed}`))
+        .toEqual(['C6-ZZ-001:primary:false', 'C6-ZZ-002:context:false']);
+      expect(a.misconceptions.unmatched.map((u) => u.qid)).toEqual(['ZZ-Q001', 'ZZ-Q002']);
       const st = await tx`select row_id, status, n_direct, n_supporting from cms.cms_content_row_status where row_id in ('C6-ZZ-001', 'C6-ZZ-002', 'C1-ZZ-003') order by row_id`;
       expect(st.map((s) => `${s.row_id}:${s.status}:${s.n_direct}:${s.n_supporting}`)).toEqual(['C1-ZZ-003:none:0:0', 'C6-ZZ-001:direct:1:0', 'C6-ZZ-002:supporting:0:1']);
 
@@ -158,6 +163,24 @@ describe('import:science (local, rolled back)', () => {
       await tx`update cms.cms_question_versions set has_irrelevant_info = false, visual = 0 where version_id = ${v!.version_id}`;
       const [b] = await tx`select attributes_pending, working_memory, strategy from cms.cms_question_versions where version_id = ${v!.version_id}`;
       expect(b).toEqual({ attributes_pending: false, working_memory: null, strategy: null });
+    });
+  });
+
+  it('0035: misconception text → item reference; a row text change updates the item in place and lists the questions that use it', async () => {
+    await inRollback(async (tx) => {
+      const q3 = { ...question('ZZ-Q003', [{ row_id: 'C6-ZZ-004', role: 'direct' }, { row_id: 'C6-ZZ-001', role: 'direct' }]), misconception_targeted: 'a test belief' };
+      const R4b = { ...R4, misconceptions: 'Bats are birds. Whales are fish.' };
+      const a = await run(tx, master([R1, R4b], [q3]));
+      const [v] = await tx`select v.version_id, v.misconception_row_id, v.misconception_item_no, v.misconception_targeted, v.misconception_targeted_legacy, q.question_id
+        from cms.cms_questions q join cms.cms_question_versions v on v.question_id = q.question_id where q.source_qid = 'ZZ-Q003'`;
+      expect(v).toMatchObject({ misconception_row_id: 'C6-ZZ-001', misconception_item_no: 1, misconception_targeted: null, misconception_targeted_legacy: 'a test belief' });
+      expect(a.misconceptions.primary_proposed).toEqual([expect.objectContaining({ qid: 'ZZ-Q003', row_id: 'C6-ZZ-001' })]);   // holds the item
+      expect((await tx`select text from cms.cms_row_misconceptions where row_id = 'C6-ZZ-004' order by item_no`).map((x) => x.text)).toEqual(['Bats are birds.', 'Whales are fish.']);
+      const b = await run(tx, master([{ ...R1, misconceptions: 'A test belief about clips.' }, { ...R4b, misconceptions: 'Bats are birds.' }], [q3], 'sha-test-2'));
+      expect(b.items!.updated).toEqual([{ ref: 'C6-ZZ-001 #1', before: 'A test belief.', after: 'A test belief about clips.', questions: [v!.question_id] }]);
+      expect(b.items!.retired).toEqual([{ ref: 'C6-ZZ-004 #2', text: 'Whales are fish.', questions: [] }]);
+      const [rv] = await tx`select count(*)::int as n from cms.cms_reviews where target_table = 'cms_row_misconceptions' and target_id = 'C6-ZZ-001 #1' and action = 'science_row'`;
+      expect(rv!.n).toBe(1);
     });
   });
 

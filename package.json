@@ -30,7 +30,8 @@
     "import:updates": "tsx scripts/import-updates.ts",
     "export:topics": "tsx scripts/export-topics.ts",
     "curriculum:cutover": "tsx scripts/curriculum-cutover.ts",
-    "import:science": "tsx scripts/import-science.ts"
+    "import:science": "tsx scripts/import-science.ts",
+    "science:rationalise": "tsx scripts/science-rationalise.ts"
   },
   "devDependencies": {
     "@types/node": "22.9.0",

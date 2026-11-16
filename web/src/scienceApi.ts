@@ -15,7 +15,7 @@ export interface ContentRow {
 }
 export type RowStatus = 'direct' | 'supporting' | 'not_eligible' | 'none';
 export type ScienceRow = ContentRow & { status: RowStatus; n_direct: number; n_supporting: number };
-export type ScienceQuestion = QuestionRow & { level_tier: string | null; display_format: string | null; safety_note: string | null; links: { row_id: string; role: 'direct' | 'supporting' }[] };
+export type ScienceQuestion = QuestionRow & { level_tier: string | null; display_format: string | null; safety_note: string | null; links: { row_id: string; role: 'direct' | 'supporting'; rank?: string; rank_proposed?: boolean }[] };
 export interface Citation { source_id: string; page_from: number; page_to: number; raw: string; for_row_id: string | null }
 
 const ROW_COLS = 'row_id, topic_id, chapter_id, row_class, type, chapter_role, content, why_it_matters, misconceptions, diagram_description, picture_question, question_use, safety, source, found_in, confidence, notes, time_sensitive, time_checked_year, accuracy_flag, book, book_chapter_no, book_chapter_title, appears_in, sort, topic_classes_mapped, topic_taught_in, revisit, also_in_rows, originality_result, originality_field, originality_score, originality_ref, originality_override, in_master';
@@ -32,45 +32,70 @@ export async function scienceData(scope: { topicId: string } | { chapterId: stri
   const vids = questions.map((q) => q.version_id);
   const [extra, links] = await Promise.all([
     vids.length ? all<{ version_id: number; level_tier: string | null; display_format: string | null; safety_note: string | null }>((a, b) => supabase.from('cms_question_versions').select('version_id, level_tier, display_format, safety_note').in('version_id', vids).range(a, b)) : Promise.resolve([]),
-    vids.length ? all<{ version_id: number; row_id: string; role: 'direct' | 'supporting' }>((a, b) => supabase.from('cms_question_content_rows').select('version_id, row_id, role').in('version_id', vids).order('row_id').range(a, b)) : Promise.resolve([]),
+    vids.length ? all<{ version_id: number; row_id: string; role: 'direct' | 'supporting'; rank: string; rank_proposed: boolean }>((a, b) => supabase.from('cms_question_content_rows').select('version_id, row_id, role, rank, rank_proposed').in('version_id', vids).order('row_id').range(a, b)) : Promise.resolve([]),
   ]);
   const st = new Map(status.map((s) => [s.row_id, s]));
   const ex = new Map(extra.map((e) => [e.version_id, e]));
   return {
     rows: rows.map((r) => ({ ...r, status: st.get(r.row_id)?.status ?? 'none', n_direct: st.get(r.row_id)?.n_direct ?? 0, n_supporting: st.get(r.row_id)?.n_supporting ?? 0 })) as ScienceRow[],
     questions: questions.map((q) => ({ ...q, level_tier: ex.get(q.version_id)?.level_tier ?? null, display_format: ex.get(q.version_id)?.display_format ?? null,
-      safety_note: ex.get(q.version_id)?.safety_note ?? null, links: links.filter((l) => l.version_id === q.version_id).map((l) => ({ row_id: l.row_id, role: l.role })) })) as ScienceQuestion[],
+      safety_note: ex.get(q.version_id)?.safety_note ?? null, links: links.filter((l) => l.version_id === q.version_id).map((l) => ({ row_id: l.row_id, role: l.role, rank: l.rank, rank_proposed: l.rank_proposed })) })) as ScienceQuestion[],
   };
 }
 export type ScienceData = Awaited<ReturnType<typeof scienceData>>;
 
-/** The question detail's Science boxes: linked content rows (with their own fields) and the version's citations. */
+/** 0035: a content row's misconception item ("C6-04-014 #2"). */
+export interface RowItem { row_id: string; item_no: number; text: string; status: 'active' | 'needs_review' | 'retired'; source: string; unclear: boolean; split_note: string | null; proposed_by: string | null }
+export type Rank = 'primary' | 'secondary' | 'context';
+export interface Link { row_id: string; role: 'direct' | 'supporting'; rank: Rank; rank_proposed: boolean; weight: number }
+const ITEM_COLS = 'row_id, item_no, text, status, source, unclear, split_note, proposed_by';
+
+/** Items of some content rows (row order kept by the caller), retired ones included only when asked. */
+export async function rowItems(rowIds: string[], withRetired = false): Promise<RowItem[]> {
+  if (!rowIds.length) return [];
+  let q = supabase.from('cms_row_misconceptions').select(ITEM_COLS).in('row_id', rowIds);
+  if (!withRetired) q = q.neq('status', 'retired');
+  const { data, error } = await q.order('row_id').order('item_no');
+  if (error) throw new Error(error.message);
+  return (data ?? []) as RowItem[];
+}
+
+/** The question detail's Science boxes: linked content rows (with their own fields and items), the version's citations,
+ *  its misconception item and the wrong options' items (0035). */
 export async function scienceDetail(versionId: number) {
-  const links = (await supabase.from('cms_question_content_rows').select('row_id, role').eq('version_id', versionId)).data as { row_id: string; role: 'direct' | 'supporting' }[] ?? [];
-  const [rows, cites, v] = await Promise.all([
+  const links = (await supabase.from('cms_question_content_rows').select('row_id, role, rank, rank_proposed, weight').eq('version_id', versionId)).data as Link[] ?? [];
+  const [rows, cites, v, items, wrong] = await Promise.all([
     links.length ? supabase.from('cms_content_rows').select(ROW_COLS).in('row_id', links.map((l) => l.row_id)) : Promise.resolve({ data: [] }),
     supabase.from('cms_citations').select('source_id, page_from, page_to, raw, for_row_id').eq('version_id', versionId).order('citation_id'),
-    supabase.from('cms_question_versions').select('level_tier, display_format, misconception_targeted, safety_note, confidence').eq('version_id', versionId).single(),
+    supabase.from('cms_question_versions').select('level_tier, display_format, misconception_targeted, misconception_targeted_legacy, misconception_row_id, misconception_item_no, safety_note, confidence').eq('version_id', versionId).single(),
+    rowItems(links.map((l) => l.row_id), true),
+    supabase.from('cms_version_wrong_answers').select('option_position, mc_row_id, mc_item_no').eq('version_id', versionId).not('mc_row_id', 'is', null),
   ]);
   const byId = new Map(((rows.data ?? []) as ContentRow[]).map((r) => [r.row_id, r]));
   const citations = (cites.data ?? []) as Citation[];
   const srcIds = [...new Set(citations.map((c) => c.source_id))];
   const sources = srcIds.length ? ((await supabase.from('cms_sources').select('source_id, title, publisher').in('source_id', srcIds)).data ?? []) as { source_id: string; title: string; publisher: string }[] : [];
   return {
-    links: links.map((l) => ({ ...l, row: byId.get(l.row_id) ?? null })).sort((a, b) => (a.role === b.role ? a.row_id.localeCompare(b.row_id) : a.role === 'direct' ? -1 : 1)),
+    links: links.map((l) => ({ ...l, weight: Number(l.weight), row: byId.get(l.row_id) ?? null }))
+      .sort((a, b) => RANK_ORDER[a.rank] - RANK_ORDER[b.rank] || a.row_id.localeCompare(b.row_id)),
     citations, sources: new Map(sources.map((s) => [s.source_id, s])),
-    version: (v.data ?? {}) as { level_tier: string | null; display_format: string | null; misconception_targeted: string | null; safety_note: string | null; confidence: string | null },
+    version: (v.data ?? {}) as { level_tier: string | null; display_format: string | null; misconception_targeted: string | null; misconception_targeted_legacy: string | null;
+      misconception_row_id: string | null; misconception_item_no: number | null; safety_note: string | null; confidence: string | null },
+    items,
+    wrongItems: new Map(((wrong.data ?? []) as { option_position: number | null; mc_row_id: string; mc_item_no: number }[])
+      .filter((w) => w.option_position !== null).map((w) => [w.option_position!, `${w.mc_row_id} #${w.mc_item_no}`])),
   };
 }
 
 /** A content row's detail card: its citations (with source titles), the topic's approved classes
  *  (home class + active links) and where its "Also in" rows live (to open them). */
 export async function rowDetail(r: Pick<ContentRow, 'row_id' | 'topic_id' | 'also_in_rows'>) {
-  const [cites, classes, also, home] = await Promise.all([
+  const [cites, classes, also, home, items] = await Promise.all([
     supabase.from('cms_citations').select('source_id, page_from, page_to, raw').eq('row_id', r.row_id).order('citation_id'),
     supabase.from('cms_topic_all_classes').select('class').eq('topic_id', r.topic_id),
     r.also_in_rows.length ? supabase.from('cms_content_rows').select('row_id, topic_id, chapter_id, content').in('row_id', r.also_in_rows) : Promise.resolve({ data: [], error: null }),
     supabase.from('cms_topics').select('class').eq('topic_id', r.topic_id).maybeSingle(),
+    rowItems([r.row_id], true),
   ]);
   for (const x of [cites, classes, also, home]) if (x.error) throw new Error(x.error.message);
   const citations = (cites.data ?? []) as Omit<Citation, 'for_row_id'>[];
@@ -83,7 +108,34 @@ export async function rowDetail(r: Pick<ContentRow, 'row_id' | 'topic_id' | 'als
     alsoIn: r.also_in_rows.map((id) => ({ row_id: id, at: where.get(id) ?? null })),
     /** Q12: the topic's home class (cms_topics.class) */
     homeClass: ((home.data ?? null) as { class: number } | null)?.class ?? null,
+    /** 0035: the row's misconception items */
+    items,
   };
+}
+
+const RANK_ORDER: Record<Rank, number> = { primary: 0, secondary: 1, context: 2 };
+export type ScienceDetail = Awaited<ReturnType<typeof scienceDetail>>;
+
+/** The Science review box (0035): misconception item, wrong options' items, primary row, Solution 1. Open drafts only; audited. */
+export async function saveScienceReview(p: { question_id: string; version_no: number; reason?: string; misconception?: { row_id: string; item_no: number } | null;
+  wrong?: { position: number; mc: { row_id: string; item_no: number } | null }[]; primary_row_id?: string; solution1?: string }) {
+  const { data, error } = await supabase.rpc('cms_save_science_review', { p });
+  if (error) throw new Error(error.message);
+  return data as { changed: boolean };
+}
+
+/** Proposed → Misconception items: approve (active), retire (reason) or back to needs review. Audited. */
+export async function setRowItemStatus(rowId: string, itemNo: number, status: 'active' | 'retired' | 'needs_review', reason: string | null) {
+  const { error } = await supabase.rpc('cms_set_row_misconception_status', { p_row_id: rowId, p_item_no: itemNo, p_status: status, p_reason: reason });
+  if (error) throw new Error(error.message);
+}
+/** Items for the Proposed tab, with the questions that use each (current versions). */
+export async function itemsByStatus(status: 'active' | 'needs_review' | 'retired') {
+  const items = await all<RowItem>((a, b) => supabase.from('cms_row_misconceptions').select(ITEM_COLS).eq('status', status).order('row_id').order('item_no').range(a, b));
+  const rows = items.length ? await all<{ row_id: string; topic_id: string; row_class: number; content: string }>((a, b) =>
+    supabase.from('cms_content_rows').select('row_id, topic_id, row_class, content').in('row_id', [...new Set(items.map((i) => i.row_id))]).range(a, b)) : [];
+  const rowMap = new Map(rows.map((r) => [r.row_id, r]));
+  return items.map((i) => ({ ...i, row: rowMap.get(i.row_id) ?? null }));
 }
 
 /** Content-row coverage per topic and row class (Home and the curriculum map). */

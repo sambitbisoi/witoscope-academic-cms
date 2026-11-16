@@ -3,7 +3,8 @@
 export type Format = 'MCQ-4' | 'MCQ-3' | 'True/False' | 'Typed-number' | 'Typed-decimal' | 'Typed-fraction' | 'Typed-text' | 'Multi-part';
 export type WrongTag = 'misconception' | 'concept_error' | 'shortcut' | 'partial' | 'lost_step' | 'used_irrelevant' | 'misread' | 'unit_slip' | 'implausible';
 
-export interface WrongAnswer { value: string; tag: WrongTag; misconception_id?: string; target_concept_id?: string; why?: string }
+export interface WrongAnswer { value: string; tag: WrongTag; misconception_id?: string; target_concept_id?: string; why?: string;
+  /** Science (0035): the content-row misconception item this wrong option shows, e.g. C6-04-014 #2 */ mc?: { row_id: string; item_no: number } }
 export interface Answer { format: Format; options?: string[]; correct: string; accepted?: string[]; wrong_answers?: WrongAnswer[] }
 export interface ConceptRef { concept_id: string; involvement: 1 | 0.5 | 0.2 }
 export interface Part { part_label: string; text: string; answer: Answer; concepts: ConceptRef[] }

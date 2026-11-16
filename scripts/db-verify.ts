@@ -61,7 +61,7 @@ try {
   check('cms_is_admin: security definer, stable, empty search_path, authenticated only',
     !!adm && adm.prosecdef && adm.provolatile === 's' && adm.proconfig?.[0] === 'search_path=""' && adm.auth_exec && !adm.anon_exec);
 
-  const DEFINER_ALLOWED = ['cms_is_admin', 'cms_apply_save', 'cms_set_status', 'cms_retire', 'cms_record_run', 'cms_save_job', 'cms_set_catalogue_status', 'cms_save_curriculum', 'cms_decide_override', 'cms_set_topic_review', 'cms_add_questions', 'cms_save_order', 'cms_decide_topic_class'];
+  const DEFINER_ALLOWED = ['cms_is_admin', 'cms_apply_save', 'cms_set_status', 'cms_retire', 'cms_record_run', 'cms_save_job', 'cms_set_catalogue_status', 'cms_save_curriculum', 'cms_decide_override', 'cms_set_topic_review', 'cms_add_questions', 'cms_save_order', 'cms_decide_topic_class', 'cms_save_science_review', 'cms_set_row_misconception_status'];
   const badFns = fns.filter((f) => f.proconfig?.[0] !== 'search_path=""' || f.anon_exec || (f.prosecdef && !DEFINER_ALLOWED.includes(f.proname)));
   check('every cms function: empty search_path, no anon access; only the listed functions run as owner', badFns.length === 0, badFns.map((f) => f.proname).join(', '));
 
@@ -85,6 +85,29 @@ try {
   const [badCit] = await sql`select count(*)::int as n from cms.cms_citations
     where raw !~ '^(NCERT p\\.|DAV |Claude-added \\(extends NCERT p|[A-Za-z][A-Za-z0-9]* (pp?\\.)?[0-9])' or char_length(raw) > 80`;
   check('every Science citation label looks like "NCERT p.N" / "<book> p.N"', badCit!.n === 0, `${badCit!.n} other labels`);
+
+  // Science misconception items and primary rows (0035, 16 Nov 2026)
+  const hasItems = (await sql`select to_regclass('cms.cms_row_misconceptions') as t`)[0]!.t !== null;
+  if (hasItems) {
+    const [x] = await sql`select
+      (select count(*)::int from cms.cms_question_versions v where v.misconception_row_id is not null
+         and not exists (select 1 from cms.cms_question_content_rows l where l.version_id = v.version_id and l.row_id = v.misconception_row_id)) as off_row,
+      (select count(*)::int from cms.cms_version_wrong_answers w where w.mc_row_id is not null
+         and not exists (select 1 from cms.cms_question_content_rows l where l.version_id = w.version_id and l.row_id = w.mc_row_id)) as wrong_off_row,
+      (select count(*)::int from (select version_id from cms.cms_question_content_rows where rank = 'primary' group by 1 having count(*) > 1) t) as two_primary,
+      (select count(*)::int from cms.cms_question_content_rows where (role = 'supporting') <> (rank = 'context')) as bad_rank,
+      (select count(*)::int from (select row_id from cms.cms_row_misconceptions group by 1 having max(item_no) <> count(*)) t) as gaps,
+      exists (select 1 from cms.cms_imports where kind = 'science_rationalise' and finished_at is not null) as rationalised,
+      (select count(*)::int from cms.cms_question_versions v join cms.cms_questions q on q.question_id = v.question_id
+         where q.subject = 'science' and btrim(coalesce(v.misconception_targeted, '')) <> '') as free_text,
+      (select count(*)::int from cms.cms_content_rows r where btrim(coalesce(r.misconceptions, '')) <> ''
+         and not exists (select 1 from cms.cms_row_misconceptions m where m.row_id = r.row_id and m.source = 'row split')) as unsplit`;
+    check('Science misconception references point at items of the question\'s own content rows', x!.off_row === 0 && x!.wrong_off_row === 0, `${x!.off_row} targeted, ${x!.wrong_off_row} wrong options off their rows`);
+    check('at most one primary content row per version; supporting rows are context', x!.two_primary === 0 && x!.bad_rank === 0, `${x!.two_primary} with two primaries, ${x!.bad_rank} rank/role mismatches`);
+    check('misconception items are numbered 1…n per row, no gaps', x!.gaps === 0, `${x!.gaps} rows with gaps`);
+    check('after science:rationalise: no free-text Science misconception, every row\'s misconceptions split into items',
+      !x!.rationalised || (x!.free_text === 0 && x!.unsplit === 0), x!.rationalised ? `${x!.free_text} free text, ${x!.unsplit} rows not split` : 'not rationalised yet');
+  }
 
   const [admin] = await sql`select value #>> '{}' as id from cms.cms_config where key = 'admin_user_id'`;
   check('cms_config.admin_user_id is set to a UUID', /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(admin?.id ?? ''), admin?.id ?? 'not set');

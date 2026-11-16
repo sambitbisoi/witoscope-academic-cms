@@ -669,3 +669,21 @@ table.proposed-table tbody tr.sel { background: var(--sel-bg); box-shadow: inset
 table.proposed-table td.col-name { min-width: 240px; }
 main.wide.proposed-main { max-width: 1440px; }
 table.proposed-table td.col-topic { min-width: 160px; }
+
+/* 0035 (16 Nov 2026): Science review box, ranks, misconception items */
+.tag.rank-primary { background: var(--warn-bg); color: var(--text); font-weight: 600; }
+.tag.rank-secondary { background: var(--chip); color: var(--text); }
+.tag.rank-context { background: var(--chip); color: var(--muted); }
+.tag.rank-proposed { font-style: italic; outline: 1px dashed var(--warn); }
+.warn-text { color: var(--warn); }
+.sci-items { margin: 0; padding: 0; list-style: none; }
+.sci-items li { margin: 2px 0; }
+.tint-box.sci-review { display: grid; gap: 10px; }
+.sci-rv-f { display: grid; grid-template-columns: 9.5rem 1fr; gap: 8px; align-items: start; }
+.sci-rv-l { font-size: 0.85em; color: var(--muted); padding-top: 3px; }
+.sci-rv-f select, .sci-rv-f textarea { width: 100%; max-width: 100%; box-sizing: border-box; }
+.sci-rv-wrong { display: grid; gap: 6px; }
+.sci-rv-wrong .opt-label { display: block; margin-bottom: 2px; }
+.sci-rv-radio { display: flex; gap: 6px; align-items: baseline; margin: 2px 0; }
+.sci-rv-actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; }
+@media (max-width: 700px) { .sci-rv-f { grid-template-columns: 1fr; } }

@@ -1,0 +1,158 @@
+{
+ "_about": "Reviewed split decisions for content rows whose misconceptions text has more than one clause (Q16, 16 Nov 2026). A decision applies only while the row text is exactly the same; otherwise the rules in shared/science-items.ts apply and the row is reported.",
+ "rows": {
+  "C1-DAN-004": {
+   "text": "All big animals are wild animals. Wild animals live only in jungles.",
+   "action": "split",
+   "note": "two misconceptions (reviewed 16 Nov 2026)"
+  },
+  "C1-DME-004": {
+   "text": "Our body stops changing once we start school. When teeth fall out, they never grow back.",
+   "action": "split",
+   "note": "two misconceptions (reviewed 16 Nov 2026)"
+  },
+  "C1-DSU-009": {
+   "text": "Deserts are full of water. Every desert is hot and sandy.",
+   "action": "split",
+   "note": "two misconceptions (reviewed 16 Nov 2026)"
+  },
+  "C1-DWA-008": {
+   "text": "Clear water is always safe to drink. Any filter makes water safe.",
+   "action": "split",
+   "note": "two misconceptions (reviewed 16 Nov 2026)"
+  },
+  "C3-02-003": {
+   "text": "Only fast buses are dangerous; a slow bus cannot hurt anyone.",
+   "action": "whole",
+   "note": "one idea: the second clause restates the first"
+  },
+  "C3-06-029": {
+   "text": "Planting a sapling once is enough; it needs no care.",
+   "action": "whole",
+   "note": "one idea: the second clause restates the first"
+  },
+  "C3-06-039": {
+   "text": "The painted stork flies to India each winter from cold countries. Siberian cranes still come to India every winter.",
+   "action": "split",
+   "note": "two misconceptions (reviewed 16 Nov 2026)"
+  },
+  "C3-08-026": {
+   "text": "A potato is a root. An onion is just a stem.",
+   "action": "split",
+   "note": "two misconceptions (reviewed 16 Nov 2026)"
+  },
+  "C3-10-005": {
+   "text": "All metals are found lying ready-made on the ground. (Most are not, though a few, like gold, can be found as pure bits.)",
+   "action": "items",
+   "items": [
+    "All metals are found lying ready-made on the ground."
+   ],
+   "unclear": true,
+   "note": "the bracket is the correction, not a misconception; item = the first sentence only"
+  },
+  "C3-11-008": {
+   "text": "All bricks are cut from rocks. (Baked bricks are moulded from mud; only in some places, such as Kerala, are blocks of laterite stone cut and used like bricks.)",
+   "action": "items",
+   "items": [
+    "All bricks are cut from rocks."
+   ],
+   "unclear": true,
+   "note": "the bracket is the correction, not a misconception; item = the first sentence only"
+  },
+  "C3-12-001": {
+   "text": "Only factories make waste; homes do not.",
+   "action": "whole",
+   "note": "one idea: the second clause restates the first"
+  },
+  "C4-02-002": {
+   "text": "A town must choose either new roads or trees; it cannot have both.",
+   "action": "whole",
+   "note": "one idea: the second clause restates the first"
+  },
+  "C5-04-016": {
+   "text": "Litter only looks ugly; it does no harm.",
+   "action": "whole",
+   "note": "one idea: the second clause restates the first"
+  },
+  "C5-DPL-064": {
+   "text": "Before J.C. Bose, nobody knew that plants were living things.",
+   "action": "whole",
+   "note": "one sentence (\"J.C.\" is an abbreviation)"
+  },
+  "C6-01-008": {
+   "text": "Anything written in a science book is fixed forever; or, if an idea changes, science has failed.",
+   "action": "split",
+   "note": "two misconceptions (reviewed 16 Nov 2026)"
+  },
+  "C6-01-019": {
+   "text": "Everyone's normal temperature is exactly 37 °C at all times; in fact it varies slightly from person to person and through the day.",
+   "action": "items",
+   "items": [
+    "Everyone's normal temperature is exactly 37 °C at all times."
+   ],
+   "unclear": true,
+   "note": "\"; in fact …\" is the correction, not a misconception; item = the first clause only"
+  },
+  "C6-01-023": {
+   "text": "The Sun is not a star; or, stars are tiny points of light much smaller than the Sun.",
+   "action": "split",
+   "note": "two misconceptions (reviewed 16 Nov 2026)"
+  },
+  "C6-02-035": {
+   "text": "Bats are birds; whales are fish.",
+   "action": "split",
+   "note": "two misconceptions (reviewed 16 Nov 2026)"
+  },
+  "C6-02-044": {
+   "text": "Herbs are only plants used in cooking or medicine; tall plants cannot be herbs.",
+   "action": "whole",
+   "unclear": true,
+   "note": "one idea or two? (\"herbs are only cooking or medicine plants\" / \"tall plants cannot be herbs\"); kept whole"
+  },
+  "C6-02-080": {
+   "text": "Every flying animal is a bird; birds fly using only their wings.",
+   "action": "split",
+   "note": "two misconceptions (reviewed 16 Nov 2026)"
+  },
+  "C6-02-091": {
+   "text": "Invertebrates are always tiny. All invertebrates have soft bodies.",
+   "action": "split",
+   "note": "two misconceptions (reviewed 16 Nov 2026)"
+  },
+  "C6-02-116": {
+   "text": "Grasses have no flowers. Mushrooms are non-flowering plants.",
+   "action": "split",
+   "note": "two misconceptions (reviewed 16 Nov 2026)"
+  },
+  "C6-04-008": {
+   "text": "Only factories can make magnets; a piece of soft iron magnetised by a magnet stays a magnet for ever.",
+   "action": "split",
+   "note": "two misconceptions (reviewed 16 Nov 2026)"
+  },
+  "C6-04-028": {
+   "text": "There is a huge bar magnet buried inside the Earth; or, a compass points to the exact geographic North Pole.",
+   "action": "split",
+   "note": "two misconceptions (reviewed 16 Nov 2026)"
+  },
+  "C6-10-012": {
+   "text": "Plants do not respire; they only make oxygen.",
+   "action": "whole",
+   "note": "one idea: the second clause explains the first"
+  },
+  "C6-DAN-003": {
+   "text": "An organ is made of only one kind of cell; nerves from the brain start every heartbeat.",
+   "action": "split",
+   "note": "two misconceptions (reviewed 16 Nov 2026)"
+  },
+  "C6-DEN-025": {
+   "text": "Used batteries belong in the blue bin along with plastic and glass; paper and cardboard go in the green (wet) bin.",
+   "action": "split",
+   "note": "two misconceptions (reviewed 16 Nov 2026)"
+  },
+  "C6-DPL-003": {
+   "text": "Only roots and leaves do any work; the stem just stands there.",
+   "action": "whole",
+   "note": "one idea: the second clause restates the first"
+  }
+ }
+}

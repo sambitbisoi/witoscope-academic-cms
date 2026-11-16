@@ -1,0 +1,14 @@
+{
+ "_about": "Reviewed Solution 1 drafts (Q18, 16 Nov 2026) for Science questions whose Solution 1 was under 60 characters: answer + short reasoning, only from the linked content rows (our own words), at row-class depth. Written in place by science:rationalise; the question stays Needs review.",
+ "questions": {
+  "SQ000202": {
+   "text": "Y. The magnet that holds more steel clips is the stronger one, and Y holds more clips than X. \"Both are equally strong\" is wrong because the two clip counts are not the same. \"You cannot tell from clips\" is wrong because counting clips is exactly how we compare magnets."
+  },
+  "SQ000246": {
+   "text": "False. Like poles (north–north or south–south) repel each other; only unlike poles (north and south) attract. Choosing \"True\" is the common mistake of thinking that like poles attract."
+  },
+  "SQ000258": {
+   "text": "They roll towards each other and stick. Now an N pole faces an S pole, and unlike poles attract, so the cars pull together. \"They roll away from each other\" is what happened before, when like poles faced each other. \"Only the car with the N pole moves away\" and \"Nothing happens\" are wrong because unlike poles pull both cars together."
+  }
+ }
+}
