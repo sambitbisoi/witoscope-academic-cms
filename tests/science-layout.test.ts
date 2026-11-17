@@ -106,3 +106,21 @@ describe('0035: ranks and Science approval blockers', () => {
     expect(scienceBlockers({ ...ok, links: [], misconceptionText: 'x', wrongItems: [{ status: 'needs_review' }] })).toEqual(['no primary content row', 'misconception is free text', "a wrong option's item needs review"]);
   });
 });
+
+// Q34 (Round 2): Science Browse filters
+import { sciFilter } from '../web/src/scienceLogic.ts';
+describe('sciFilter (Q34)', () => {
+  const qs = [{ id: 'a', science_question_type: null, tier: null, markers: 0 }, { id: 'b', science_question_type: 4, tier: 'Achiever', markers: 2 },
+    { id: 'c', science_question_type: 2, tier: 'School', markers: 3 }, { id: 'd', science_question_type: 5, tier: 'Super Achiever', markers: 4 }];
+  const ids = (f: Partial<{ type: string; tier: string; markers: string }>) => sciFilter(qs, { type: '', tier: '', markers: '', ...f }).map((q) => q.id).join('');
+  it('filters by type, tier and markers', () => {
+    expect(ids({})).toBe('abcd');
+    expect(ids({ type: 'none' })).toBe('a');
+    expect(ids({ type: '4' })).toBe('b');
+    expect(ids({ tier: 'none' })).toBe('a');
+    expect(ids({ tier: 'School' })).toBe('c');
+    expect(ids({ markers: '0' })).toBe('a');
+    expect(ids({ markers: '3+' })).toBe('cd');
+    expect(ids({ tier: 'Super Achiever', markers: '3+' })).toBe('d');
+  });
+});

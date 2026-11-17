@@ -84,11 +84,13 @@ describe('checks (design §8)', () => {
     expect(errs(withQ(q))).toContain('needs at least one concept at involvement 1.0');
   });
 
-  it('MCQ: correct must be an option; every wrong option tagged', () => {
+  it('MCQ: correct must be an option; wrong options are tagged "where confident" (Q33, v12: untagged is valid)', () => {
     const q = q0(); q.answer.correct = '8/12';
     expect(errs(withQ(q))).toContain('correct answer "8/12" is not one of the options');
     const q2 = q0(); q2.answer.wrong_answers = q2.answer.wrong_answers!.slice(0, 1);
-    expect(errs(withQ(q2))).toContain('wrong options not tagged: "4/12", "13/12"');
+    expect(errs(withQ(q2))).toEqual([]);
+    const q3 = q0(); q3.answer.wrong_answers = [];
+    expect(errs(withQ(q3))).toEqual([]);
   });
 
   it('Achievers questions may leave wrong options untagged', () => {

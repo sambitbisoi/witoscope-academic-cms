@@ -37,6 +37,18 @@ Reports: `.local-import/concept-first-taught-{rehearsal,real}-*.md` (concept lis
 | Rehearsal | 0042 guarded (only `cms_config` + 1 key `science_steps_bands`) · 0 Science versions typed → 0 tier changes, 0 audit rows · view: 134 rows · db:verify ✓ |
 | Real | The same (0 tier changes, 134 derived rows, 19 markers in all) · db:verify ✓ |
 
+### Q34: Science gold IDs (migration 0043)
+
+| Step | Result |
+|---|---|
+| Backup | `~/WitoScope/CMS-backups/real-cms-2026-11-17-pre-0043.dump` |
+| Rehearsal / Real | The gold question-ID CHECK widened (`GS<class>-NNN` for Science gold) · every existing table unchanged · db:verify ✓ |
+| Re-import safety | Today's Science master, read with the new reader: 134/134 question hashes equal the stored ones, so a re-import replaces nothing |
+
+### Q33: rule change v11 → v12, "tag wrong options where confident" (Math and Science)
+
+**Approval (Sambit, 17 Nov 2026):** "Wrong options tagged 'where confident' for Math and Science (attributes v11 → v12, confirmed by Sambit)". An untagged wrong option no longer blocks an import (`checkFile`), an edit or a Generate draft. The database never blocked approval on it. Documented in `claude/question-bank/generation-prompt.md`. **No data changed.** `cms_config.current_rule_version` stays `v11` until a v12 workbook is seeded (decision §10.10).
+
 ## 17 Nov 2026: Round 1 (plan `docs/plan-2026-11-17-round1.md`)
 
 **Request (Sambit, 17 Nov 2026):** Round 1 items T1, T2, Q14, Q19, Q20, Q21, Q22, D18; "go" with decisions §10. Real data steps in small batches, each checked on a fresh restore first.

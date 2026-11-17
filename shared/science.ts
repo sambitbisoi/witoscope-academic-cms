@@ -14,6 +14,27 @@ export const CONTENT_COLUMNS = ['File', 'Class', 'Book', 'Chapter no.', 'Chapter
 export const QUESTION_COLUMNS = ['File', 'Class', 'Q ID', 'Content row ID(s)', 'Direct row ID(s)', 'Topic ID', 'Row class', 'Row type', 'Level', 'Format', 'Question',
   'Option A', 'B', 'C', 'D', 'Answer', 'Explanation', 'Misconception targeted', 'Picture needed (Y/N)', 'Image brief (question)', 'Image briefs (options)', 'Safety note',
   'Taught in', 'Confidence', 'Notes'] as const;
+/** Q34 (Round 2, 17 Nov 2026): OPTIONAL question columns (docs/science-import-format.md). A file without them imports as before. */
+export const QUESTION_OPTIONAL_COLUMNS = ['Science question type', 'Setting', 'Setting familiarity', 'Hidden idea (Y/N)', 'Experiment (Y/N)',
+  'Tag A', 'Tag B', 'Tag C', 'Tag D', 'Gold use'] as const;
+export const WRONG_TAGS = ['misconception', 'concept_error', 'shortcut', 'partial', 'lost_step', 'used_irrelevant', 'misread', 'unit_slip', 'implausible'] as const;
+export const FAMILIARITY = ['Bare', 'Everyday', 'Less familiar', 'Rare'] as const;
+/** "2", "2 · Basic understanding", "2 Basic understanding" → 2 (1–5); anything else → NaN; blank → null */
+export const scienceType = (v: unknown): number | null => { const s = str(v); if (s === null) return null; const m = /^([1-5])(\b|\s|·|$)/.exec(s); return m ? Number(m[1]) : NaN; };
+/** "Everyday", "less familiar" → the canonical value; blank → null; unknown → undefined */
+export const familiarity = (v: unknown): string | null | undefined => { const s = str(v); if (s === null) return null; return FAMILIARITY.find((f) => f.toLowerCase() === s.toLowerCase()); };
+/** A wrong option's tag: "shortcut", "misconception C6-04-014 #2", "concept_error: C6-04-002". Blank → null; unknown tag → { tag: '' } */
+export const optionTag = (v: unknown): { tag: string; ref: string | null } | null => {
+  const s = str(v); if (s === null) return null;
+  const m = /^([a-z_]+)\s*:?\s*(.*)$/i.exec(s);
+  const tag = (m?.[1] ?? '').toLowerCase().replace(/ /g, '_');
+  return { tag: (WRONG_TAGS as readonly string[]).includes(tag) ? tag : '', ref: m?.[2]?.trim() || null };
+};
+/** "Prompt example" / "Test only" → the gold Use; blank → null (production); unknown → undefined */
+export const goldUse = (v: unknown): 'prompt_example' | 'test_only' | null | undefined => {
+  const s = str(v)?.toLowerCase().replace(/[\s_-]+/g, ' '); if (!s) return null;
+  return s === 'prompt example' ? 'prompt_example' : s === 'test only' ? 'test_only' : undefined;
+};
 export const LEGEND_COLUMNS = ['Section', 'Name', 'Description', 'File', 'Class', 'Offset (printed = PDF + offset)', 'Printed pages'] as const;
 
 export const missingColumns = (have: Iterable<string>, need: readonly string[]) => { const h = new Set(have); return need.filter((c) => !h.has(c)); };

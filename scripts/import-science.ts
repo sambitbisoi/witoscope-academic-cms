@@ -36,6 +36,7 @@ export function printResult(r: ScienceResult) {
   console.log(`Topic–class links PROPOSED (not active; approve in Proposed): ${r.proposals.length}${r.proposals.some((p) => !p.isNew) ? ` (${r.proposals.filter((p) => p.isNew).length} new)` : ''}`);
   for (const p of r.proposals) console.log(`  ${p.topic_id} ${p.name} · home class ${p.home_class} · row class ${p.row_class} · suggested role: from a ${p.role} class · ${p.rows} row${p.rows === 1 ? '' : 's'}`);
   console.log(`Questions:     ${n(r.questions.created)} new · ${n(r.questions.replaced)} drafts replaced · ${r.questions.unchanged} unchanged · ${n(r.questions.skipped)} skipped · ${n(r.questions.blocked)} blocked`);
+  if (r.questions.gold.length || r.questions.tags) console.log(`               Q34: ${r.questions.gold.length} Science gold (${r.questions.gold.join(', ') || '—'}) · ${r.questions.tags} wrong-option tags written (docs/science-import-format.md)`);
   console.log(`               originality: ${Object.entries(r.originality.questions).map(([k, v]) => `${v} ${k.replace('_', '-')}`).join(' · ')}`);
   for (const s of r.questions.skipped) console.log(`  skipped ${s.qid}: ${s.why}`);
   for (const s of r.questions.held_out) console.log(`  HELD OUT ${s.qid}: ${s.why} (see the Held out tab)`);
