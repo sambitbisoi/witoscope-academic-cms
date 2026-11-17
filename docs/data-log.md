@@ -2,6 +2,19 @@
 
 Changes to real (non-test) data that Sambit approved, with what was done and where the audit trail is.
 
+## 16–17 Nov 2026: Science misconception items, primary rows, Solution 1 (migration 0035, science:rationalise)
+
+**Request (Sambit, 16 Nov 2026):** Q16 Q17 Q18 (`docs/plan-2026-11-16-q11-q18.md`, decisions §8): split content-row misconceptions into items, tie each Science question's misconception and wrong options to items, one primary row per question, Solution 1 drafts for short ones; dry run on a restored copy first, then real.
+
+| Step | Result |
+|---|---|
+| Backup | `~/WitoScope/CMS-backups/real-cms-2026-11-16-pre-0035.dump` (schema `cms`, read-only file); restored to the local DB `cms_rehearsal` |
+| Fresh §0 counts (real copy) | 3,505 rows (Classes 1–6; the plan's 2,407 came from an old local copy), 1,408 with misconceptions, 27 split candidates; 134 questions (90 with misconception text, 82 exact on a linked row); 19 with 2–3 direct rows; 0 Science wrong-answer rows; 3 Solution 1 under 60 characters |
+| Rehearsal | 0035 + `db:verify` ✓; dry run: 16 rows split, 4 unclear (0.3%), 1,424 items; 81 exact + 1 ambiguous + 8 via an unlinked row (linked as supporting); 0 unmatched; 115 primary + 19 proposed; 6 wrong options tagged; 3 solutions drafted; guard (all non-Science rows) unchanged; a second run changes nothing |
+| Real | 0035 applied, `db:verify` ✓, guard unchanged. Dry run identical to the rehearsal. Real run: the pooler dropped long transactions (nothing committed by the failed tries), so it ran with `--batch` (units of 5, each its own transaction, retried; orphaned sessions ended first): imports #816 (items) and #820–#855. Result identical to the dry run. `db:verify` ✓, guard unchanged |
+
+Report: `.local-import/science-rationalise-real-2026-11-170015.md` (+ `.json`).
+
 ## 15 Nov 2026: Science master with Classes 1–3 (import #369)
 
 **Request (Sambit, 15 Nov 2026):** import the rebuilt Science master (Classes 1–3 added; Classes 4–6 unchanged) into the real CMS from a dated snapshot, same process as import #365, with stop conditions.

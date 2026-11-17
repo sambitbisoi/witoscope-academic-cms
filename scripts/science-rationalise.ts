@@ -40,7 +40,7 @@ export interface Report {
   thresholds: { unclear_pct: number; unmatched_pct: number };
 }
 
-export async function rationalise(sql: ReturnType<typeof connect>, opts: { dryRun: boolean; target: 'local' | 'real' }): Promise<Report> {
+export async function rationalise(sql: ReturnType<typeof connect>, opts: { dryRun: boolean; target: 'local' | 'real'; /** --batch: only these questions in this unit */ only?: Set<string> }): Promise<Report> {
   const drafts = existsSync(DRAFTS) ? (JSON.parse(readFileSync(DRAFTS, 'utf8')) as { questions: Record<string, { text: string }> }).questions : {};
   const res: Report = {
     target: opts.target, database: new URL(targetUrl()).pathname.slice(1), dry_run: opts.dryRun, import_id: null, stopped: null, items: null,
@@ -60,7 +60,10 @@ export async function rationalise(sql: ReturnType<typeof connect>, opts: { dryRu
 
       // 1. items
       const rows = await tx<{ row_id: string; misconceptions: string | null; content: string; sort: number }[]>`select row_id, misconceptions, content, sort from cms.cms_content_rows order by row_id`;
+      const log = (m: string) => process.stderr.write(`[${new Date().toISOString().slice(11, 19)}] ${m}\n`);
+      log('splitting rows');
       res.items = await syncRowItems(tx, rows, importId, BY);
+      log(`items: ${res.items.items_created} new`);
       const rowById = new Map(rows.map((r) => [r.row_id, r]));
       const itemsOf = new Map<string, Item[]>();
       const allItems: Item[] = [];
@@ -69,11 +72,11 @@ export async function rationalise(sql: ReturnType<typeof connect>, opts: { dryRu
       }
 
       // 2–5. questions (current versions of Science questions)
-      const versions = await tx<{ version_id: string; question_id: string; version_no: number; status: string; text: string; correct: string; misconception_targeted: string | null;
+      const versions = (await tx<{ version_id: string; question_id: string; version_no: number; status: string; text: string; correct: string; misconception_targeted: string | null;
         misconception_targeted_legacy: string | null; misconception_row_id: string | null }[]>`
         select v.version_id, q.question_id, v.version_no, v.status, v.text, v.correct, v.misconception_targeted, v.misconception_targeted_legacy, v.misconception_row_id
           from cms.cms_questions q join cms.cms_question_versions v on v.question_id = q.question_id and v.version_no = q.current_version
-         where q.subject = 'science' and q.retired_at is null order by q.question_id`;
+         where q.subject = 'science' and q.retired_at is null order by q.question_id`).filter((v) => !opts.only || opts.only.has(v.question_id));
       res.questions.science_versions = versions.length;
       const oldText = new Map(versions.map((v) => [v.question_id, v.misconception_targeted]));
       for (const v of versions) {
@@ -190,6 +193,7 @@ export async function rationalise(sql: ReturnType<typeof connect>, opts: { dryRu
         const [x] = await tx`select misconception_targeted_legacy as l, misconception_targeted as m from cms.cms_question_versions where version_id = ${Number(v.version_id)}`;
         if (x!.l !== t && x!.m !== t) res.legacy.lost.push(v.question_id);
       }
+      log('questions done; checking the guard');
       res.guard.changed = guardDiff(pre, await guardDigest(tx as never));
       const withText = res.items!.rows_with_text || 1;
       res.thresholds.unclear_pct = Math.round((1000 * res.items!.unclear.length) / withText) / 10;
@@ -204,12 +208,34 @@ export async function rationalise(sql: ReturnType<typeof connect>, opts: { dryRu
 
       await tx`update cms.cms_imports set finished_at = now(), result = 'ok', counts = ${tx.json(counts(res) as never)} where import_id = ${importId}`;
       if (opts.dryRun) throw new Rollback(res);
+      log('committing');
     });
   } catch (e) {
     if (e instanceof Rollback) return e.result;
     throw e;
   }
   return res;
+}
+
+/** --batch: one report from the units (items from the first unit; lists joined; counts added up). */
+export function mergeReports(parts: Report[]): Report {
+  const [first] = parts;
+  const r: Report = JSON.parse(JSON.stringify(first));
+  for (const p of parts.slice(1)) {
+    const q = r.questions, pq = p.questions;
+    q.science_versions += pq.science_versions; q.open += pq.open; q.with_text += pq.with_text; q.none += pq.none; q.already_done += pq.already_done;
+    q.skipped_not_open.push(...pq.skipped_not_open);
+    for (const k of ['matched_exact', 'matched_fuzzy', 'ambiguous', 'linked_supporting', 'unmatched_new_item'] as const) q[k].push(...pq[k]);
+    r.primary.set_single += p.primary.set_single; r.primary.already += p.primary.already; r.primary.proposed.push(...p.primary.proposed);
+    r.wrong_options.tagged.push(...p.wrong_options.tagged); r.wrong_options.untagged.push(...p.wrong_options.untagged);
+    r.solutions.drafted.push(...p.solutions.drafted); r.solutions.short_without_draft.push(...p.solutions.short_without_draft); r.solutions.no_wrong_option.push(...p.solutions.no_wrong_option);
+    r.legacy.copied += p.legacy.copied; r.legacy.lost.push(...p.legacy.lost);
+    r.guard.changed = [...new Set([...r.guard.changed, ...p.guard.changed])];
+    r.stopped = r.stopped ?? p.stopped;
+    r.import_id = p.import_id;
+  }
+  r.thresholds.unmatched_pct = Math.round((1000 * r.questions.unmatched_new_item.length) / (r.questions.science_versions || 1)) / 10;
+  return r;
 }
 
 export const counts = (r: Report) => ({
@@ -254,10 +280,48 @@ if (import.meta.filename === process.argv[1]) {
   const host = new URL(targetUrl()).hostname;
   const target = host === '127.0.0.1' || host === 'localhost' ? 'local' as const : 'real' as const;
   if (target === 'real' && !dryRun && !args.includes('--confirm-real')) { console.error('Refused: a real run needs --confirm-real (after a clean dry run).'); process.exit(1); }
-  const sql = connect();
+  // --batch N (real, 16 Nov 2026): the pooler drops long transactions, so items go in one unit and the questions in
+  // units of N, each its own transaction on a fresh connection (retried once; every step is idempotent). Each unit
+  // runs the guard and the stop checks; the reports are merged.
+  const bi = args.indexOf('--batch');
+  const batch = bi >= 0 ? Number(args[bi + 1]) : 0;
+  const sql = connect(undefined, { keepAliveSeconds: 10 });
   try {
     await assertCmsOwner(sql);
-    const r = await rationalise(sql, { dryRun, target });
+    let r: Report;
+    if (!batch) r = await rationalise(sql, { dryRun, target });
+    else {
+      const ids = (await sql`select question_id from cms.cms_questions where subject = 'science' and retired_at is null order by 1`).map((x) => x.question_id as string);
+      const units = [[] as string[], ...Array.from({ length: Math.ceil(ids.length / batch) }, (_, i) => ids.slice(i * batch, (i + 1) * batch))];
+      const parts: Report[] = [];
+      for (const [i, u] of units.entries()) {
+        let out: Report | null = null;
+        for (let attempt = 1; attempt <= 5 && !out; attempt++) {
+          if (attempt > 1) {
+            // a dropped client leaves its server transaction open (holding locks); end our own orphans first
+            const k = connect(undefined, { keepAliveSeconds: 10 });
+            try {
+              await new Promise((ok) => setTimeout(ok, 3000));
+              const gone = await k`select pg_terminate_backend(pid) from pg_stat_activity where datname = current_database() and usename = current_user
+                and pid <> pg_backend_pid() and state like 'idle in transaction%'`;
+              if (gone.length) console.error(`  ended ${gone.length} orphaned session(s)`);
+            } finally { await k.end({ timeout: 5 }).catch(() => {}); }
+          }
+          const c = connect(undefined, { keepAliveSeconds: 10 });
+          try {
+            let timer: ReturnType<typeof setTimeout> | undefined;
+            out = await Promise.race([rationalise(c, { dryRun, target, only: new Set(u) }),
+              new Promise<never>((_, rej) => { timer = setTimeout(() => rej(new Error('watchdog: no answer for 3 min')), 180_000); })])
+              .finally(() => clearTimeout(timer));
+          } catch (e) { console.error(`unit ${i} attempt ${attempt}: ${(e as Error).message}`); if (attempt === 5) throw e; }
+          finally { await c.end({ timeout: 5 }).catch(() => {}); }
+        }
+        console.error(`unit ${i}/${units.length - 1}: ${u.length} questions${out!.stopped ? ` STOPPED: ${out!.stopped}` : ''}`);
+        parts.push(out!);
+        if (out!.stopped) break;
+      }
+      r = mergeReports(parts);
+    }
     const dir = join(import.meta.dirname, '..', '.local-import'); mkdirSync(dir, { recursive: true });
     const base = join(dir, `science-rationalise-${target}${dryRun ? '-dry-run' : ''}-${new Date().toISOString().slice(0, 16).replace(/[:T]/g, '')}`);
     writeFileSync(`${base}.json`, JSON.stringify(r, null, 2) + '\n');

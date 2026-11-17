@@ -105,3 +105,20 @@ describe('brackets: gloss or correction', () => {
     expect(splitMisconceptions('All metals are found ready-made. (Most are not, though a few are.)').rule).toBe('kept-correction');
   });
 });
+
+describe('science:rationalise --batch', () => {
+  it('merges unit reports: items from the first unit, lists joined, counts added', async () => {
+    const { mergeReports } = await import('../scripts/science-rationalise.ts');
+    const base = () => ({ target: 'local' as const, database: 'x', dry_run: true, import_id: 1, stopped: null, items: null,
+      questions: { science_versions: 0, open: 0, skipped_not_open: [], with_text: 0, none: 0, matched_exact: [], matched_fuzzy: [], ambiguous: [], linked_supporting: [], unmatched_new_item: [], already_done: 0 },
+      primary: { set_single: 0, proposed: [], already: 0 }, wrong_options: { tagged: [], untagged: [] }, solutions: { drafted: [], short_without_draft: [], no_wrong_option: [] },
+      legacy: { copied: 0, lost: [] }, guard: { changed: [] }, thresholds: { unclear_pct: 0.3, unmatched_pct: 0 } });
+    const a = base(), b = base();
+    b.questions.science_versions = 2; b.questions.matched_exact = [{ question_id: 'SQ1', text: 't' }] as never; b.primary.set_single = 2; b.legacy.copied = 1; b.import_id = 2;
+    const m = mergeReports([a, b, { ...base(), questions: { ...base().questions, science_versions: 1 } }]);
+    expect(m.questions.science_versions).toBe(3);
+    expect(m.questions.matched_exact).toHaveLength(1);
+    expect(m.primary.set_single).toBe(2);
+    expect(m.legacy.copied).toBe(1);
+  });
+});
