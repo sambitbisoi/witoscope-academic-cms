@@ -117,7 +117,7 @@ export async function reviewQueue() {
 
 /** Override requests (Sambit, 12 Nov 2026): pending first, then decided; with the recorded check. */
 export interface OverrideRequest { request_id: number; question_id: string; version_id: number; file_key: string | null; field: string; reason: string; requested_by: string;
-  status: 'pending' | 'approved' | 'declined'; decided_at: string | null; decision_note: string | null; created_at: string;
+  status: 'pending' | 'approved' | 'declined'; decided_at: string | null; decision_note: string | null; created_at: string; import_id: number | null;
   check: { result: string; similarity: number | null; same_numbers: boolean; closest_ref: string | null; field: string | null } | null;
   version_no: number | null; current_version: number | null; chapter_id: string | null; topic_id: string | null; class: number | null; text: string | null }
 export async function overrideRequests(): Promise<OverrideRequest[]> {
@@ -141,6 +141,42 @@ export async function overrideRequests(): Promise<OverrideRequest[]> {
 }
 export const decideOverride = (requestId: number, approve: boolean, note: string | null) =>
   rpc('cms_decide_override', { p_request_id: requestId, p_approve: approve, p_note: note });
+/** Q19 (17 Nov 2026): decide several in one transaction (one audit row each; all or nothing). */
+export const decideOverrides = (ids: number[], approve: boolean, note: string | null) =>
+  rpc('cms_decide_overrides', { p_ids: ids, p_approve: approve, p_note: note }) as Promise<{ decided: number }>;
+
+/** Q19: where each request came from (its import, as a batch label) and its citation as book + page. */
+export interface OverrideExtras { batch: Map<number, string>; citation: Map<string, string> }
+export async function overrideExtras(rows: OverrideRequest[]): Promise<OverrideExtras> {
+  const impIds = [...new Set(rows.map((r) => r.import_id).filter((x): x is number => !!x))];
+  const refs = [...new Set(rows.map((r) => r.check?.closest_ref).filter((x): x is string => !!x))];
+  const itemRefs = refs.filter((r) => !/ p\d+$/.test(r));
+  const [imps, items] = await Promise.all([
+    impIds.length ? supabase.from('cms_imports').select('import_id, file_path, started_at').in('import_id', impIds) : Promise.resolve({ data: [], error: null }),
+    itemRefs.length ? supabase.from('cms_source_items').select('ref_id, source_id, page').in('ref_id', itemRefs) : Promise.resolve({ data: [], error: null }),
+  ]);
+  const I = must<{ import_id: number; file_path: string; started_at: string }[]>(imps);
+  const S = must<{ ref_id: string; source_id: string; page: number | null }[]>(items);
+  const srcIds = [...new Set([...S.map((x) => x.source_id), ...refs.filter((r) => / p\d+$/.test(r)).map((r) => r.replace(/ p\d+$/, ''))])];
+  const srcs = srcIds.length ? must<{ source_id: string; title: string; page_offset: number }[]>(await supabase.from('cms_sources').select('source_id, title, page_offset').in('source_id', srcIds)) : [];
+  const title = new Map(srcs.map((x) => [x.source_id, x]));
+  const citation = new Map<string, string>();
+  for (const r of refs) {
+    const it = S.find((x) => x.ref_id === r);
+    if (it) { citation.set(r, `${title.get(it.source_id)?.title ?? it.source_id}${it.page !== null ? ` · p.${it.page}` : ''} · item ${r}`); continue; }
+    const m = /^(.+) p(\d+)$/.exec(r);
+    if (m) { const src = title.get(m[1]!); citation.set(r, `${src?.title ?? m[1]} · p.${Number(m[2]) - (src?.page_offset ?? 0)}`); }   // printed page = pdf page − offset
+  }
+  const batch = new Map(I.map((i) => [i.import_id, batchLabel(i.file_path, i.started_at)]));
+  return { batch, citation };
+}
+/** "…/CMS-updates/2026-11-16-math-c1c2/readmit-c3c4/_overrides-by-chapter/MC02/override_requests.csv" → "2026-11-16-math-c1c2 · readmit-c3c4" */
+export function batchLabel(path: string, startedAt: string) {
+  const after = path.split('CMS-updates/')[1] ?? path.split('/').slice(-2).join('/');
+  const parts = after.split('/').slice(0, -1).filter((x) => !x.startsWith('_') && !/^(MC|SC|GC)\d{2}$/.test(x));
+  const label = parts.join(' · ') || 'CMS-updates';
+  return /^\d{4}-\d{2}-\d{2}/.test(label) ? label : `${startedAt.slice(0, 10)} · ${label}`;
+}
 
 /** U2: approve (active), retire, or put back to proposed, a catalogue item (audited). */
 export const setCatalogueStatus = (kind: 'concept' | 'misconception' | 'typical_set' | 'pattern', id: string, status: 'active' | 'retired' | 'proposed', reason: string | null) =>

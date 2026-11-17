@@ -717,3 +717,26 @@ table.proposed-table td.col-topic { min-width: 160px; }
 @media (max-width: 600px) { .held-kv { grid-template-columns: 1fr; gap: 0; } }
 .ok { color: var(--ok, #1a7f37); }
 @media (max-width: 800px) { .held-cols { grid-template-columns: 1fr; } }
+
+/* Q19: bulk override decisions */
+.override-filters { display: flex; gap: 8px; flex-wrap: wrap; margin: 8px 0; }
+.override-filters select { max-width: 340px; }
+.override-bulk { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 8px 0; }
+.confirm-box { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 10px; border: 1px solid var(--line, #ddd); border-radius: 6px; margin: 6px 0; }
+.confirm-box input { min-width: 260px; }
+.override-table { width: 100%; border-collapse: collapse; }
+.override-table th, .override-table td { text-align: left; padding: 5px 6px; border-bottom: 1px solid var(--line, #eee); vertical-align: top; }
+.override-table tr.sel { background: var(--sel-bg, #eef3ff); }
+.override-reason { max-width: 340px; }
+.override-decided { margin-top: 16px; }
+
+/* Q22: Decisions inbox */
+.decisions .filters { display: flex; gap: 8px; margin: 8px 0 12px; }
+.decision-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; }
+.decision-card { border: 1px solid var(--line, #e3e3e3); border-radius: 8px; padding: 10px 12px; background: var(--card-bg, #fff); display: flex; flex-direction: column; gap: 4px; }
+.decision-card.clear { opacity: 0.6; }
+.decision-head { display: flex; align-items: baseline; gap: 10px; }
+.decision-count { font-size: 1.5rem; font-weight: 700; min-width: 2.5ch; }
+.decision-title { font-weight: 600; }
+.decision-items { margin: 4px 0 0; max-height: 260px; overflow: auto; }
+.decision-items li { margin: 2px 0; }

@@ -1,3 +1,4 @@
+import { DecisionsScreen } from './Decisions';
 import { HeldOutScreen } from './HeldOut';
 import type { Session } from '@supabase/supabase-js';
 import { useEffect, useState, type FormEvent } from 'react';
@@ -87,12 +88,13 @@ function Home({ email }: { email?: string }) {
       {route.name === 'home' ? <HomeScreen grade={route.grade} />
         : route.name === 'browse' ? <Workspace subject={route.subject} cls={route.cls} strand={route.strand} ch={route.ch} topic={route.topic} q={route.q} v={route.v} tab={route.tab} edit={route.edit} row={route.row} chview={route.chview} item={route.item} />
         : route.name === 'question' ? <OpenQuestion id={route.id} />
-        : route.name === 'review' ? <main className="wide"><ReviewQueue /></main>
+        : route.name === 'review' ? <main className="wide"><ReviewQueue initial={route.show} /></main>
         : route.name === 'map' ? <main className="wide"><CurriculumMap {...route} /></main>
         : route.name === 'proposed' ? <main className="wide proposed-main"><ProposedList kind={route.kind} item={route.item} /></main>
         : route.name === 'generate' ? <GenerateScreen questionId={route.q} setId={route.set} topicId={route.topic} />
         : route.name === 'run' ? <RunScreen runId={route.id} />
         : route.name === 'model-check' ? <ModelCheckScreen runId={route.id} />
+        : route.name === 'decisions' ? <main className="wide"><DecisionsScreen /></main>
         : route.name === 'held' ? <main className="wide"><HeldOutScreen id={route.id} status={route.status} /></main>
         : route.name === 'imports' ? <main><ImportsList /></main>
         : route.name === 'import' ? <main><ImportDetail id={route.id} /></main>

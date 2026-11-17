@@ -14,7 +14,7 @@ export const subjectOfChapter = (chapterId: string): Subject =>
 export type Route =
   | { name: 'home'; grade: string | null }
   | { name: 'browse'; subject: Subject; cls: string; strand: string | null; ch: string | null; topic: string | null; q: string | null; v: number | null; tab: 'types' | 'concepts' | 'sources' | 'content'; edit: boolean; row: string | null; chview: boolean; item: string | null }
-  | { name: 'review' }
+  | { name: 'review'; show: string | null }
   | { name: 'proposed'; kind: string | null; item: string | null }
   | { name: 'map'; tab: 'topics' | 'sources'; cls: string; subject: string; strand: string | null; ch: string | null; show: MapShow; q: string; chapters: boolean; topics: boolean }
   | { name: 'generate'; q: string | null; set: string | null; topic: string | null }
@@ -25,6 +25,8 @@ export type Route =
   | { name: 'import'; id: number }
   /** Q21 (17 Nov 2026): the Held-out area; id = the open item */
   | { name: 'held'; id: number | null; status: string }
+  /** Q22: the Decisions inbox */
+  | { name: 'decisions' }
   | { name: 'notfound' };
 
 export function parseRoute(hash: string): Route {
@@ -34,7 +36,8 @@ export function parseRoute(hash: string): Route {
   if (p.length === 0) return { name: 'home', grade: qs.get('grade') };
   if (p[0] === 'imports') return p[1] && /^\d+$/.test(p[1]) ? { name: 'import', id: Number(p[1]) } : { name: 'imports' };
   if (p[0] === 'q' && p[1]) return { name: 'question', id: p[1] };
-  if (p[0] === 'review') return { name: 'review' };
+  if (p[0] === 'review') return { name: 'review', show: qs.get('show') };
+  if (p[0] === 'decisions') return { name: 'decisions' };
   if (p[0] === 'held-out') return { name: 'held', id: /^\d+$/.test(qs.get('id') ?? '') ? Number(qs.get('id')) : null, status: ['held', 'placed', 'discarded', 'all'].includes(qs.get('status') ?? '') ? qs.get('status')! : 'held' };
   if (p[0] === 'proposed') return { name: 'proposed', kind: qs.get('kind'), item: itemParamOk(qs.get('item')) };
   if (p[0] === 'map') {
