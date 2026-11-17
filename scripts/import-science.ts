@@ -40,6 +40,14 @@ export function printResult(r: ScienceResult) {
   console.log(`Also in:       ${r.also_in.rows_with_ids} rows with IDs in Notes · ${r.also_in.ids_parsed} IDs parsed · ${r.also_in.ids_kept} kept · ${r.also_in.unknown.length} not in the CMS (dropped) · ${r.also_in.unparsed.length} notes with "also in" not fully parsed`);
   for (const u of r.also_in.unknown) console.log(`  ${u.row_id}: ${u.id} is not a content row`);
   for (const u of r.also_in.unparsed) console.log(`  ${u.row_id}: "also in" ${u.bad.length ? `with tokens that are not row IDs: ${u.bad.join(', ')}` : 'but no row ID'}`);
+  if (r.items) {
+    console.log(`Misconception items: ${r.items.items_created} new · ${r.items.items_unchanged} unchanged · ${r.items.updated.length} updated in place · ${r.items.retired.length} retired · ${r.items.unclear.length} unclear splits (listed in the report)`);
+    for (const u of r.items.updated) console.log(`  UPDATED ${u.ref}: "${u.before}" → "${u.after}" · used by: ${u.questions.join(', ') || 'no question'}`);
+    for (const u of r.items.retired) console.log(`  RETIRED ${u.ref}: "${u.text}" · used by: ${u.questions.join(', ') || 'no question'}`);
+    for (const u of r.items.unclear.filter((x) => !x.decided)) console.log(`  unclear ${u.row_id}: ${u.note}`);
+  }
+  console.log(`Question misconceptions: ${r.misconceptions.matched} matched to items · ${r.misconceptions.linked_supporting.length} via a row linked as supporting · ${r.misconceptions.unmatched.length} unmatched (text kept as legacy) · ${r.misconceptions.primary_proposed.length} primary rows proposed`);
+  for (const u of r.misconceptions.unmatched) console.log(`  unmatched ${u.qid}: "${u.text}"`);
   console.log(`Class mismatch: ${r.class_mismatch.length} row(s) whose "Topic class (mapped)" names a class the topic is not linked to (shown in the CMS; nothing changed)`);
   for (const m of r.class_mismatch.slice(0, 10)) console.log(`  ${m.row_id} (${m.topic_id}): master ${m.mapped} · CMS ${m.approved.join(', ')} · not linked: ${m.only_master.join(', ')}`);
   if (r.status_mismatch.length) {

@@ -48,7 +48,8 @@ export function rowsFor(q: Question, cfg: DerivedConfig, questionClass: number, 
   const options = answers.flatMap(([label, a]) => (a.options ?? []).map((text, i) => ({ part_label: label, position: i + 1, text, is_correct: text === a.correct })));
   const wrong_answers = answers.flatMap(([label, a]) => (a.wrong_answers ?? []).map((w) => {
     const pos = (a.options ?? []).indexOf(w.value);
-    return { part_label: label, value: w.value, option_position: pos >= 0 ? pos + 1 : null, tag: w.tag, misconception_id: w.misconception_id ?? null, target_concept_id: w.target_concept_id ?? null, why: w.why ?? null };
+    return { part_label: label, value: w.value, option_position: pos >= 0 ? pos + 1 : null, tag: w.tag, misconception_id: w.misconception_id ?? null, target_concept_id: w.target_concept_id ?? null, why: w.why ?? null,
+      mc_row_id: w.mc?.row_id ?? null, mc_item_no: w.mc?.item_no ?? null };
   }));
   return {
     version, derived: d, options, wrong_answers,

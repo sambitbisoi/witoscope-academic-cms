@@ -114,7 +114,7 @@ export function ScienceView({ scope, cls, higher = false, topicNames, row, q, on
                   <button className="link small" onClick={() => onRow(null)}>show all {qs.length} in {where}</button></div>
                 {selRow && <div className="muted small sci-for-text">{selRow.content.length > 110 ? `${selRow.content.slice(0, 110)}…` : selRow.content}</div>}
               </div>
-              <QSection title="Direct" hint="tests this row" items={s.direct} q={q} ceiling={ceiling} onQuestion={onQuestion}
+              <QSection title="Direct" hint="tests this row (primary or secondary)" items={s.direct} rowId={pane.row} q={q} ceiling={ceiling} onQuestion={onQuestion}
                 empty={selRow && selRow.question_use !== 'OK' ? `No questions: this row is "${selRow.question_use}".` : 'No question tests this row yet.'} />
               <QSection title="Supporting" hint="uses it as background" items={s.supporting} q={q} ceiling={ceiling} onQuestion={onQuestion} empty="None." />
             </>;
@@ -135,11 +135,11 @@ export function ScienceView({ scope, cls, higher = false, topicNames, row, q, on
   );
 }
 
-function QSection({ title, hint, items, q, ceiling, onQuestion, empty }: { title: string; hint: string; items: ScienceQuestion[]; q: string | null; ceiling: number | null; onQuestion: (id: string) => void; empty: string }) {
+function QSection({ title, hint, items, rowId, q, ceiling, onQuestion, empty }: { title: string; hint: string; items: ScienceQuestion[]; /** 0035: show each question's rank for this row */ rowId?: string; q: string | null; ceiling: number | null; onQuestion: (id: string) => void; empty: string }) {
   return (
     <div className="sci-q-section">
       <div className="sci-q-section-head"><span className="eyebrow">{title} · {items.length}</span> <span className="muted small">{hint}</span></div>
-      {items.length ? items.map((x) => <QItem key={x.question_id} q={x} ceiling={ceiling} selected={x.question_id === q} onPick={() => onQuestion(x.question_id)} />) : <p className="muted small sci-empty">{empty}</p>}
+      {items.length ? items.map((x) => <QItem key={x.question_id} q={x} rowId={rowId} ceiling={ceiling} selected={x.question_id === q} onPick={() => onQuestion(x.question_id)} />) : <p className="muted small sci-empty">{empty}</p>}
     </div>
   );
 }
@@ -194,7 +194,15 @@ function RowDetail({ r, inScope, onRow }: { r: ScienceRow; inScope: (id: string)
   return (
     <div className="sci-detail" aria-label={`Details of ${r.row_id}`}>
       {r.why_it_matters && <F label="Why it matters / real-life link">{r.why_it_matters}</F>}
-      {r.misconceptions && <F label="Common misconceptions">{r.misconceptions}</F>}
+      {r.misconceptions && <F label="Common misconceptions">
+        {d && d.items.length > 0 ? <ol className="plain sci-items">{d.items.map((i) => (
+          <li key={i.item_no} className={i.status === 'retired' ? 'muted' : ''}><span className="mono muted">#{i.item_no}</span> {i.text}
+            {i.status === 'needs_review' && <span className="tag proposed" title={i.proposed_by ? `Proposed from ${i.proposed_by}` : undefined}>Needs review</span>}
+            {i.status === 'retired' && <span className="tag gone">Retired</span>}
+            {i.unclear && <span className="tag mismatch" title={i.split_note ?? ''}>Split unclear</span>}
+            <span className="mono muted small"> {r.row_id} #{i.item_no}</span></li>))}</ol>
+          : r.misconceptions}
+      </F>}
       {r.diagram_description && <F label="Diagram description">{r.diagram_description}</F>}
       {/* "Topic class (mapped)" empty or "–" (DAV-only rows): still shown, as "none"; never a Class mismatch */}
       <F label="Classes">{cl.text}
@@ -220,14 +228,16 @@ function RowDetail({ r, inScope, onRow }: { r: ScienceRow; inScope: (id: string)
   );
 }
 
-function QItem({ q, ceiling, selected, onPick }: { q: ScienceQuestion; /** the class being viewed (null = all) */ ceiling: number | null; selected: boolean; onPick: () => void }) {
+function QItem({ q, rowId, ceiling, selected, onPick }: { q: ScienceQuestion; rowId?: string; /** the class being viewed (null = all) */ ceiling: number | null; selected: boolean; onPick: () => void }) {
   const nd = q.links.filter((l) => l.role === 'direct').length, ns = q.links.length - nd;
+  const here = rowId ? q.links.find((l) => l.row_id === rowId) : undefined;
   return (
     <button className={`qrow sci-qrow ${selected ? 'sel' : ''}`} onClick={onPick} title={q.text} ref={selected ? (el) => el?.scrollIntoView({ block: 'nearest' }) : undefined}>
       <span className="qtext">{q.text}</span>
       <span className="sci-q-meta small">
         {q.level_tier && <span className={`tag tier tier-${q.level_tier}`} title="Tier (L1–L3)">{q.level_tier}</span>}
         <LevelTag q={q} ceiling={ceiling} />
+        {here && here.rank && here.rank !== 'context' && <span className={`tag rank-${here.rank}${here.rank_proposed ? ' rank-proposed' : ''}`} title="This row's rank for the question">{here.rank === 'primary' ? `Primary${here.rank_proposed ? ' (proposed)' : ''}` : 'Secondary'}</span>}
         <span className="muted">{nd} direct{ns ? ` · ${ns} supporting` : ''}</span>
         {q.display_format && <span className="muted">{q.display_format}</span>}
         {q.safety_note && <span className="tag safety" title={q.safety_note}>Safety</span>}

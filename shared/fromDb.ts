@@ -21,7 +21,7 @@ export interface DbBundle {
   question: DbQuestion; version: DbVersion;
   parts: { part_label: string; text: string; format: string; correct: string; accepted: string[] | null }[];
   options: { part_label: string; position: number; text: string; is_correct: boolean }[];
-  wrong: { part_label: string; value: string; tag: string; misconception_id: string | null; target_concept_id: string | null; why: string | null }[];
+  wrong: { part_label: string; value: string; tag: string; misconception_id: string | null; target_concept_id: string | null; why: string | null; mc_row_id?: string | null; mc_item_no?: number | null }[];
   concepts: { part_label: string; concept_id: string; involvement: number | string }[];
   solutions: { slot: number; text: string; type: string | null; strategy: string | null }[];
   hints: { level: number; text: string }[];
@@ -39,6 +39,7 @@ export function questionFromDb(b: DbBundle): Question {
       ...(w.misconception_id ? { misconception_id: w.misconception_id } : {}),
       ...(w.target_concept_id ? { target_concept_id: w.target_concept_id } : {}),
       ...(w.why !== null ? { why: w.why } : {}),
+      ...(w.mc_row_id && w.mc_item_no ? { mc: { row_id: w.mc_row_id, item_no: w.mc_item_no } } : {}),
     }));
     return { format: format as Answer['format'], ...(options.length ? { options } : {}), correct: correct ?? '', accepted: accepted ?? [], wrong_answers: wrong };
   };

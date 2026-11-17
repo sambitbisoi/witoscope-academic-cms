@@ -30,7 +30,7 @@ const canonAnswer = (a: Answer) => ({
   correct: a.format === 'Multi-part' ? null : (a.correct ?? null),
   accepted: a.accepted ?? [],
   wrong_answers: [...(a.wrong_answers ?? [])]
-    .map((w) => ({ value: w.value, tag: w.tag, misconception_id: w.misconception_id ?? null, target_concept_id: w.target_concept_id ?? null, why: t(w.why) }))
+    .map((w) => ({ value: w.value, tag: w.tag, misconception_id: w.misconception_id ?? null, target_concept_id: w.target_concept_id ?? null, why: t(w.why), ...(w.mc ? { mc: `${w.mc.row_id} #${w.mc.item_no}` } : {}) }))
     .sort((x, y) => x.value.localeCompare(y.value)),
 });
 
