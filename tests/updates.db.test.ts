@@ -80,7 +80,12 @@ describe('import:updates (queue 12 Nov 2026, PR B)', () => {
     const r = await runUpdates(sql, dir);
     const by = (f: string) => r.find((x) => x.file.endsWith(f) || x.file.includes(f))!;
     expect(by('settings_catalogue.csv').counts.cms_settings).toMatchObject({ inserted: 2 });
-    expect(by('question_levels.csv').counts.questions).toEqual({ updated: 2, unchanged: 0, not_in_cms: 1 });
+    // Q20: MC95-0001 gets Level 5 below its Class 6 concept → its tier is re-judged (Super Achiever), audited
+    expect(by('question_levels.csv').counts.questions).toEqual({ updated: 2, unchanged: 0, not_in_cms: 1, tier_recomputed: 1 });
+    const [t1] = await sql`select v.tier from cms.cms_question_versions v join cms.cms_questions q on q.question_id = v.question_id and v.version_no = q.current_version where q.file_key = 'MC95-0001'`;
+    expect(t1!.tier).toBe('Super Achiever');
+    const [aud] = await sql`select count(*)::int as n from cms.cms_reviews r join cms.cms_questions q on r.target_id = q.question_id || ' v1' where q.file_key = 'MC95-0001' and r.action = 'derived_update'`;
+    expect(aud!.n).toBe(1);
     expect(by('question_settings.csv').counts.questions).toEqual({ updated: 2, unchanged: 0, not_in_cms: 0 });
     expect(by('MC95-0904').result).not.toBe('failed');
     expect(by('near_copy_rewrites/MC95-C6.json').result).not.toBe('failed');

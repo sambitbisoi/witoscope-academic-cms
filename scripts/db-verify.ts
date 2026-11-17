@@ -1,6 +1,7 @@
 // npm run db:verify — run against the real project BEFORE exposing schema cms
 // (docs/phase2-plan.md §3, step 3). Read-only; connects as cms_owner.
 // Every check must pass; any failure exits non-zero and says what is wrong.
+import { tierChanges } from './lib/tier.ts';
 import { assertCmsOwner, connect } from './lib/db.ts';
 import { unexpectedGrants } from './lib/grants.ts';
 
@@ -108,6 +109,13 @@ try {
     check('after science:rationalise: no free-text Science misconception, every row\'s misconceptions split into items',
       !x!.rationalised || (x!.free_text === 0 && x!.unsplit === 0), x!.rationalised ? `${x!.free_text} free text, ${x!.unsplit} rows not split` : 'not rationalised yet');
   }
+
+  // Q20 (17 Nov 2026): every stored tier follows "Tier uses Level" (enforced once tier:recompute has run)
+  const tierOff = await tierChanges(sql);
+  const [tr] = await sql`select exists (select 1 from cms.cms_imports where kind = 'tier_recompute' and finished_at is not null) as done`
+    .catch(() => [{ done: false }]);
+  check('stored tiers follow "Tier uses Level" (Q20)', !tr!.done || tierOff.length === 0,
+    `${tierOff.length} version(s) differ${tr!.done ? '' : ' (tier:recompute not run yet)'}`);
 
   const [admin] = await sql`select value #>> '{}' as id from cms.cms_config where key = 'admin_user_id'`;
   check('cms_config.admin_user_id is set to a UUID', /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(admin?.id ?? ''), admin?.id ?? 'not set');

@@ -24,6 +24,7 @@ import { runChapter, type ChapterReport } from './import-chapter.ts';
 import { assertCmsOwner, connect, freshConnections, targetUrl, type UnitRunner } from './lib/db.ts';
 import { hasPdftotext } from './lib/local-books.ts';
 import { FolderBucket } from './lib/r2-local.ts';
+import { applyTierChanges, tierChanges } from './lib/tier.ts';
 import { upsertCatalogue } from './lib/upsert.ts';
 import {
   convertPipelineFile, parseKeyFixes, parseOverrides, parseLevels, parseQuestionSettings, parseSettings, parseTopicClasses, type Problem,
@@ -86,6 +87,13 @@ async function updateQuestions(tx: Tx, importId: number, rows: { file_key: strin
       select 'question_version', 'cms_questions', x.id, 'import_update', ${reason}, x.diff, 'updates importer', ${importId}
       from jsonb_to_recordset(${tx.json(batch.map((c) => ({ id: c.question_id, diff: c.diff })) as never)}) as x(id text, diff jsonb)`;
     counts.updated += batch.length;
+  }
+  // Q20 (17 Nov 2026): a Level change re-judges the stored tier of that question's versions (in place, audited)
+  const levelChanged = changes.filter((c) => 'level' in c.diff).map((c) => c.question_id);
+  if (levelChanged.length) {
+    const tc = await tierChanges(tx as never, levelChanged);
+    (counts as Record<string, number>).tier_recomputed = await applyTierChanges(tx as never, tc,
+      { importId, reason: `Level changed (${where}); tier uses Level (Q20)`, by: 'updates importer' });
   }
   return counts;
 }

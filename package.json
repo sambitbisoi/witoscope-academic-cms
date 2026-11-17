@@ -31,7 +31,8 @@
     "export:topics": "tsx scripts/export-topics.ts",
     "curriculum:cutover": "tsx scripts/curriculum-cutover.ts",
     "import:science": "tsx scripts/import-science.ts",
-    "science:rationalise": "tsx scripts/science-rationalise.ts"
+    "science:rationalise": "tsx scripts/science-rationalise.ts",
+    "tier:recompute": "tsx scripts/tier-recompute.ts"
   },
   "devDependencies": {
     "@types/node": "22.9.0",

@@ -74,3 +74,16 @@ describe('rowsFor (T1)', () => {
     expect(structureHash(a, a.topic_id)).not.toBe(structureHash(b, b.topic_id));
   });
 });
+
+describe('Q20: tier uses Level', () => {
+  it('judges concepts against Level, else the placement class', async () => {
+    const { derive, tierBasis } = await import('../shared/derive.ts');
+    const q = base();                                   // concept class 6, strategy 0
+    expect(derive(q, tierBasis({ level: 5, class: 6 }), () => 6, cfg).tier).toBe('Super Achiever');
+    expect(derive(q, tierBasis({ level: 6, class: 3 }), () => 6, cfg).tier).toBe('School');
+    expect(derive(q, tierBasis({ level: null, class: 6 }), () => 6, cfg).tier).toBe('School');
+    expect(derive(q, tierBasis({ level: null, class_override: 5, class: 6 }), () => 6, cfg).tier).toBe('Super Achiever');
+    expect(derive({ ...q, signature: { ...q.signature, strategy: 2 } }, tierBasis({ level: 6, class: 6 }), () => 6, cfg).tier).toBe('Achiever');
+    expect(derive({ ...q, signature: { ...q.signature, strategy: 3 } }, tierBasis({ level: 6, class: 6 }), () => 1, cfg).tier).toBe('Super Achiever');
+  });
+});

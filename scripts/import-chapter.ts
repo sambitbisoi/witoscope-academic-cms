@@ -20,7 +20,7 @@ import { relative, resolve } from 'node:path';
 import type postgres from 'postgres';
 import { assertCmsOwner, connect } from './lib/db.ts';
 import { checkFile, normaliseStem, resolveTopicId, type Catalog } from '../shared/checks.ts';
-import { derive } from '../shared/derive.ts';
+import { derive, tierBasis } from '../shared/derive.ts';
 import { schemaProblems } from './lib/chapter/schema.ts';
 import type { Answer, ChapterFile, Problem, Question } from '../shared/types.ts';
 import { classify, structureHash, textsOf, type Texts } from '../shared/version.ts';
@@ -239,11 +239,14 @@ export async function runChapter(sql: Sql, filePath: string, mode: 'validate' | 
           }
         }
 
+        // Q20: tier is judged against the question's Level (kept on the question; set by import:updates)
+        const levels = new Map((await tx`select file_key, level from cms.cms_questions where chapter_id = ${file.chapter_id} and file_key is not null and level is not null`)
+          .map((r) => [r.file_key as string, Number(r.level)]));
         for (const q of file.questions) {
           if (blocked.has(q.key)) { report.outcomes.push({ key: q.key, result: 'blocked' }); continue; }
           const topicId = resolveTopicId(q, file);
           const hash = structureHash(q, topicId);
-          const d = derive(q, q.class_override ?? file.class, (id) => cat.concepts.get(id)?.class, cfg);
+          const d = derive(q, tierBasis({ level: levels.get(q.key), class_override: q.class_override, class: file.class }), (id) => cat.concepts.get(id)?.class, cfg);
           const cols = versionColumns(q, topicId, d, hash, importId);
           const qFields = {
             topic_id: topicId, class: file.class, class_override: q.class_override ?? null, placement_note: q.placement_note ?? null,

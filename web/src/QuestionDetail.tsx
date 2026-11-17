@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { questionDetail, type QuestionDetailData } from './api';
-import { browseHash, derivedRows, involvementOf, signatureRows, STATUS_LABEL, subjectOfChapter, TAG_LABEL } from './logic';
+import { browseHash, derivedRows, involvementOf, tierBasisLabel, signatureRows, STATUS_LABEL, subjectOfChapter, TAG_LABEL } from './logic';
 import { latestOriginality, officialLink, sourceItems, type OriginalityCheck } from './sourcesApi';
 import { questionFromDb } from '../../shared/fromDb.ts';
 import { structureDiff } from '../../shared/save.ts';
@@ -156,7 +156,7 @@ export function QuestionDetail({ id, versionNo, onVersion, onEdit, reloadKey = 0
       </div>
       <div className="tint-box derived">
         <div className="tint-title">Derived <span className="muted small">(computed on save)</span></div>
-        <KV rows={derivedRows(v)} />
+        <KV rows={derivedRows(v, tierBasisLabel(q as { level?: number | null; class_override?: number | null; class: number }))} />
       </div>
 
       <Section title="Concepts · involvement (main 1.0 · secondary 0.5 · minor 0.2)">

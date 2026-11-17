@@ -379,11 +379,14 @@ export function signatureRows(v: VersionRow, insightName?: string | null): { k: 
 }
 
 /** Derived fields (design §4), computed on save. */
-export function derivedRows(v: VersionRow): { k: string; v: string }[] {
+/** @param basis Q20: what the tier was judged against, e.g. "Level 5" or "placement class 3 (no Level)" */
+export const tierBasisLabel = (q: { level?: number | null; class_override?: number | null; class: number }) =>
+  q.level ? `Level ${q.level}` : `placement class ${q.class_override ?? q.class} (no Level)`;
+export function derivedRows(v: VersionRow, basis?: string): { k: string; v: string }[] {
   return [
     { k: 'Load', v: v.load === null ? '—' : `${v.load}${v.load_driver ? ` · ${DRIVER[v.load_driver] ?? v.load_driver}` : ''}` },
     { k: 'Style', v: v.style ?? '—' },
-    { k: 'Tier', v: v.tier ?? '—' },
+    { k: 'Tier', v: v.tier ? `${v.tier}${basis ? ` · judged at ${basis}` : ''}` : '—' },
     { k: 'Trap level', v: v.trap_level === null ? '—' : (TRAP[v.trap_level] ?? String(v.trap_level)) },
     { k: 'Isolating', v: yesNo(v.is_isolating) },
     { k: 'Difficulty points', v: n(v.difficulty_points) },

@@ -2,6 +2,20 @@
 
 Changes to real (non-test) data that Sambit approved, with what was done and where the audit trail is.
 
+## 17 Nov 2026: Round 1 (plan `docs/plan-2026-11-17-round1.md`)
+
+**Request (Sambit, 17 Nov 2026):** Round 1 items T1, T2, Q14, Q19, Q20, Q21, Q22, D18; "go" with decisions §10. Real data steps in small batches, each checked on a fresh restore first.
+
+### Q20: Tier uses Level (migration 0036, `tier:recompute`)
+
+| Step | Result |
+|---|---|
+| Backup | `~/WitoScope/CMS-backups/real-cms-2026-11-17-pre-0036.dump` (schema `cms`, read-only file); restored to the local DB `cms_rehearsal` |
+| Rehearsal | 0036 + `db:verify` ✓. Dry run: 88 versions = the plan's list exactly, 88 audit rows, fingerprint of every cms table (all but `tier`) unchanged. Batched run (5 × 20) then a re-run: 0 left; `db:verify` ✓ |
+| Real | 0036 applied, `db:verify` ✓. Read-only preview = the plan's 88. Run: **import #856**, 5 batches of 20 (own transaction each), **88 written** (54 → Super Achiever, 34 → School; all drafts, 0 approved, 0 gold), fingerprint unchanged, 0 left. `db:verify` ✓ (incl. the new tier check) |
+
+Each change is a `derived_update` row in `cms_reviews` (before → after, judged at Level / placement class). Report: `.local-import/tier-recompute-real-2026-1117-061543.md` (+ `.json`).
+
 ## 16–17 Nov 2026: Science misconception items, primary rows, Solution 1 (migration 0035, science:rationalise)
 
 **Request (Sambit, 16 Nov 2026):** Q16 Q17 Q18 (`docs/plan-2026-11-16-q11-q18.md`, decisions §8): split content-row misconceptions into items, tie each Science question's misconception and wrong options to items, one primary row per question, Solution 1 drafts for short ones; dry run on a restored copy first, then real.
