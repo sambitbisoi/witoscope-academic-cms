@@ -687,3 +687,4 @@ table.proposed-table td.col-topic { min-width: 160px; }
 .sci-rv-radio { display: flex; gap: 6px; align-items: baseline; margin: 2px 0; }
 .sci-rv-actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; }
 @media (max-width: 700px) { .sci-rv-f { grid-template-columns: 1fr; } }
+.sci-add-row { padding: 6px 12px 10px; }

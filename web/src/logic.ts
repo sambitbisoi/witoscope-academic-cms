@@ -236,10 +236,12 @@ export const DIFFICULTIES = ['Simple', 'Medium', 'Complex'] as const;
 /** A new question as the form or one Excel row gives it (the topic is fixed by where you are). */
 export interface NewQuestion {
   row?: number; text: string; format: string; options: string[]; correct: string; level: number | null; picture_needed: boolean | null;
-  figure_description?: string; solution?: string; hints?: string[]; wrong_answers?: { value: string; why: string }[]; concepts?: string[];
+  figure_description?: string; solution?: string; hints?: string[]; wrong_answers?: { value: string; why: string; /** Science (0035): the row item this wrong option shows */ mc?: { row_id: string; item_no: number } }[]; concepts?: string[];
   typical_set_id?: string; pattern_id?: string; setting_id?: string; math_difficulty?: string; source_refs?: string[]; author_notes?: string;
   /** Science (13 Nov 2026): content rows the question tests (direct) or uses (supporting) */
-  content_rows?: { row_id: string; role: 'direct' | 'supporting' }[];
+  content_rows?: { row_id: string; role: 'direct' | 'supporting'; rank?: 'primary' }[];
+  /** Science (0035): the misconception item targeted (an item of its content rows) */
+  misconception?: { row_id: string; item_no: number };
 }
 /** Missing or broken MANDATORY fields only (no similarity, duplicate or quality checks). */
 export function mandatoryErrors(q: NewQuestion): string[] {

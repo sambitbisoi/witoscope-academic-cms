@@ -6,7 +6,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Id } from './Id';
 import { LevelTag, RowClassTag } from './Tags';
-import { OriginFlags } from './AddQuestions';
+import { AddQuestionForm, OriginFlags } from './AddQuestions';
 import { rowDetail, scienceData, type ScienceData, type ScienceQuestion, type ScienceRow } from './scienceApi';
 import { browseHash, showsAtLevel, statusLabel } from './logic';
 import { classesLine, isDimmed, listedOrder, rightPane, rowClassLine, rowQuestions, rowsForClass, rowsInOrder, rowSplit, rowSplitLabel, topicGroups } from './scienceLogic';
@@ -51,7 +51,11 @@ export function ScienceView({ scope, cls, higher = false, topicNames, row, q, on
   const chapterMode = 'chapterId' in scope;
   const [closed, setClosed] = useState<Set<string>>(() => { try { return new Set(JSON.parse(localStorage.getItem(`cms.sci.topics.${key}`) ?? '[]') as string[]); } catch { return new Set(); } });
   const toggle = (k: string) => { const n = new Set(closed); if (n.has(k)) n.delete(k); else n.add(k); setClosed(n); try { localStorage.setItem(`cms.sci.topics.${key}`, JSON.stringify([...n])); } catch { /* best effort */ } };
-  useEffect(() => { setError(null); scienceData(scope).then(setData).catch((e) => setError(e.message)); }, [key, reload]); // eslint-disable-line react-hooks/exhaustive-deps
+  const [tick, setTick] = useState(0);
+  /** Q15: "+ Add question" on an open row: the right column shows the add form for that row */
+  const [addFor, setAddFor] = useState<ScienceRow | null>(null);
+  useEffect(() => { setError(null); scienceData(scope).then(setData).catch((e) => setError(e.message)); }, [key, reload, tick]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (addFor && row !== addFor.row_id) setAddFor(null); }, [row]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Rows written for class N show in class N and above (as questions do, D3); lower-class rows are marked.
   const rows = useMemo(() => rowsInOrder(rowsForClass(data?.rows ?? [], cls, higher)), [data, cls, higher]);
@@ -69,7 +73,8 @@ export function ScienceView({ scope, cls, higher = false, topicNames, row, q, on
   const inScope = (id: string) => data.rows.some((x) => x.row_id === id);
   const list = (rs: ScienceRow[]) => (
     <ol className="sci-list">
-      {rs.map((r, i) => <RowItem key={r.row_id} n={i + 1} r={r} cls={cls} open={r.row_id === row} onPick={() => onRow(r.row_id === row ? null : r.row_id)} inScope={inScope} onRow={onRow} />)}
+      {rs.map((r, i) => <RowItem key={r.row_id} n={i + 1} r={r} cls={cls} open={r.row_id === row} onPick={() => onRow(r.row_id === row ? null : r.row_id)} inScope={inScope} onRow={onRow}
+        onAdd={() => { setAddFor(r); onBack(); }} />)}
     </ol>
   );
   const pane = rightPane(row, q, chapterMode ? 'chapter' : 'topic');
@@ -99,7 +104,12 @@ export function ScienceView({ scope, cls, higher = false, topicNames, row, q, on
             })}
         </section>
         <section className="sci-questions" aria-label={pane.kind === 'detail' ? 'Question detail' : 'Questions'}>
-          {pane.kind === 'detail' ? <>
+          {addFor && !q ? <>
+            <div className="sci-q-head sci-detail-nav"><button className="link" onClick={() => setAddFor(null)}>← Back to row {addFor.row_id}</button></div>
+            <AddQuestionForm key={addFor.row_id} topic={{ topic_id: addFor.topic_id, name: topicNames.get(addFor.topic_id)?.name ?? addFor.topic_id, class: addFor.row_class, chapter_id: addFor.chapter_id }}
+              prefill={{ level: addFor.row_class, row_id: addFor.row_id }}
+              onDone={(id) => { setAddFor(null); setTick((t) => t + 1); if (id) onQuestion(id); }} />
+          </> : pane.kind === 'detail' ? <>
             <div className="sci-q-head sci-detail-nav">
               <button className="link" onClick={onBack}>{pane.back}</button>
               <a className="small" href={`#/q/${encodeURIComponent(pane.q)}`}>Open full page ↗</a>
@@ -144,7 +154,7 @@ function QSection({ title, hint, items, rowId, q, ceiling, onQuestion, empty }: 
   );
 }
 
-function RowItem({ n, r, cls, open, onPick, inScope, onRow }: { n: number; r: ScienceRow; cls: string; open: boolean; onPick: () => void; inScope: (id: string) => boolean; onRow: (id: string) => void }) {
+function RowItem({ n, r, cls, open, onPick, inScope, onRow, onAdd }: { n: number; r: ScienceRow; cls: string; open: boolean; onPick: () => void; inScope: (id: string) => boolean; onRow: (id: string) => void; onAdd: () => void }) {
   const s = STATUS[r.status];
   return (
     <li className={`sci-row ${open ? 'sel open' : ''} ${isDimmed(r) ? 'dim' : ''} ${r.in_master ? '' : 'gone'}`} ref={open ? (el) => el?.scrollIntoView({ block: 'nearest' }) : undefined}>
@@ -166,6 +176,8 @@ function RowItem({ n, r, cls, open, onPick, inScope, onRow }: { n: number; r: Sc
         </span>
       </button>
       {open && <RowDetail r={r} inScope={inScope} onRow={onRow} />}
+      {open && r.question_use !== 'No questions' && <div className="sci-add-row"><button className="secondary" onClick={onAdd}>+ Add question</button>
+        <span className="muted small"> from this row: Level {r.row_class} (row class), linked direct · primary</span></div>}
     </li>
   );
 }
