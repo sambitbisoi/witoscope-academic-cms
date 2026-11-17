@@ -1,6 +1,9 @@
 // import:science (Sambit, 13 Nov 2026; docs/science-plan.md)
 //
-//   npm run import:science -- [<master.xlsx>] [--dry-run] [--override-requests <csv>]
+//   npm run import:science -- [<master.xlsx>] --from-excel [--dry-run] [--override-requests <csv>]
+//
+// Q14 (Sambit, 17 Nov 2026): the CMS is now the master for content rows; the Excel master is retired. This import runs
+// only with --from-excel, and rows added or edited in the CMS are never overwritten (they are listed as "kept").
 //
 // Reads the Science master (our own words; book pages as bare citations) and its originality report
 // (made on this Mac by `npm run check:originality -- --science`), then upserts sources, content rows,
@@ -26,6 +29,7 @@ export function printResult(r: ScienceResult) {
   console.log(`Content rows:  ${r.rows.inserted} new · ${r.rows.updated} changed · ${r.rows.unchanged} unchanged · ${r.rows.flagged_missing} flagged "not in master" · ${r.rows.back_in_master} back in master`);
   console.log(`               originality: ${Object.entries(r.originality.rows).map(([k, v]) => `${v} ${k.replace('_', '-')}`).join(' · ')}`);
   if (r.rows.near_copy_badged.length) console.log(`               imported with "Originality flagged" (local only): ${r.rows.near_copy_badged.join(', ')}`);
+  if (r.rows.kept_cms.length) console.log(`               kept as they are (added or edited in the CMS, which is the master): ${r.rows.kept_cms.join(', ')}`);
   if (r.rows.held_out.length) console.log(`               HELD OUT (near-copy, no override request): ${r.rows.held_out.join(', ')}`);
   if (r.rows.overridden.length) console.log(`               near-copy let in by override_requests.csv: ${r.rows.overridden.join(', ')}`);
   console.log(`Citations:     ${r.citations.rows} for content rows · ${r.citations.questions} for questions`);
@@ -61,6 +65,11 @@ if (import.meta.filename === process.argv[1]) {
   const opt = (name: string) => { const i = args.indexOf(name); return i >= 0 && args[i + 1] && !args[i + 1]!.startsWith('--') ? args[i + 1]! : null; };
   const path = resolve(args.find((a, i) => !a.startsWith('--') && args[i - 1] !== '--override-requests') ?? DEFAULT_MASTER);
   const dryRun = args.includes('--dry-run');
+  if (!args.includes('--from-excel')) {
+    console.error('Refused: the Science master (Excel) is retired; the CMS is the master for content rows since 17 Nov 2026.\n'
+      + 'To import from Excel anyway, add --from-excel (rows added or edited in the CMS are never overwritten).');
+    process.exit(1);
+  }
   const host = new URL(targetUrl()).hostname;
   const target = host === '127.0.0.1' || host === 'localhost' ? 'local' as const : 'real' as const;
   const ovPath = opt('--override-requests') ?? (existsSync(DEFAULT_OVERRIDES) ? DEFAULT_OVERRIDES : null);

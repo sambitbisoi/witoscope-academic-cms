@@ -689,3 +689,15 @@ table.proposed-table td.col-topic { min-width: 160px; }
 @media (max-width: 700px) { .sci-rv-f { grid-template-columns: 1fr; } }
 .sci-add-row { padding: 6px 12px 10px; }
 .sci-add-row.sci-add-top { padding: 8px 12px 4px; }
+
+/* Q14: content rows edited in the CMS */
+.sci-content-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.sci-content-head > span:first-child { flex: 1; }
+.sci-edit-row { margin-left: 12px; }
+.row-form { padding: 4px 4px 16px; }
+.row-form h2 { font-size: 1.15rem; margin: 4px 0 2px; }
+.row-form .edit-sec { margin-top: 12px; }
+.row-items { margin: 6px 0; }
+.row-items li { display: flex; align-items: center; gap: 8px; margin: 4px 0; }
+.row-items li input:not([type=checkbox]) { flex: 1; min-width: 0; }
+.retire-box { margin-top: 10px; padding: 8px 10px; border: 1px dashed var(--line, #ccc); border-radius: 6px; }

@@ -184,6 +184,21 @@ describe('import:science (local, rolled back)', () => {
     });
   });
 
+  it('Q14: rows edited or added in the CMS are never overwritten or flagged by an Excel import', async () => {
+    await inRollback(async (tx) => {
+      await run(tx, master([R1, R2, R3, R4], [Q1, Q2]));
+      await tx`update cms.cms_content_rows set content = 'Edited in the CMS.', cms_edited_at = now() where row_id = 'C6-ZZ-001'`;
+      await tx`update cms.cms_content_rows set source = 'CMS' where row_id = 'C6-ZZ-004'`;
+      const r2 = await run(tx, master([{ ...R1, content: 'Changed in Excel.' }, R2, R3], [Q1]));
+      expect(r2.rows.kept_cms).toEqual(['C6-ZZ-001']);
+      expect(r2.rows.flagged_missing).toBe(0);
+      const [a] = await tx`select content from cms.cms_content_rows where row_id = 'C6-ZZ-001'`;
+      expect(a!.content).toBe('Edited in the CMS.');
+      const [b] = await tx`select in_master from cms.cms_content_rows where row_id = 'C6-ZZ-004'`;
+      expect(b!.in_master).toBe(true);
+    });
+  });
+
   it('refuses a stale originality report', async () => {
     const m = master([R1], []);
     await expect(runScience(sql, m, { ...report(m), master_sha256: 'other' }, { dryRun: true, target: 'local' })).rejects.toThrow(/another version of the master/);

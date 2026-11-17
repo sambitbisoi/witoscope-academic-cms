@@ -24,7 +24,8 @@ export interface Proposal { topic_id: string; name: string; home_class: number; 
 export interface ScienceResult {
   import_id: number | null; dry_run: boolean; target: Target;
   sources: { inserted: number; updated: number; unchanged: number };
-  rows: { inserted: number; updated: number; unchanged: number; flagged_missing: number; back_in_master: number; held_out: string[]; near_copy_badged: string[]; overridden: string[] };
+  rows: { inserted: number; updated: number; unchanged: number; flagged_missing: number; back_in_master: number; held_out: string[]; near_copy_badged: string[]; overridden: string[];
+    /** Q14: rows added or edited in the CMS (the master since 17 Nov 2026): never overwritten, never flagged */ kept_cms: string[] };
   citations: { rows: number; questions: number };
   proposals: Proposal[];
   questions: { created: string[]; replaced: string[]; unchanged: number; skipped: { qid: string; why: string }[]; blocked: { qid: string; why: string }[]; not_in_master: string[] };
@@ -79,7 +80,7 @@ const ROW_COLS = ['topic_id', 'chapter_id', 'row_class', 'type', 'chapter_role',
 export async function runScience(sql: Sql, master: Master, report: ScienceReport | null, opts: ScienceOptions): Promise<ScienceResult> {
   const res: ScienceResult = {
     import_id: null, dry_run: opts.dryRun, target: opts.target, sources: { inserted: 0, updated: 0, unchanged: 0 },
-    rows: { inserted: 0, updated: 0, unchanged: 0, flagged_missing: 0, back_in_master: 0, held_out: [], near_copy_badged: [], overridden: [] },
+    rows: { inserted: 0, updated: 0, unchanged: 0, flagged_missing: 0, back_in_master: 0, held_out: [], near_copy_badged: [], overridden: [], kept_cms: [] },
     citations: { rows: 0, questions: 0 }, proposals: [], questions: { created: [], replaced: [], unchanged: 0, skipped: [], blocked: [], not_in_master: [] },
     links: { direct: 0, supporting: 0 }, originality: { rows: {}, questions: {} }, status_mismatch: [],
     also_in: { rows_with_ids: 0, ids_parsed: 0, ids_kept: 0, unparsed: [...(master.also_in_unparsed ?? [])], unknown: [] }, class_mismatch: [], problems: [],
@@ -138,6 +139,8 @@ export async function runScience(sql: Sql, master: Master, report: ScienceReport
       // ------------------------------------------------ content rows
       const held = new Set<string>();
       const existing = new Map((await tx`select * from cms.cms_content_rows`).map((r) => [r.row_id as string, r]));
+      // Q14 (17 Nov 2026): the CMS is the master for content rows. Rows made or edited there are never overwritten from Excel.
+      const cmsOwned = new Set([...existing.values()].filter((r) => r.source === 'CMS' || r.cms_edited_at).map((r) => r.row_id as string));
       // "Also in" IDs are kept only for rows that exist after this import (in the CMS already, or coming in now)
       const willHold = (r: MasterRow) => { const cov = nearCopyCover(rowCheck.get(r.row_id), opts.overrides); return opts.target === 'real' && cov.near && !cov.covered; };
       const knownIds = new Set([...existing.keys(), ...master.rows.filter((r) => !willHold(r)).map((r) => r.row_id)]);
@@ -165,6 +168,7 @@ export async function runScience(sql: Sql, master: Master, report: ScienceReport
       const fresh: Record<string, unknown>[] = [];
       const changed: { r: MasterRow; row: Record<string, unknown>; before: Record<string, unknown> }[] = [];
       for (const r of master.rows) {
+        if (cmsOwned.has(r.row_id)) { res.rows.kept_cms.push(r.row_id); continue; }
         const { row, cov } = dbRow(r);
         if (cov.near && !cov.covered) {
           if (opts.target === 'real') { held.add(r.row_id); res.rows.held_out.push(r.row_id); continue; }
@@ -217,7 +221,7 @@ export async function runScience(sql: Sql, master: Master, report: ScienceReport
       // rows gone from the master: flagged, never deleted
       const inMaster = new Set(master.rows.map((r) => r.row_id));
       for (const [id, before] of existing) {
-        if (inMaster.has(id) || !before.in_master) continue;
+        if (inMaster.has(id) || !before.in_master || cmsOwned.has(id)) continue;
         await tx`update cms.cms_content_rows set in_master = false, missing_since = now(), import_id = ${importId}, updated_at = now() where row_id = ${id}`;
         await tx`insert into cms.cms_reviews (target, target_table, target_id, action, field_diff, by_label, import_id, reason)
           values ('catalogue', 'cms_content_rows', ${id}, 'science_row', ${tx.json({ in_master: { before: true, after: false } } as never)}, ${by}, ${importId}, 'not in the Science master any more (kept, flagged)')`;
@@ -232,7 +236,7 @@ export async function runScience(sql: Sql, master: Master, report: ScienceReport
       res.citations.rows = cits.length;
 
       // ------------------------------------------------ misconception items (0035): every row of the master, in step with its text
-      res.items = await syncRowItems(tx, master.rows.filter((r) => !held.has(r.row_id)).map((r) => ({ row_id: r.row_id, misconceptions: r.misconceptions })), importId, by);
+      res.items = await syncRowItems(tx, master.rows.filter((r) => !held.has(r.row_id) && !cmsOwned.has(r.row_id)).map((r) => ({ row_id: r.row_id, misconceptions: r.misconceptions })), importId, by);
 
       // ------------------------------------------------ PROPOSED topic–class links (never active from here)
       const links = new Set((await tx`select topic_id, class from cms.cms_topic_classes`).map((l) => `${l.topic_id}|${l.class}`));
@@ -392,7 +396,7 @@ export async function runScience(sql: Sql, master: Master, report: ScienceReport
       }
 
       await tx`update cms.cms_imports set finished_at = now(), result = ${res.questions.blocked.length || res.rows.held_out.length ? 'partial' : 'ok'},
-        counts = ${tx.json({ sources: res.sources, rows: { ...res.rows, held_out: res.rows.held_out.length, near_copy_badged: res.rows.near_copy_badged.length, overridden: res.rows.overridden.length },
+        counts = ${tx.json({ sources: res.sources, rows: { ...res.rows, held_out: res.rows.held_out.length, near_copy_badged: res.rows.near_copy_badged.length, overridden: res.rows.overridden.length, kept_cms: res.rows.kept_cms.length },
           citations: res.citations, proposals: res.proposals.length, questions: { created: res.questions.created.length, replaced: res.questions.replaced.length, unchanged: res.questions.unchanged,
           skipped: res.questions.skipped.length, blocked: res.questions.blocked.length }, links: res.links, originality: res.originality,
           also_in: { rows_with_ids: res.also_in.rows_with_ids, ids_parsed: res.also_in.ids_parsed, ids_kept: res.also_in.ids_kept, unparsed: res.also_in.unparsed.length, unknown: res.also_in.unknown.length },

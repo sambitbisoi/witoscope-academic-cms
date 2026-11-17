@@ -16,6 +16,14 @@ Changes to real (non-test) data that Sambit approved, with what was done and whe
 
 Each change is a `derived_update` row in `cms_reviews` (before → after, judged at Level / placement class). Report: `.local-import/tier-recompute-real-2026-1117-061543.md` (+ `.json`).
 
+### Q14: content rows edited in the CMS (migration 0037)
+
+| Step | Result |
+|---|---|
+| Backup | `~/WitoScope/CMS-backups/real-cms-2026-11-17-pre-0037.dump`; restored to `cms_rehearsal` |
+| Rehearsal | 0037 with the fingerprint guard (`scripts/migrate-guarded.ts`: every cms table, new columns left out; only `cms_config` may change, for the new key `content_rows_owner`): unchanged. `db:verify` ✓. Smoke test, rolled back: create C6-04-054 with an item, add an item to a row, retire. |
+| Real | 0037 with the same guard: unchanged. `db:verify` ✓. No data step: content rows change only when Sambit saves them in the CMS |
+
 ## 16–17 Nov 2026: Science misconception items, primary rows, Solution 1 (migration 0035, science:rationalise)
 
 **Request (Sambit, 16 Nov 2026):** Q16 Q17 Q18 (`docs/plan-2026-11-16-q11-q18.md`, decisions §8): split content-row misconceptions into items, tie each Science question's misconception and wrong options to items, one primary row per question, Solution 1 drafts for short ones; dry run on a restored copy first, then real.

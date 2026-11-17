@@ -3,6 +3,7 @@
 // Solution 1. Only items of the question's own content rows can be picked. Explicit Save; one audit row.
 // A misconception that is not an item yet can't be added here (that needs Q14, content-row editing).
 import { useMemo, useState } from 'react';
+import { browseHash } from './logic';
 import { saveScienceReview, type ScienceDetail } from './scienceApi';
 import { checkSolutionSupport } from '../../shared/science-items.ts';
 
@@ -78,6 +79,9 @@ export function ScienceReview({ questionId, versionNo, x, options, solution1, on
           {itemSelect(misc, setMisc, 'Misconception targeted')}
           {x.version.misconception_targeted_legacy && <div className="muted small">Before 16 Nov: “{x.version.misconception_targeted_legacy}”</div>}
           {items.length === 0 && <div className="muted small">Its content rows have no misconception items.</div>}
+          {/* Q14: a missing item is added on its row (Edit row), then picked here */}
+          <div className="muted small">No item fits? Add one on the row ({x.links.filter((l) => l.row).map((l, k) => <span key={l.row_id}>{k > 0 && ' · '}
+            <a href={browseHash({ subject: 'science', cls: String(l.row!.row_class), ch: l.row!.chapter_id, topic: l.row!.topic_id, tab: 'content', row: l.row_id })}>{l.row_id}</a></span>)}): open it, then Edit row.</div>
         </div>
       </div>
 

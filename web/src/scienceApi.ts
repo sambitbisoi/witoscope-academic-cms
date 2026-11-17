@@ -12,13 +12,15 @@ export interface ContentRow {
   /** class information (0033): bare labels from the master; also_in_rows = row IDs from Notes "Also in C<n>: …" */
   topic_classes_mapped: string | null; topic_taught_in: string | null; revisit: string | null; also_in_rows: string[];
   appears_in: string | null;
+  /** Q14 (17 Nov 2026): retired rows are kept (never deleted); cms_edited_at = changed in the CMS (the master) */
+  retired_at: string | null; retired_reason: string | null; cms_edited_at: string | null;
 }
 export type RowStatus = 'direct' | 'supporting' | 'not_eligible' | 'none';
 export type ScienceRow = ContentRow & { status: RowStatus; n_direct: number; n_supporting: number };
 export type ScienceQuestion = QuestionRow & { level_tier: string | null; display_format: string | null; safety_note: string | null; links: { row_id: string; role: 'direct' | 'supporting'; rank?: string; rank_proposed?: boolean }[] };
 export interface Citation { source_id: string; page_from: number; page_to: number; raw: string; for_row_id: string | null }
 
-const ROW_COLS = 'row_id, topic_id, chapter_id, row_class, type, chapter_role, content, why_it_matters, misconceptions, diagram_description, picture_question, question_use, safety, source, found_in, confidence, notes, time_sensitive, time_checked_year, accuracy_flag, book, book_chapter_no, book_chapter_title, appears_in, sort, topic_classes_mapped, topic_taught_in, revisit, also_in_rows, originality_result, originality_field, originality_score, originality_ref, originality_override, in_master';
+const ROW_COLS = 'row_id, topic_id, chapter_id, row_class, type, chapter_role, content, why_it_matters, misconceptions, diagram_description, picture_question, question_use, safety, source, found_in, confidence, notes, time_sensitive, time_checked_year, accuracy_flag, book, book_chapter_no, book_chapter_title, appears_in, sort, topic_classes_mapped, topic_taught_in, revisit, also_in_rows, originality_result, originality_field, originality_score, originality_ref, originality_override, in_master, retired_at, retired_reason, cms_edited_at';
 
 /** Everything the Science view shows, for one topic or every topic of a chapter. */
 export async function scienceData(scope: { topicId: string } | { chapterId: string }) {
@@ -150,4 +152,69 @@ export async function knownContentRows(ids: string[]): Promise<Set<string>> {
   const { data, error } = await supabase.from('cms_content_rows').select('row_id').in('row_id', ids);
   if (error) throw new Error(error.message);
   return new Set((data ?? []).map((r: { row_id: string }) => r.row_id));
+}
+
+// ---------------------------------------------------------------- Q14: content rows edited in the CMS (cms_save_content_row)
+export interface RowFields {
+  row_class: number; type: string; chapter_role: string; content: string; why_it_matters: string | null; diagram_description: string | null;
+  question_use: string; safety: string | null; also_in_rows: string[]; notes: string | null; picture_question: boolean; confidence: string | null;
+}
+export type ItemChange = { item_no: number | null; action: 'add' | 'edit' | 'retire' | 'restore'; text?: string };
+export const ROW_TYPES = ['Fact', 'Concept', 'How it works', 'Experiment', 'Scenario-Case', 'Diagram', 'Vocabulary'] as const;
+export const CHAPTER_ROLES = ['Core', 'Extension', 'Preview'] as const;
+export const QUESTION_USES = ['OK', 'Misconception only', 'No questions'] as const;
+
+export async function saveContentRow(p: { mode: 'create' | 'update' | 'retire' | 'restore'; row_id?: string; topic_id?: string; code?: string;
+  fields?: Partial<RowFields>; items?: ItemChange[]; reason?: string | null }) {
+  const { data, error } = await supabase.rpc('cms_save_content_row', { p });
+  if (error) throw new Error(error.message);
+  return data as { row_id: string; changed: boolean };
+}
+
+/** Chapter codes used by a topic's rows, per row class, most used first (the middle part of C6-04-014). */
+export async function topicRowCodes(topicId: string): Promise<Map<number, { code: string; n: number }[]>> {
+  const rows = await all<{ row_id: string }>((a, b) => supabase.from('cms_content_rows').select('row_id').eq('topic_id', topicId).range(a, b));
+  const by = new Map<number, Map<string, number>>();
+  for (const r of rows) {
+    const m = /^C([1-6])-([0-9A-Z]{2,4})-\d{3}$/.exec(r.row_id); if (!m) continue;
+    const cls = Number(m[1]), code = m[2]!;
+    const x = by.get(cls) ?? new Map<string, number>(); x.set(code, (x.get(code) ?? 0) + 1); by.set(cls, x);
+  }
+  return new Map([...by].map(([c, m]) => [c, [...m].map(([code, n]) => ({ code, n })).sort((a, b) => b.n - a.n || a.code.localeCompare(b.code))]));
+}
+/** The next free number of a prefix (the database assigns it again on Save; this is the preview). */
+export async function nextRowId(cls: number, code: string): Promise<string> {
+  const prefix = `C${cls}-${code}-`;
+  const { data, error } = await supabase.from('cms_content_rows').select('row_id').like('row_id', `${prefix}%`).order('row_id', { ascending: false }).limit(1);
+  if (error) throw new Error(error.message);
+  const last = (data ?? [])[0]?.row_id as string | undefined;
+  return `${prefix}${String((last ? Number(last.slice(-3)) : 0) + 1).padStart(3, '0')}`;
+}
+/** Current (non-retired) questions that use a row: as a direct / supporting row, and per misconception item. */
+export async function rowUsage(rowId: string) {
+  const [links, targeted, wrong] = await Promise.all([
+    supabase.from('cms_question_content_rows').select('version_id, role').eq('row_id', rowId),
+    supabase.from('cms_question_versions').select('version_id, misconception_item_no').eq('misconception_row_id', rowId),
+    supabase.from('cms_version_wrong_answers').select('version_id, mc_item_no').eq('mc_row_id', rowId),
+  ]);
+  for (const r of [links, targeted, wrong]) if (r.error) throw new Error(r.error.message);
+  const vids = [...new Set([...(links.data ?? []), ...(targeted.data ?? []), ...(wrong.data ?? [])].map((x) => x.version_id as number))];
+  const cur = vids.length ? await all<{ version_id: number; question_id: string; retired_at: string | null }>((a, b) =>
+    supabase.from('cms_question_list').select('version_id, question_id, retired_at').in('version_id', vids).range(a, b)) : [];
+  const q = new Map(cur.filter((c) => !c.retired_at).map((c) => [c.version_id, c.question_id]));
+  const ids = (xs: { version_id: number }[]) => [...new Set(xs.map((x) => q.get(x.version_id)).filter((x): x is string => !!x))].sort();
+  const items = new Map<number, string[]>();
+  for (const x of [...(targeted.data ?? []).map((t) => ({ version_id: t.version_id as number, n: t.misconception_item_no as number })),
+    ...(wrong.data ?? []).map((w) => ({ version_id: w.version_id as number, n: w.mc_item_no as number }))]) {
+    const id = q.get(x.version_id); if (!id) continue;
+    items.set(x.n, [...new Set([...(items.get(x.n) ?? []), id])].sort());
+  }
+  return { direct: ids((links.data ?? []).filter((l) => l.role === 'direct') as { version_id: number }[]),
+    supporting: ids((links.data ?? []).filter((l) => l.role === 'supporting') as { version_id: number }[]), items };
+}
+/** The classes a topic is linked to (home + approved links). */
+export async function topicClasses(topicId: string): Promise<number[]> {
+  const { data, error } = await supabase.from('cms_topic_all_classes').select('class').eq('topic_id', topicId);
+  if (error) throw new Error(error.message);
+  return (data ?? []).map((x) => x.class as number).sort();
 }
