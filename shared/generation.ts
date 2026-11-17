@@ -12,7 +12,8 @@ const int = { type: 'integer' } as const;
 const conceptRef = { type: 'object', additionalProperties: false, required: ['concept_id', 'involvement'],
   properties: { concept_id: str, involvement: { type: 'number', enum: [1, 0.5, 0.2] } } };
 const wrong = { type: 'object', additionalProperties: false, required: ['value', 'tag', 'misconception_id', 'target_concept_id', 'why'],
-  properties: { value: str, tag: { type: 'string', enum: ['misconception', 'concept_error', 'shortcut', 'partial', 'lost_step', 'used_irrelevant', 'misread', 'unit_slip', 'implausible'] },
+  // Q33 (v12): tag "where confident"; null = untagged
+  properties: { value: str, tag: { anyOf: [{ type: 'string', enum: ['misconception', 'concept_error', 'shortcut', 'partial', 'lost_step', 'used_irrelevant', 'misread', 'unit_slip', 'implausible'] }, { type: 'null' }] },
     misconception_id: str, target_concept_id: str, why: str } };
 const why = { type: 'object', additionalProperties: false, required: ['attribute', 'why', 'confidence'],
   properties: { attribute: str, why: str, confidence: { type: 'string', enum: ['high', 'medium', 'low'] } } };
@@ -43,7 +44,7 @@ export const DRAFT_SCHEMA = {
 
 export interface RawDraft {
   text: string; figure_description: string; format: Question['answer']['format']; options: string[]; correct: string; accepted: string[];
-  wrong_answers: { value: string; tag: string; misconception_id: string; target_concept_id: string; why: string }[];
+  wrong_answers: { value: string; tag: string | null; misconception_id: string; target_concept_id: string; why: string }[];
   concepts: { concept_id: string; involvement: number }[];
   signature: { math_difficulty: 'Simple' | 'Medium' | 'Complex'; is_pure_fact: boolean; reading: number; has_irrelevant_info: boolean; steps: number;
     working_memory: number; inhibition: number; visual: number; strategy: number; strategy_type: string; insight_id: string };
@@ -68,7 +69,7 @@ export interface RulesInput {
 const GENERATE_RULES = [
   '## Rules for every draft',
   '- Write original questions. Never copy a textbook question or keep its numbers.',
-  '- Every wrong MCQ option is a believable mistake and is tagged; a misconception tag names a misconception ID from the request.',
+  '- Every wrong MCQ option is a believable mistake. Tag a wrong option only where you are confident of the mistake it shows; otherwise give tag null (untagged is valid). A misconception tag names a misconception ID from the request.',
   '- The correct answer must be exactly one of the options for MCQ and True/False.',
   '- Use Indian context (₹, Indian names) and simple English for the class.',
   // D8b (Sambit, 12 Nov 2026): the pattern rule, same text as claude/question-bank/generation-prompt.md
@@ -79,7 +80,7 @@ const TAG_RULES = [
   '## Rules for tagging',
   '- Tag the question exactly as it is written; do not rewrite it.',
   '- Use only concept IDs and misconception IDs listed in the request.',
-  '- Tag every wrong answer listed in the request, in the same order, with its value unchanged.',
+  '- Return every wrong answer listed in the request, in the same order, with its value unchanged. Tag it where you are confident; otherwise give tag null.',
   '- Give a short why for each attribute.',
 ];
 
@@ -178,7 +179,7 @@ export function toQuestion(d: RawDraft, ctx: { key: string; topic_id: string; ty
     clone_batch_id: ctx.clone_batch_id, locale: 'IN', text: d.text,
     ...(d.figure_description ? { figure: { description: d.figure_description, image_status: 'needs_image' as const } } : {}),
     answer: { format: d.format, ...(isOptions ? { options: d.options } : {}), correct: d.correct, accepted: d.accepted,
-      wrong_answers: d.wrong_answers.map((w) => ({ value: w.value, tag: w.tag as never, ...(w.misconception_id ? { misconception_id: w.misconception_id } : {}),
+      wrong_answers: d.wrong_answers.filter((w) => w.tag).map((w) => ({ value: w.value, tag: w.tag as never, ...(w.misconception_id ? { misconception_id: w.misconception_id } : {}),
         ...(w.target_concept_id ? { target_concept_id: w.target_concept_id } : {}), ...(w.why ? { why: w.why } : {}) })) },
     concepts: d.concepts.map((c) => ({ concept_id: c.concept_id, involvement: c.involvement as 1 })),
     signature: { math_difficulty: d.signature.math_difficulty, is_pure_fact: d.signature.is_pure_fact, reading: d.signature.reading,
@@ -277,7 +278,7 @@ export const TAG_SCHEMA = {
 } as const;
 export interface RawTags {
   concepts: { concept_id: string; involvement: number }[]; signature: RawDraft['signature']; duration_s: number;
-  wrong_answers: { value: string; tag: string; misconception_id: string }[]; tagging_why: RawDraft['tagging_why'];
+  wrong_answers: { value: string; tag: string | null; misconception_id: string }[]; tagging_why: RawDraft['tagging_why'];
 }
 
 const wrongValues = (q: Question) => [...(q.answer.wrong_answers ?? []).map((w) => ({ part: '', w })),

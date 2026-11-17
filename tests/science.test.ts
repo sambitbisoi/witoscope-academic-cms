@@ -153,3 +153,20 @@ describe('DAV Class 1–2 spread scans (15 Nov 2026)', () => {
     expect(plan.get('DAV-magnets')).toEqual({ from: 8, to: 15 });
   });
 });
+
+// Q34 (Round 2): optional question columns
+import { familiarity as _fam, goldUse as _gold, optionTag as _tag, scienceType as _type } from '../shared/science.ts';
+describe('Q34 column parsers', () => {
+  it('Science question type, familiarity, gold Use', () => {
+    expect(['2', '2 · Basic understanding', '5 Super Achiever', '', '6', 'two'].map(_type)).toEqual([2, 2, 5, null, NaN, NaN]);
+    expect(['everyday', 'Less familiar', '', 'Odd'].map(_fam)).toEqual(['Everyday', 'Less familiar', null, undefined]);
+    expect(['Prompt example', 'test only', 'Test_only', '', 'gold'].map(_gold)).toEqual(['prompt_example', 'test_only', 'test_only', null, undefined]);
+  });
+  it('wrong-option tags', () => {
+    expect(_tag('shortcut')).toEqual({ tag: 'shortcut', ref: null });
+    expect(_tag('misconception C6-04-014 #2')).toEqual({ tag: 'misconception', ref: 'C6-04-014 #2' });
+    expect(_tag('concept_error: C6-04-002')).toEqual({ tag: 'concept_error', ref: 'C6-04-002' });
+    expect(_tag('')).toBeNull();
+    expect(_tag('guess')!.tag).toBe('');
+  });
+});

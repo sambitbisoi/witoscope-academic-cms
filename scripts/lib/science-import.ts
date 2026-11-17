@@ -30,7 +30,7 @@ export interface ScienceResult {
     /** Q14: rows added or edited in the CMS (the master since 17 Nov 2026): never overwritten, never flagged */ kept_cms: string[] };
   citations: { rows: number; questions: number };
   proposals: Proposal[];
-  questions: { created: string[]; replaced: string[]; unchanged: number; skipped: { qid: string; why: string }[]; blocked: { qid: string; why: string }[]; not_in_master: string[];
+  questions: { created: string[]; replaced: string[]; unchanged: number; /** Q34: Science gold (GS<class>-NNN) */ gold: string[]; tags: number; skipped: { qid: string; why: string }[]; blocked: { qid: string; why: string }[]; not_in_master: string[];
     /** Q21: questions that can't be placed (topic or content row not in the CMS) go to the Held-out area */ held_out: { qid: string; why: string }[] };
   links: { direct: number; supporting: number };
   originality: { rows: Record<string, number>; questions: Record<string, number> };
@@ -84,7 +84,7 @@ export async function runScience(sql: Sql, master: Master, report: ScienceReport
   const res: ScienceResult = {
     import_id: null, dry_run: opts.dryRun, target: opts.target, sources: { inserted: 0, updated: 0, unchanged: 0 },
     rows: { inserted: 0, updated: 0, unchanged: 0, flagged_missing: 0, back_in_master: 0, held_out: [], near_copy_badged: [], overridden: [], kept_cms: [] },
-    citations: { rows: 0, questions: 0 }, proposals: [], questions: { created: [], replaced: [], unchanged: 0, skipped: [], blocked: [], not_in_master: [], held_out: [] },
+    citations: { rows: 0, questions: 0 }, proposals: [], questions: { created: [], replaced: [], unchanged: 0, gold: [], tags: 0, skipped: [], blocked: [], not_in_master: [], held_out: [] },
     links: { direct: 0, supporting: 0 }, originality: { rows: {}, questions: {} }, status_mismatch: [],
     also_in: { rows_with_ids: 0, ids_parsed: 0, ids_kept: 0, unparsed: [...(master.also_in_unparsed ?? [])], unknown: [] }, class_mismatch: [], problems: [],
     items: null, misconceptions: { matched: 0, linked_supporting: [], unmatched: [], primary_proposed: [] },
@@ -267,8 +267,8 @@ export async function runScience(sql: Sql, master: Master, report: ScienceReport
       }
 
       // ------------------------------------------------ questions
-      const known = new Map((await tx<{ question_id: string; source_qid: string; current_version: number; approved_version: number | null; version_id: string; status: string; edited_at: string | null; created_from: string; content_hash: string }[]>`
-        select q.question_id, q.source_qid, q.current_version, q.approved_version, v.version_id, v.status, v.edited_at, v.created_from, v.content_hash
+      const known = new Map((await tx<{ question_id: string; bank: string; source_qid: string; current_version: number; approved_version: number | null; version_id: string; status: string; edited_at: string | null; created_from: string; content_hash: string }[]>`
+        select q.question_id, q.bank, q.source_qid, q.current_version, q.approved_version, v.version_id, v.status, v.edited_at, v.created_from, v.content_hash
           from cms.cms_questions q join cms.cms_question_versions v on v.question_id = q.question_id and v.version_no = q.current_version
          where q.source_qid is not null`).map((q) => [q.source_qid, q]));
       const rowIds = new Set((await tx`select row_id from cms.cms_content_rows`).map((r) => r.row_id as string));
@@ -341,9 +341,33 @@ export async function runScience(sql: Sql, master: Master, report: ScienceReport
       };
       const versionCols = (q: MasterQuestion) => ({
         text: q.text, figure_description: q.figure_description, image_status: q.picture_needed ? 'needs_image' : null, format: q.format, correct: q.correct,
-        author_notes: q.notes, content_hash: q.hash, science_tier_legacy: q.tier, display_format: q.sheet_format, misconception_targeted: null, misconception_targeted_legacy: q.misconception_targeted,
+        author_notes: q.notes, content_hash: q.hash, science_tier_legacy: q.tier || null, display_format: q.sheet_format, misconception_targeted: null, misconception_targeted_legacy: q.misconception_targeted,
         safety_note: q.safety_note, confidence: q.confidence,
+        // Q34 (S1 fields, 0041): written when the file gives them
+        science_question_type: q.science_question_type ?? null, setting_familiarity: q.setting_familiarity ?? null,
+        has_hidden_idea: q.has_hidden_idea ?? null, has_experiment: q.has_experiment ?? null,
       });
+      // Q34: Science settings, misconception items and the wrong-option tags (S7) of the file
+      const sciSettings = new Set((await tx`select setting_id from cms.cms_settings where subject = 'science' and status <> 'retired'`).map((r) => r.setting_id as string));
+      const itemOk = async (ref: string) => {
+        const [row, no] = ref.split(' #');
+        return (await tx`select 1 from cms.cms_row_misconceptions where row_id = ${row!} and item_no = ${Number(no)} and status <> 'retired'`).length > 0;
+      };
+      const q34Problem = async (q: MasterQuestion): Promise<string | null> => {
+        if (q.setting_id && !sciSettings.has(q.setting_id)) return `setting ${q.setting_id} is not a Science setting in the CMS`;
+        for (const t of q.option_tags ?? []) if (t?.tag === 'misconception' && !(await itemOk(t.ref!))) return `misconception item ${t.ref} is not an item of its content rows`;
+        return null;
+      };
+      const writeTags = async (q: MasterQuestion, versionId: number) => {
+        if (!q.option_tags) return;
+        await tx`delete from cms.cms_version_wrong_answers where version_id = ${versionId}`;
+        const choices = q.format === 'True/False' ? ['True', 'False'] : q.options;
+        const ws = q.option_tags.flatMap((t, i) => !t ? [] : [{ version_id: versionId, part_label: '', value: choices[i]!, option_position: i + 1, tag: t.tag,
+          mc_row_id: t.tag === 'misconception' ? t.ref!.split(' #')[0]! : null, mc_item_no: t.tag === 'misconception' ? Number(t.ref!.split(' #')[1]) : null,
+          target_row_id: t.tag === 'concept_error' ? t.ref : null }]);
+        if (ws.length) await tx`insert into cms.cms_version_wrong_answers ${tx(ws as never[])}`;
+        res.questions.tags += ws.length;
+      };
 
       for (const q of master.questions) {
         const c = qCheck.get(q.qid)!;
@@ -369,18 +393,35 @@ export async function runScience(sql: Sql, master: Master, report: ScienceReport
         }
         const t = topics.get(q.topic_id)!;
         const ex = known.get(q.qid);
+        const p34 = await q34Problem(q);
+        if (p34) { res.questions.blocked.push({ qid: q.qid, why: p34 }); continue; }
         if (!ex) {
-          const [{ id }] = await tx`select 'SQ' || lpad(nextval('cms.cms_sq_seq')::text, 6, '0') as id` as unknown as [{ id: string }];
-          await tx`insert into cms.cms_questions ${tx({ question_id: id, bank: 'production', subject: 'science', file_key: await nextKey(t.chapter_id), chapter_id: t.chapter_id, topic_id: t.topic_id,
-            class: t.class, level: q.row_class, locale: 'IN', current_version: 1, source_qid: q.qid } as never)}`;
+          // Q34: a "Gold use" row is a Science gold question, ID GS<class>-NNN (0043), never published; others SQ######
+          const gold = !!q.gold_use;
+          const id = gold
+            ? `GS${t.class}-${String(Number((await tx`select coalesce(max(substring(question_id from '-([0-9]{3})$')::int), 0) as n from cms.cms_questions where question_id like ${`GS${t.class}-%`}`)[0]!.n) + 1).padStart(3, '0')}`
+            : (await tx`select 'SQ' || lpad(nextval('cms.cms_sq_seq')::text, 6, '0') as id` as unknown as [{ id: string }])[0].id;
+          await tx`insert into cms.cms_questions ${tx({ question_id: id, bank: gold ? 'gold' : 'production', subject: 'science', file_key: gold ? null : await nextKey(t.chapter_id), chapter_id: t.chapter_id, topic_id: t.topic_id,
+            class: t.class, level: q.row_class, locale: 'IN', current_version: 1, source_qid: q.qid, setting_id: q.setting_id ?? null } as never)}`;
+          if (gold) { await tx`insert into cms.cms_gold_meta (question_id, use) values (${id}, ${q.gold_use!})`; res.questions.gold.push(id); }
           const [v] = await tx`insert into cms.cms_question_versions ${tx({ question_id: id, version_no: 1, status: 'in_review', topic_id: t.topic_id, accepted: [], created_from: 'import',
             import_id: importId, attributes_pending: true, originality_pending: false, ...versionCols(q) } as never)} returning version_id`;
           await writeVersion(q, id, Number(v!.version_id));
+          await writeTags(q, Number(v!.version_id));
           await tx`insert into cms.cms_reviews (target, target_table, target_id, action, reason, field_diff, by_label, import_id)
             values ('question_version', 'cms_question_versions', ${`${id} v1`}, 'create', ${`from the Science master (${q.qid})`},
                     ${tx.json({ status: { before: null, after: 'in_review' }, origin: 'import', flags: ['attributes_pending', ...(q.picture_needed ? ['image_pending'] : [])], originality: c.result } as never)}, ${by}, ${importId})`;
           res.questions.created.push(id);
           continue;
+        }
+        if ((ex.bank === 'gold') !== !!q.gold_use) { res.questions.skipped.push({ qid: q.qid, why: `${ex.question_id} is ${ex.bank}; the file says ${q.gold_use ? `gold (${q.gold_use})` : 'production'}. A question never changes bank (IDs are permanent)` }); continue; }
+        if (q.gold_use) {
+          const [gm] = await tx`select use from cms.cms_gold_meta where question_id = ${ex.question_id}`;
+          if (gm && gm.use !== q.gold_use) {
+            await tx`update cms.cms_gold_meta set use = ${q.gold_use} where question_id = ${ex.question_id}`;
+            await tx`insert into cms.cms_reviews (target, target_table, target_id, action, reason, field_diff, by_label, import_id)
+              values ('question_version', 'cms_gold_meta', ${ex.question_id}, 'import_update', ${`gold Use from the Science file (${q.qid})`}, ${tx.json({ gold_use: { before: gm.use, after: q.gold_use } } as never)}, ${by}, ${importId})`;
+          }
         }
         if (ex.content_hash === q.hash) { res.questions.unchanged++; continue; }
         const replaceable = ['draft', 'in_review'].includes(ex.status) && !ex.edited_at && ex.created_from === 'import' && ex.approved_version === null;
@@ -388,8 +429,9 @@ export async function runScience(sql: Sql, master: Master, report: ScienceReport
         const vid = Number(ex.version_id);
         for (const tbl of ['cms_version_options', 'cms_version_solutions', 'cms_citations', 'cms_question_content_rows']) await tx`delete from ${tx(`cms.${tbl}`)} where version_id = ${vid}`;
         await tx`update cms.cms_question_versions set ${tx({ ...versionCols(q), topic_id: t.topic_id, import_id: importId } as never)} where version_id = ${vid}`;
-        await tx`update cms.cms_questions set topic_id = ${t.topic_id}, chapter_id = ${t.chapter_id}, class = ${t.class}, level = ${q.row_class} where question_id = ${ex.question_id}`;
+        await tx`update cms.cms_questions set topic_id = ${t.topic_id}, chapter_id = ${t.chapter_id}, class = ${t.class}, level = ${q.row_class}, setting_id = ${q.setting_id ?? null} where question_id = ${ex.question_id}`;
         await writeVersion(q, ex.question_id, vid);
+        await writeTags(q, vid);
         await tx`insert into cms.cms_reviews (target, target_table, target_id, action, reason, by_label, import_id)
           values ('question_version', 'cms_question_versions', ${`${ex.question_id} v${ex.current_version}`}, 'import_replace_draft', ${`changed in the Science master (${q.qid}); unedited draft replaced`}, ${by}, ${importId})`;
         res.questions.replaced.push(ex.question_id);
@@ -416,7 +458,7 @@ export async function runScience(sql: Sql, master: Master, report: ScienceReport
 
       await tx`update cms.cms_imports set finished_at = now(), result = ${res.questions.blocked.length || res.rows.held_out.length ? 'partial' : 'ok'},
         counts = ${tx.json({ sources: res.sources, rows: { ...res.rows, held_out: res.rows.held_out.length, near_copy_badged: res.rows.near_copy_badged.length, overridden: res.rows.overridden.length, kept_cms: res.rows.kept_cms.length },
-          citations: res.citations, proposals: res.proposals.length, questions: { created: res.questions.created.length, replaced: res.questions.replaced.length, unchanged: res.questions.unchanged,
+          citations: res.citations, proposals: res.proposals.length, questions: { created: res.questions.created.length, replaced: res.questions.replaced.length, unchanged: res.questions.unchanged, gold: res.questions.gold.length, tags: res.questions.tags,
           skipped: res.questions.skipped.length, blocked: res.questions.blocked.length }, links: res.links, originality: res.originality,
           also_in: { rows_with_ids: res.also_in.rows_with_ids, ids_parsed: res.also_in.ids_parsed, ids_kept: res.also_in.ids_kept, unparsed: res.also_in.unparsed.length, unknown: res.also_in.unknown.length },
           class_mismatch: res.class_mismatch.length,

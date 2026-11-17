@@ -107,9 +107,8 @@ export function checkFile(file: ChapterFile, cat: Catalog, opts: { gold?: boolea
         if (opts.length !== need) err(k, `${where}${a.format} needs ${need} options, found ${opts.length}`);
         if (new Set(opts).size !== opts.length) err(k, `${where}options repeat a value`);
         if (!opts.includes(a.correct)) err(k, `${where}correct answer "${a.correct}" is not one of the options`);
-        const tagged = new Set((a.wrong_answers ?? []).map((w) => w.value));
-        const untagged = opts.filter((o) => o !== a.correct && !tagged.has(o));
-        if (untagged.length && !isAchievers) err(k, `${where}wrong option${untagged.length > 1 ? 's' : ''} not tagged: ${untagged.map((o) => `"${o}"`).join(', ')}`);
+        // Q33 (rules v11 → v12, Sambit 17 Nov 2026): wrong options are tagged "where confident". An untagged wrong option is
+        // valid and never blocks an import or approval (it was an error under v11).
         for (const w of a.wrong_answers ?? []) if (!opts.includes(w.value)) warn(k, `${where}wrong answer "${w.value}" is not one of the options`);
         if ((a.wrong_answers ?? []).some((w) => w.value === a.correct)) err(k, `${where}the correct answer is also tagged as wrong`);
       } else if (a.options?.length) {

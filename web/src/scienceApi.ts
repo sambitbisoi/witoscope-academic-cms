@@ -18,7 +18,7 @@ export interface ContentRow {
 export type RowStatus = 'direct' | 'supporting' | 'not_eligible' | 'none';
 export type ScienceRow = ContentRow & { status: RowStatus; n_direct: number; n_supporting: number };
 /** level_tier here = the retired authored tier (Q27: science_tier_legacy, or level_tier on versions from before 0041) */
-export type ScienceQuestion = QuestionRow & { level_tier: string | null; science_question_type: number | null; display_format: string | null; safety_note: string | null; links: { row_id: string; role: 'direct' | 'supporting'; rank?: string; rank_proposed?: boolean }[] };
+export type ScienceQuestion = QuestionRow & { level_tier: string | null; science_question_type: number | null; /** Q29 (0042, cms_question_list) */ markers?: number | null; display_format: string | null; safety_note: string | null; links: { row_id: string; role: 'direct' | 'supporting'; rank?: string; rank_proposed?: boolean }[] };
 export interface Citation { source_id: string; page_from: number; page_to: number; raw: string; for_row_id: string | null }
 
 const ROW_COLS = 'row_id, topic_id, chapter_id, row_class, type, chapter_role, content, why_it_matters, misconceptions, diagram_description, picture_question, question_use, safety, source, found_in, confidence, notes, time_sensitive, time_checked_year, accuracy_flag, book, book_chapter_no, book_chapter_title, appears_in, sort, topic_classes_mapped, topic_taught_in, revisit, also_in_rows, originality_result, originality_field, originality_score, originality_ref, originality_override, in_master, retired_at, retired_reason, cms_edited_at';

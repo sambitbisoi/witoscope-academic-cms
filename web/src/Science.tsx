@@ -11,6 +11,7 @@ import { AddQuestionForm, OriginFlags } from './AddQuestions';
 import { ContentRowForm } from './ContentRowForm';
 import { rowDetail, scienceData, type ScienceData, type ScienceQuestion, type ScienceRow } from './scienceApi';
 import { browseHash, showsAtLevel, statusLabel } from './logic';
+import { sciFilter, SCI_FILTER_NONE, type SciFilter } from './scienceLogic';
 import { classesLine, isDimmed, listedOrder, rightPane, rowClassLine, rowQuestions, rowsForClass, rowsInOrder, rowSplit, rowSplitLabel, topicGroups } from './scienceLogic';
 
 export const CONTENT_TYPES = ['Fact', 'Concept', 'How it works', 'Experiment', 'Scenario-Case', 'Diagram', 'Vocabulary'] as const;
@@ -72,7 +73,10 @@ export function ScienceView({ scope, cls, higher = false, topicNames, row, q, on
   const rows = useMemo(() => rowsInOrder(rowsForClass(live, cls, higher)), [live, cls, higher]);
   const hidden = live.length - rows.length;
   const ceiling = cls === 'all' ? null : Number(cls);
-  const qs = useMemo(() => (data?.questions ?? []).filter((x) => showsAtLevel(x.effective_level, ceiling, higher)), [data, ceiling, higher]);
+  const qsAll = useMemo(() => (data?.questions ?? []).filter((x) => showsAtLevel(x.effective_level, ceiling, higher)), [data, ceiling, higher]);
+  // Q34: Science question type / tier / markers filters (narrow the question lists; the coverage line counts all)
+  const [sf, setSf] = useState<SciFilter>(SCI_FILTER_NONE);
+  const qs = useMemo(() => sciFilter(qsAll, sf), [qsAll, sf]);
   const order = useMemo(() => listedOrder(qs, row), [qs, row]);
   useEffect(() => { onOrder(order); }, [order, onOrder]);
   useEffect(() => () => onOrder([]), [onOrder]);
@@ -93,7 +97,17 @@ export function ScienceView({ scope, cls, higher = false, topicNames, row, q, on
 
   return (
     <div className="sci">
-      <Coverage rows={rows.filter((r) => !r.retired_at)} questions={qs} cls={cls} />
+      <Coverage rows={rows.filter((r) => !r.retired_at)} questions={qsAll} cls={cls} />
+      <div className="filters sci-filters small">
+        <label>Science question type <select value={sf.type} onChange={(e) => setSf({ ...sf, type: e.target.value })}>
+          <option value="">Any</option><option value="none">Not set</option>
+          {(Object.entries(SCIENCE_QUESTION_TYPES) as [string, string][]).map(([k, l]) => <option key={k} value={k}>{k} · {l}</option>)}</select></label>
+        <label>Tier <select value={sf.tier} onChange={(e) => setSf({ ...sf, tier: e.target.value })}>
+          <option value="">Any</option><option value="none">None (no type)</option>{['School', 'Achiever', 'Super Achiever'].map((t) => <option key={t}>{t}</option>)}</select></label>
+        <label>Markers <select value={sf.markers} onChange={(e) => setSf({ ...sf, markers: e.target.value })}>
+          <option value="">Any</option>{['0', '1', '2', '3+'].map((m) => <option key={m}>{m}</option>)}</select></label>
+        {(sf.type || sf.tier || sf.markers) && <><span className="muted">{qs.length} of {qsAll.length} questions</span> <button className="link small" onClick={() => setSf(SCI_FILTER_NONE)}>Clear</button></>}
+      </div>
       <div className="sci-cols">
         <section className="sci-content" aria-label="Content rows">
           <div className="eyebrow sci-content-head"><span>Content · master order{hidden > 0 ? <span className="muted"> · {hidden} row{hidden === 1 ? '' : 's'} of a higher class not shown (tick "Show higher-level questions")</span> : null}</span>
@@ -274,8 +288,9 @@ function QItem({ q, rowId, ceiling, selected, onPick }: { q: ScienceQuestion; ro
     <button className={`qrow sci-qrow ${selected ? 'sel' : ''}`} onClick={onPick} title={q.text} ref={selected ? (el) => el?.scrollIntoView({ block: 'nearest' }) : undefined}>
       <span className="qtext">{q.text}</span>
       <span className="sci-q-meta small">
-        {q.science_question_type ? <span className="tag tier" title={`Science question type ${q.science_question_type} · ${SCIENCE_QUESTION_TYPES[q.science_question_type as 1]}`}>Type {q.science_question_type}</span>
+        {q.science_question_type ? <span className="tag tier" title={`Science question type ${q.science_question_type} · ${SCIENCE_QUESTION_TYPES[q.science_question_type as 1]}`}>Type {q.science_question_type}{q.tier ? ` · ${q.tier}` : ''}</span>
           : q.level_tier && <span className="muted" title="Old tier (legacy, retired): the type is not set yet">{q.level_tier}</span>}
+        {(q.markers ?? 0) > 0 && <span className="muted" title="Markers (Q29)">{q.markers} marker{q.markers === 1 ? '' : 's'}</span>}
         <LevelTag q={q} ceiling={ceiling} />
         {here && here.rank && here.rank !== 'context' && <span className={`tag rank-${here.rank}${here.rank_proposed ? ' rank-proposed' : ''}`} title="This row's rank for the question">{here.rank === 'primary' ? `Primary${here.rank_proposed ? ' (proposed)' : ''}` : 'Secondary'}</span>}
         <span className="muted">{nd} direct{ns ? ` · ${ns} supporting` : ''}</span>

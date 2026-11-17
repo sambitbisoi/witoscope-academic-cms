@@ -102,3 +102,13 @@ export function scienceBlockers(x: BlockerInput): string[] {
   if (x.conceptErrorRowsOk === false) out.push("a concept error's target row is not one of its content rows");
   return out;
 }
+
+/** Q34 (Round 2, 17 Nov 2026): Browse filters for Science questions: Science question type, tier, markers. '' = any. */
+export interface SciFilter { type: string; tier: string; markers: string }
+export const SCI_FILTER_NONE: SciFilter = { type: '', tier: '', markers: '' };
+export function sciFilter<Q extends { science_question_type: number | null; tier: string | null; markers?: number | null }>(qs: Q[], f: SciFilter): Q[] {
+  return qs.filter((q) =>
+    (f.type === '' || (f.type === 'none' ? !q.science_question_type : q.science_question_type === Number(f.type)))
+    && (f.tier === '' || (f.tier === 'none' ? !q.tier : q.tier === f.tier))
+    && (f.markers === '' || (f.markers === '3+' ? (q.markers ?? 0) >= 3 : (q.markers ?? 0) === Number(f.markers))));
+}

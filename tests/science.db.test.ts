@@ -226,3 +226,38 @@ describe('import:science (local, rolled back)', () => {
     expect(rowHash(R1)).toMatch(/^[0-9a-f]{64}$/);
   });
 });
+
+// Q34 (Round 2, 17 Nov 2026): the optional columns: S1 fields, the setting, wrong-option tags (S7) and gold Use.
+describe('import:science Q34 columns (local, rolled back)', () => {
+  it('writes S1 fields, a Science setting, tags and Science gold (GS<class>-NNN); refuses a Math setting; a question never changes bank', async () => {
+    await inRollback(async (tx) => {
+      await tx`insert into cms.cms_settings (setting_id, name, status, subject) values ('SET9911', 'Test garden (science)', 'proposed', 'science'), ('SET9912', 'Test shop (math)', 'proposed', 'math')`;
+      const base = master([R1, R2, R3, R4], [Q1, Q2]);
+      await run(tx, base);
+      const items = await tx`select row_id, item_no from cms.cms_row_misconceptions where row_id = 'C6-ZZ-001' and status <> 'retired' order by item_no limit 1`;
+      const item = `${items[0]!.row_id} #${items[0]!.item_no}`;
+      const q3: MasterQuestion = { ...question('ZZ-Q003', [{ row_id: 'C6-ZZ-001', role: 'direct' }, { row_id: 'C6-ZZ-004', role: 'direct' }]), tier: '',
+        science_question_type: 4, setting_id: 'SET9911', setting_familiarity: 'Everyday', has_hidden_idea: true, has_experiment: false,
+        option_tags: [{ tag: 'misconception', ref: item }, { tag: 'concept_error', ref: 'C6-ZZ-004' }, null, { tag: 'shortcut', ref: null }] };
+      const g1: MasterQuestion = { ...question('ZZ-G001', [{ row_id: 'C6-ZZ-001', role: 'direct' }]), science_question_type: 2, gold_use: 'prompt_example' };
+      const bad: MasterQuestion = { ...question('ZZ-Q004', [{ row_id: 'C6-ZZ-001', role: 'direct' }]), setting_id: 'SET9912' };
+      const r = await run(tx, master([R1, R2, R3, R4], [Q1, Q2, q3, g1, bad], 'sha-q34'));
+      expect(r.questions.blocked.map((b) => b.qid)).toEqual(['ZZ-Q004']);
+      expect(r.questions.gold).toEqual(['GS6-001']);
+      expect(r.questions.tags).toBe(3);
+      const [v3] = await tx`select q.setting_id, q.bank, v.science_question_type, v.setting_familiarity, v.has_hidden_idea, v.has_experiment, v.tier, v.science_tier_legacy, v.level_tier
+        from cms.cms_questions q join cms.cms_question_versions v on v.question_id = q.question_id and v.version_no = q.current_version where q.source_qid = 'ZZ-Q003'`;
+      expect(v3).toMatchObject({ setting_id: 'SET9911', bank: 'production', science_question_type: 4, setting_familiarity: 'Everyday', has_hidden_idea: true, has_experiment: false,
+        tier: 'Achiever', science_tier_legacy: null, level_tier: null });
+      const tags = (await tx`select w.option_position, w.tag, w.mc_row_id, w.target_row_id from cms.cms_version_wrong_answers w join cms.cms_question_versions v on v.version_id = w.version_id
+        join cms.cms_questions q on q.question_id = v.question_id where q.source_qid = 'ZZ-Q003' order by 1`).map((t) => `${t.option_position}:${t.tag}:${t.mc_row_id ?? t.target_row_id ?? ''}`);
+      expect(tags).toEqual(['1:misconception:C6-ZZ-001', '2:concept_error:C6-ZZ-004', '4:shortcut:']);
+      const [g] = await tx`select q.bank, q.file_key, m.use from cms.cms_questions q join cms.cms_gold_meta m on m.question_id = q.question_id where q.question_id = 'GS6-001'`;
+      expect(g).toMatchObject({ bank: 'gold', file_key: null, use: 'prompt_example' });
+      // gold Use changes in place (audited); a production question marked gold is skipped (IDs and banks are permanent)
+      const r2 = await run(tx, master([R1, R2, R3, R4], [{ ...Q1, gold_use: 'test_only' }, Q2, q3, { ...g1, gold_use: 'test_only' }], 'sha-q34b'));
+      expect(r2.questions.skipped.map((s) => s.qid)).toEqual(['ZZ-Q001']);
+      expect((await tx`select use from cms.cms_gold_meta where question_id = 'GS6-001'`)[0]!.use).toBe('test_only');
+    });
+  });
+});

@@ -241,3 +241,18 @@ describe('shared generation logic', () => {
     expect([a.Reading!.pct, a.Reading!.near, a.Steps!.pct]).toEqual([50, 1, 100]);
   });
 });
+
+// Q33 (v12, 17 Nov 2026): a draft's wrong option may come back untagged (tag null); it is kept out of wrong_answers.
+describe('Q33: tag where confident', () => {
+  it('the draft schema accepts a null tag', () => {
+    const find = (o: unknown): unknown => {
+      if (!o || typeof o !== 'object') return undefined;
+      const r = o as Record<string, unknown>;
+      if (r.properties && (r.properties as Record<string, unknown>).tag) return (r.properties as Record<string, unknown>).tag;
+      for (const v of Object.values(r)) { const f = find(v); if (f) return f; }
+      return undefined;
+    };
+    const tag = find(DRAFT_SCHEMA) as { anyOf: { type: string }[] };
+    expect(tag.anyOf.map((x) => x.type)).toEqual(['string', 'null']);
+  });
+});

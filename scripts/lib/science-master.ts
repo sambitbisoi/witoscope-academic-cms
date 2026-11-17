@@ -4,7 +4,7 @@
 import { createHash } from 'node:crypto';
 import {
   alsoInRows, CONTENT_COLUMNS, CONTENT_TYPES, davPages, figureDescription, idList, LEGEND_COLUMNS, legendBooks, missingColumns, ncertPages, notesFlags, QUESTION_COLUMNS, QUESTION_USES,
-  questionLinks, resolveCitation, sheetStatus, sourcesFromLegend, storedFormat, str, taughtIn, TIERS, yn, type LegendBook, type RowStatus, type ScienceSource,
+  questionLinks, resolveCitation, sheetStatus, sourcesFromLegend, storedFormat, str, taughtIn, TIERS, yn, familiarity, FAMILIARITY, goldUse, optionTag, scienceType, WRONG_TAGS, type LegendBook, type RowStatus, type ScienceSource,
 } from '../../shared/science.ts';
 import { stableJson } from '../../shared/json.ts';
 import { readWorkbook } from './xlsx.ts';
@@ -24,6 +24,10 @@ export interface MasterQuestion {
   qid: string; topic_id: string; row_class: number; tier: string; sheet_format: string; format: 'MCQ-4' | 'True/False'; text: string; options: string[]; correct: string;
   explanation: string | null; misconception_targeted: string | null; picture_needed: boolean; figure_description: string | null; safety_note: string | null;
   confidence: string | null; notes: string | null; links: { row_id: string; role: 'direct' | 'supporting' }[]; citations: Citation[]; sheet: number; hash: string;
+  /** Q34 (Round 2): optional columns. Each is null when blank; option_tags is null when the file has no Tag columns
+   *  (so an older master never clears tags set in the CMS). See docs/science-import-format.md. */
+  science_question_type?: number | null; setting_id?: string | null; setting_familiarity?: string | null; has_hidden_idea?: boolean | null; has_experiment?: boolean | null;
+  option_tags?: ({ tag: string; ref: string | null } | null)[] | null; gold_use?: 'prompt_example' | 'test_only' | null;
 }
 export interface MasterProblem { level: 'error' | 'warning'; where: string; message: string }
 /** Notes that mention "also in" but gave no valid row ID, or carried tokens that are not row IDs. */
@@ -110,7 +114,8 @@ export async function readMaster(path: string): Promise<Master> {
     try { format = storedFormat(sheetFormat, options); } catch (e) { err(where, (e as Error).message); }
     const opts = options.filter((o): o is string => o !== null);
     const idx = 'ABCD'.indexOf(letter);
-    if (!(TIERS as readonly string[]).includes(tier)) err(where, `Level "${tier}" is not L1, L2 or L3`);
+    // Q27/Q34: the authored tier is retired; a new file may leave Level blank (kept as science_tier_legacy when given)
+    if (tier && !(TIERS as readonly string[]).includes(tier)) err(where, `Level "${tier}" is not L1, L2 or L3 (or blank)`);
     if (idx < 0 || idx >= opts.length) err(where, `Answer "${letter}" is not one of the options`);
     const text = str(v.Question);
     if (!text) err(where, 'Question is empty');
@@ -132,8 +137,33 @@ export async function readMaster(path: string): Promise<Master> {
       explanation: str(v.Explanation), misconception_targeted: str(v['Misconception targeted']), picture_needed: pic ?? false, figure_description: fig,
       safety_note: str(v['Safety note']), confidence: str(v.Confidence)?.toLowerCase() ?? null, notes: str(v.Notes), links, citations, sheet: x.row,
     };
-    const { sheet: _s, ...hashed } = q;
-    questions.push({ ...q, hash: createHash('sha256').update(stableJson(hashed)).digest('hex') });
+    // Q34: the optional columns (only the ones that are set count for the hash, so an older master hashes as before)
+    const extra: Partial<MasterQuestion> = {};
+    const st = scienceType(v['Science question type']);
+    if (Number.isNaN(st)) err(where, `Science question type "${str(v['Science question type'])}" is not 1–5`); else if (st !== null) extra.science_question_type = st;
+    const fam = familiarity(v['Setting familiarity']);
+    if (fam === undefined) err(where, `Setting familiarity "${str(v['Setting familiarity'])}" is not one of ${FAMILIARITY.join(', ')}`); else if (fam !== null) extra.setting_familiarity = fam;
+    const setting = str(v.Setting);
+    if (setting && !/^SET[0-9]{3,4}$/.test(setting)) err(where, `Setting "${setting}" is not a SET ID (blank = bare)`); else if (setting) extra.setting_id = setting;
+    const hid = yn(v['Hidden idea (Y/N)']), exp = yn(v['Experiment (Y/N)']);
+    if (hid !== null) extra.has_hidden_idea = hid;
+    if (exp !== null) extra.has_experiment = exp;
+    if (['Tag A', 'Tag B', 'Tag C', 'Tag D'].some((c) => c in v)) {
+      const tags = (['Tag A', 'Tag B', 'Tag C', 'Tag D'] as const).slice(0, opts.length).map((c) => optionTag(v[c]));
+      tags.forEach((t, i) => {
+        const L = 'ABCD'[i];
+        if (!t) return;
+        if (i === idx) err(where, `Tag ${L}: option ${L} is the correct answer; only wrong options take a tag`);
+        else if (!t.tag) err(where, `Tag ${L}: "${str(v[`Tag ${L}`])}" is not one of ${WRONG_TAGS.join(', ')}`);
+        else if (t.tag === 'misconception' && !/^C\d-[A-Z0-9]+-\d+ #\d+$/.test(t.ref ?? '')) err(where, `Tag ${L}: a misconception names its row item, e.g. "misconception C6-04-014 #2"`);
+        else if (t.tag === 'concept_error' && !links.some((l) => l.row_id === t.ref)) err(where, `Tag ${L}: a concept error names one of its content rows, e.g. "concept_error ${links[0]?.row_id ?? 'C6-04-001'}"`);
+      });
+      if (tags.some((t) => t)) extra.option_tags = tags;
+    }
+    const gu = goldUse(v['Gold use']);
+    if (gu === undefined) err(where, `Gold use "${str(v['Gold use'])}" is not "Prompt example" or "Test only" (blank = production)`); else if (gu !== null) extra.gold_use = gu;
+    const { sheet: _s, ...hashed } = { ...q, ...extra };
+    questions.push({ ...q, ...extra, hash: createHash('sha256').update(stableJson(hashed)).digest('hex') });
   }
   return { path, sha256: wb.sha256, rows, also_in_unparsed: alsoUnparsed, questions, books, sources, problems };
 }
