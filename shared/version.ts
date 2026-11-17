@@ -49,7 +49,9 @@ export function structureOf(q: Question, topicId: string): unknown {
     parts: [...(q.parts ?? [])].map((p) => ({ part_label: p.part_label, text: T, answer: canonAnswer(p.answer), concepts: canonConcepts(p.concepts) }))
       .sort((a, b) => a.part_label.localeCompare(b.part_label)),
     concepts: canonConcepts(q.concepts),
-    signature: {
+    // T1: a Science question has only the Science signature (each field may be unset); the Math one is a placeholder
+    signature: q.science ? { science: { reading: q.science.reading, steps: q.science.steps, inhibition: q.science.inhibition, visual: q.science.visual,
+      has_irrelevant_info: q.science.has_irrelevant_info, is_pure_fact: q.science.is_pure_fact } } : {
       math_difficulty: s.math_difficulty, is_pure_fact: s.is_pure_fact, reading: Number(s.reading), has_irrelevant_info: s.has_irrelevant_info,
       steps: Number(s.steps), working_memory: Number(s.working_memory), inhibition: Number(s.inhibition), visual: Number(s.visual), strategy: Number(s.strategy),
       strategy_type: s.strategy_type ?? null, strategy_type_2: s.strategy_type_2 ?? null, strategy_other_note: t(s.strategy_other_note),

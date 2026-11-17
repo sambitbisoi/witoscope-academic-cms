@@ -33,6 +33,10 @@ export interface EditContext {
     strategyTypes: string[];
   };
   conceptClass: (id: string) => number | undefined;
+  /** T1: the question's subject; for Science, its linked content rows and their misconception items */
+  subject: string;
+  linkedRows: string[];
+  rowItems: { row_id: string; item_no: number; text: string; status: string }[];
 }
 
 export async function loadForEdit(questionId: string): Promise<EditContext> {
@@ -75,7 +79,17 @@ export async function loadForEdit(questionId: string): Promise<EditContext> {
     keyToQuestionId: new Map(),
     sourceItems: new Set(detail.refs.map((r) => r.ref_id)), // existing refs are not re-flagged here
   };
+  const subject = detail.question.subject as string;
+  let linkedRows: string[] = [];
+  let rowItems: EditContext['rowItems'] = [];
+  if (subject === 'science') {
+    linkedRows = must<{ row_id: string }[]>(await supabase.from('cms_question_content_rows').select('row_id').eq('version_id', detail.version.version_id))
+      .map((r) => r.row_id).sort();
+    if (linkedRows.length) rowItems = must<EditContext['rowItems']>(await supabase.from('cms_row_misconceptions').select('row_id, item_no, text, status')
+      .in('row_id', linkedRows).order('row_id').order('item_no'));
+  }
   return {
+    subject, linkedRows, rowItems,
     detail, question: questionFromDb(bundleOf(detail)), cfg, catalog, ruleVersion, conceptClass: (id) => conceptClasses.get(id),
     lists: { topics: T, sets: S, patterns: P, concepts: C, misconceptions: M, insights: I,
       strategyTypes: must<{ value: string; active: boolean }[]>(strategies).filter((s) => s.active).map((s) => s.value) },

@@ -31,9 +31,37 @@ export function structureDiff(a: Question, b: Question): string[] {
 
 /** Version and child rows as cms_apply_save expects them. */
 export function rowsFor(q: Question, cfg: DerivedConfig, questionClass: number, conceptClass: (id: string) => number | undefined) {
+  if (q.science) return { ...rowsCommon(q, scienceVersion(q)), derived: null };
   const d = derive(q, questionClass, conceptClass, cfg);
+  return { ...rowsCommon(q, mathVersion(q, d)), derived: d };
+}
+
+/** T1 (17 Nov 2026): a Science version never gets Math signature or derived fields (all null); only its own signature. */
+const MATH_ONLY_NULL = {
+  math_difficulty: null, working_memory: null, strategy: null, strategy_type: null, strategy_type_2: null, strategy_other_note: null,
+  insight_id: null, proposed_insight: null, trick_ref: null,
+  multistep_band: null, load: null, load_driver: null, style: null, tier: null, trap_level: null, is_isolating: null, difficulty_points: null,
+} as const;
+function scienceVersion(q: Question) {
+  const sc = q.science!;
+  return {
+    ...placementAndBody(q),
+    ...MATH_ONLY_NULL,
+    is_pure_fact: sc.is_pure_fact, reading: sc.reading, has_irrelevant_info: sc.has_irrelevant_info, steps: sc.steps, inhibition: sc.inhibition, visual: sc.visual,
+    ...taggingCols(q),
+  };
+}
+const placementAndBody = (q: Question) => ({
+  topic_id: q.topic_id, typical_set_id: q.typical_set_id ?? null, pattern_id: q.pattern_id ?? null,
+  text: q.text, figure_description: q.figure?.description ?? null, image_status: q.figure?.image_status ?? null, image_path: q.figure?.image_file ?? null,
+  format: q.answer.format, correct: q.answer.format === 'Multi-part' ? null : q.answer.correct, accepted: q.answer.accepted ?? [], duration_s: q.duration_s ?? null,
+});
+const taggingCols = (q: Question) => ({
+  tagging_why: q.tagging?.why ?? null, tagged_by: q.tagging?.tagged_by ?? null, tagging_summary: q.tagging?.summary ?? null, author_notes: q.author_notes ?? null,
+});
+function mathVersion(q: Question, d: ReturnType<typeof derive>) {
   const s = q.signature;
-  const version = {
+  return {
     topic_id: q.topic_id, typical_set_id: q.typical_set_id, pattern_id: q.pattern_id ?? null,
     text: q.text, figure_description: q.figure?.description ?? null, image_status: q.figure?.image_status ?? null, image_path: q.figure?.image_file ?? null,
     format: q.answer.format, correct: q.answer.format === 'Multi-part' ? null : q.answer.correct, accepted: q.answer.accepted ?? [], duration_s: q.duration_s,
@@ -44,6 +72,9 @@ export function rowsFor(q: Question, cfg: DerivedConfig, questionClass: number, 
     ...d,
     tagging_why: q.tagging?.why ?? null, tagged_by: q.tagging?.tagged_by ?? null, tagging_summary: q.tagging?.summary ?? null, author_notes: q.author_notes ?? null,
   };
+}
+
+function rowsCommon<V>(q: Question, version: V) {
   const answers: [string, Answer][] = [['', q.answer], ...(q.parts ?? []).map((p) => [p.part_label, p.answer] as [string, Answer])];
   const options = answers.flatMap(([label, a]) => (a.options ?? []).map((text, i) => ({ part_label: label, position: i + 1, text, is_correct: text === a.correct })));
   const wrong_answers = answers.flatMap(([label, a]) => (a.wrong_answers ?? []).map((w) => {
@@ -52,7 +83,7 @@ export function rowsFor(q: Question, cfg: DerivedConfig, questionClass: number, 
       mc_row_id: w.mc?.row_id ?? null, mc_item_no: w.mc?.item_no ?? null };
   }));
   return {
-    version, derived: d, options, wrong_answers,
+    version, options, wrong_answers,
     parts: (q.parts ?? []).map((p) => ({ part_label: p.part_label, text: p.text, format: p.answer.format, correct: p.answer.correct, accepted: p.answer.accepted ?? [] })),
     concepts: [...q.concepts.map((c) => ({ part_label: '', concept_id: c.concept_id, involvement: c.involvement })),
       ...(q.parts ?? []).flatMap((p) => p.concepts.map((c) => ({ part_label: p.part_label, concept_id: c.concept_id, involvement: c.involvement })))],
@@ -67,6 +98,9 @@ export function planSave(args: {
   questionId: string; baseVersionNo: number; currentStatus: string; retired: boolean;
   before: Question; after: Question; cfg: DerivedConfig; questionClass: number; conceptClass: (id: string) => number | undefined;
   forceNewVersion?: boolean; reason?: string;
+  /** the version's stored content_hash: a Science version imported by import:science has another fingerprint, so a
+   *  typo fix (which the database checks against it) can't be applied; it becomes a new version instead (T1) */
+  storedHash?: string | null;
 }): SavePlan {
   const { before, after } = args;
   const prev = { structureHash: structureHash(before, before.topic_id), texts: textsOf(before) };
@@ -84,6 +118,9 @@ export function planSave(args: {
     mode = 'update_draft'; summary = `Update v${args.baseVersionNo} in place; it stays flagged "Needs review".`;
   } else if (args.currentStatus === 'draft') {
     mode = 'update_draft'; summary = `Update the open draft v${args.baseVersionNo} in place (not reviewed yet).`;
+  } else if (change.kind === 'typo' && args.currentStatus === 'approved' && after.science && args.storedHash && args.storedHash !== prev.structureHash) {
+    mode = 'new_version';
+    summary = `New version v${args.baseVersionNo + 1} (draft): a wording fix, but v${args.baseVersionNo} still has its import fingerprint, so it can't be fixed in place.`;
   } else if (change.kind === 'typo' && args.currentStatus === 'approved') {
     mode = 'typo_fix'; summary = `Typo fix: same version v${args.baseVersionNo}, stays approved; logged with before and after.`;
   } else {

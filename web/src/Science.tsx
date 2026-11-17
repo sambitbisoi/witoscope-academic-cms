@@ -175,9 +175,10 @@ function RowItem({ n, r, cls, open, onPick, inScope, onRow, onAdd }: { n: number
           </span>
         </span>
       </button>
-      {open && <RowDetail r={r} inScope={inScope} onRow={onRow} />}
-      {open && r.question_use !== 'No questions' && <div className="sci-add-row"><button className="secondary" onClick={onAdd}>+ Add question</button>
+      {/* T2 (17 Nov 2026): the row's actions sit at the top of its details */}
+      {open && r.question_use !== 'No questions' && <div className="sci-add-row sci-add-top"><button className="secondary" onClick={onAdd}>+ Add question</button>
         <span className="muted small"> from this row: Level {r.row_class} (row class), linked direct · primary</span></div>}
+      {open && <RowDetail r={r} inScope={inScope} onRow={onRow} />}
     </li>
   );
 }
