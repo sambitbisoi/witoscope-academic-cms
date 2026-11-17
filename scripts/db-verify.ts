@@ -62,7 +62,7 @@ try {
   check('cms_is_admin: security definer, stable, empty search_path, authenticated only',
     !!adm && adm.prosecdef && adm.provolatile === 's' && adm.proconfig?.[0] === 'search_path=""' && adm.auth_exec && !adm.anon_exec);
 
-  const DEFINER_ALLOWED = ['cms_is_admin', 'cms_apply_save', 'cms_set_status', 'cms_retire', 'cms_record_run', 'cms_save_job', 'cms_set_catalogue_status', 'cms_save_curriculum', 'cms_decide_override', 'cms_set_topic_review', 'cms_add_questions', 'cms_save_order', 'cms_decide_topic_class', 'cms_save_science_review', 'cms_set_row_misconception_status', 'cms_save_content_row'];
+  const DEFINER_ALLOWED = ['cms_is_admin', 'cms_apply_save', 'cms_set_status', 'cms_retire', 'cms_record_run', 'cms_save_job', 'cms_set_catalogue_status', 'cms_save_curriculum', 'cms_decide_override', 'cms_set_topic_review', 'cms_add_questions', 'cms_save_order', 'cms_decide_topic_class', 'cms_save_science_review', 'cms_set_row_misconception_status', 'cms_save_content_row', 'cms_place_held_out', 'cms_discard_held_out'];
   const badFns = fns.filter((f) => f.proconfig?.[0] !== 'search_path=""' || f.anon_exec || (f.prosecdef && !DEFINER_ALLOWED.includes(f.proname)));
   check('every cms function: empty search_path, no anon access; only the listed functions run as owner', badFns.length === 0, badFns.map((f) => f.proname).join(', '));
 
@@ -125,6 +125,18 @@ try {
     check('CMS content rows: no originality fields (own writing), IDs follow C<class>-<code>-<n>, every change audited',
       c!.cms_checked === 0 && c!.bad_id === 0 && c!.unaudited === 0, `${c!.cms_checked} with originality, ${c!.bad_id} odd IDs, ${c!.unaudited} unaudited`);
     check('rows edited in the CMS: the misconceptions text equals their active items', c!.text_off === 0, `${c!.text_off} rows differ`);
+  }
+
+  // Q21 (17 Nov 2026): the Held-out area holds our own content and citations only; never a near-copy
+  if ((await sql`select to_regclass('cms.cms_held_out') as t`)[0]!.t !== null) {
+    const [h] = await sql`select
+      (select count(*)::int from cms.cms_held_out where originality ->> 'result' = 'near_copy') as near,
+      (select count(*)::int from cms.cms_held_out where originality is not null and exists (select 1 from jsonb_object_keys(originality) k
+         where k not in ('checked_at', 'result', 'similarity', 'same_numbers', 'closest_ref', 'field', 'checked', 'missing', 'threshold', 'near_copy_threshold', 'tool'))) as odd_orig,
+      (select count(*)::int from cms.cms_held_out where question ?| array['book_text', 'item_text', 'source_text', 'page_text']) as book_text,
+      (select count(*)::int from cms.cms_held_out h where h.status = 'placed' and not exists (select 1 from cms.cms_questions q where q.question_id = h.placed_question_id and q.file_key = h.file_key)) as bad_place`;
+    check('held-out items: no near-copy, citation-only originality, no book text, placed ones exist with their key',
+      h!.near === 0 && h!.odd_orig === 0 && h!.book_text === 0 && h!.bad_place === 0, `${h!.near} near-copy, ${h!.odd_orig} odd originality, ${h!.book_text} book text, ${h!.bad_place} bad placements`);
   }
 
   // Q20 (17 Nov 2026): every stored tier follows "Tier uses Level" (enforced once tier:recompute has run)

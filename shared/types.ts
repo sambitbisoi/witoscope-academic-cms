@@ -41,7 +41,12 @@ export interface ChapterFile {
   patterns?: Pattern[]; questions: Question[];
 }
 
-export interface Problem { level: 'error' | 'warning'; key: string; message: string }
+export interface Problem { level: 'error' | 'warning'; key: string; message: string;
+  /** Q21 (17 Nov 2026): 'placement' = the question can't be placed (topic / Achievers row / catalogue item missing or in another
+   *  class or chapter); such a question goes to the Held-out area instead of being skipped. */
+  code?: PlacementCode }
+export type PlacementCode = 'topic_missing' | 'achievers_missing' | 'topic_retired' | 'topic_class' | 'topic_chapter' | 'typical_set_missing'
+  | 'typical_set_class' | 'pattern_missing' | 'concept_missing' | 'misconception_missing' | 'row_missing' | 'other_placement';
 
 // Derived-field config (cms_config, from the v10 workbook)
 export interface Band { min: number; max: number | null; band: number }

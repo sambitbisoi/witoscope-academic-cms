@@ -199,6 +199,18 @@ describe('import:science (local, rolled back)', () => {
     });
   });
 
+  it('Q21: a question whose topic or content row is not in the CMS goes to Held out; the rest imports', async () => {
+    await inRollback(async (tx) => {
+      const Q3 = { ...question('ZZ-Q003', [{ row_id: 'C6-ZZ-001', role: 'direct' as const }]), topic_id: 'ST9999' };
+      const Q4 = question('ZZ-Q004', [{ row_id: 'C6-ZZ-404', role: 'direct' as const }]);
+      const r = await run(tx, master([R1, R2, R3, R4], [Q1, Q3, Q4]));
+      expect(r.questions.created).toHaveLength(1);
+      expect(r.questions.held_out.map((x) => x.qid)).toEqual(['ZZ-Q003', 'ZZ-Q004']);
+      const h = await tx`select file_key, reason_code, subject, class from cms.cms_held_out where file_key in ('ZZ-Q003', 'ZZ-Q004') order by 1`;
+      expect(h.map((x) => `${x.file_key} ${x.reason_code} ${x.subject} ${x.class}`)).toEqual(['ZZ-Q003 topic_missing science 6', 'ZZ-Q004 row_missing science 6']);
+    });
+  });
+
   it('refuses a stale originality report', async () => {
     const m = master([R1], []);
     await expect(runScience(sql, m, { ...report(m), master_sha256: 'other' }, { dryRun: true, target: 'local' })).rejects.toThrow(/another version of the master/);

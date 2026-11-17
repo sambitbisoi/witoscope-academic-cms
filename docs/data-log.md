@@ -24,6 +24,15 @@ Each change is a `derived_update` row in `cms_reviews` (before → after, judged
 | Rehearsal | 0037 with the fingerprint guard (`scripts/migrate-guarded.ts`: every cms table, new columns left out; only `cms_config` may change, for the new key `content_rows_owner`): unchanged. `db:verify` ✓. Smoke test, rolled back: create C6-04-054 with an item, add an item to a row, retire. |
 | Real | 0037 with the same guard: unchanged. `db:verify` ✓. No data step: content rows change only when Sambit saves them in the CMS |
 
+### Q21 + D18: the Held-out area (migration 0038) and the MC58 backfill
+
+| Step | Result |
+|---|---|
+| Backup | `~/WitoScope/CMS-backups/real-cms-2026-11-17-pre-0038.dump`; restored to `cms_rehearsal` |
+| Rehearsal | 0038 with the fingerprint guard (only the new `cms_held_out` and the migration record): unchanged. `db:verify` ✓. `held-out:add` dry run, then run: 3 held, fingerprint of every other table unchanged, `db:verify` ✓ |
+| Real | 0038 (guard unchanged), `db:verify` ✓. Backfill dry run = rehearsal. Run: **import #858**, held **#4 MC58-0051, #5 MC58-0052, #6 MC58-0053** (reason: Achievers row ACH-MC58-1 missing; Level 1; held with concept G1-LR-C7703, typical set TS-G1-UPSIDE-DOWN-DIGITS and patterns MP3853 / MP3865 / MP3866 from NCERT-C1-13.proposals.json; originality clear 0.50 / 0.38 / 0.39, run on this Mac, result only). Fingerprint unchanged, `db:verify` ✓ |
+| D18 | **Not linked, not placed** (Sambit's condition): only MC58-0051 ("Who am I? … upside down") fits MT0203 "Guess the number from clues"; MC58-0052 and -0053 are "pick 3 balls for a total / the biggest total" puzzles. The three stay in Held out; the alternative is in the Round 1 report |
+
 ## 16–17 Nov 2026: Science misconception items, primary rows, Solution 1 (migration 0035, science:rationalise)
 
 **Request (Sambit, 16 Nov 2026):** Q16 Q17 Q18 (`docs/plan-2026-11-16-q11-q18.md`, decisions §8): split content-row misconceptions into items, tie each Science question's misconception and wrong options to items, one primary row per question, Solution 1 drafts for short ones; dry run on a restored copy first, then real.

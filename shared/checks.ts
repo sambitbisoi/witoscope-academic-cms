@@ -1,6 +1,6 @@
 // Importer checks beyond the JSON schema (design §8), in plain words, per key.
 // Pure: the database is passed in as a Catalog snapshot.
-import type { Answer, ChapterFile, ConceptRef, Problem, Question } from './types.ts';
+import type { Answer, ChapterFile, ConceptRef, PlacementCode, Problem, Question } from './types.ts';
 
 export interface TopicInfo { chapter_id: string; class: number; topic_kind: 'normal' | 'achievers'; taught_in_school: boolean; status: string }
 export interface Catalog {
@@ -35,7 +35,7 @@ const OPTION_COUNT: Partial<Record<Answer['format'], number>> = { 'MCQ-4': 4, 'M
  */
 export function checkFile(file: ChapterFile, cat: Catalog, opts: { gold?: boolean } = {}): Problem[] {
   const out: Problem[] = [];
-  const err = (key: string, message: string) => out.push({ level: 'error', key, message });
+  const err = (key: string, message: string, code?: PlacementCode) => out.push({ level: 'error', key, message, ...(code ? { code } : {}) });
   const warn = (key: string, message: string) => out.push({ level: 'warning', key, message });
 
   // ---- file level
@@ -44,11 +44,15 @@ export function checkFile(file: ChapterFile, cat: Catalog, opts: { gold?: boolea
   else if (cat.chapter.subject !== file.subject) err('file', `chapter ${file.chapter_id} is ${cat.chapter.subject}, but the file says ${file.subject}`);
 
   const filePatterns = new Map((file.patterns ?? []).map((p) => [p.pattern_id, p]));
+  // Q21 decision 8 (17 Nov 2026): a pattern that can't be placed holds only the questions that use it (they go to Held out)
+  const unplaceablePatterns = new Map<string, { message: string; code: PlacementCode }>();
   for (const p of file.patterns ?? []) {
-    const t = cat.topics.get(p.topic_id);
-    if (!t) err(`pattern ${p.pattern_id}`, `topic ${p.topic_id} does not exist`);
-    if (!cat.typicalSets.has(p.typical_set_id)) err(`pattern ${p.pattern_id}`, `typical set ${p.typical_set_id} does not exist`);
-    for (const m of p.target_misconceptions ?? []) if (!cat.misconceptions.has(m)) err(`pattern ${p.pattern_id}`, `misconception ${m} does not exist`);
+    const ptopic = p.topic_id === 'ACHIEVERS' ? `ACH-${file.chapter_id}-${file.class}` : p.topic_id;
+    const t = cat.topics.get(ptopic);
+    const hold = (message: string, code: PlacementCode) => { err(`pattern ${p.pattern_id}`, message, code); if (!unplaceablePatterns.has(p.pattern_id)) unplaceablePatterns.set(p.pattern_id, { message, code }); };
+    if (!t) hold(`topic ${ptopic} does not exist`, p.topic_id === 'ACHIEVERS' ? 'achievers_missing' : 'topic_missing');
+    if (!cat.typicalSets.has(p.typical_set_id)) hold(`typical set ${p.typical_set_id} does not exist`, 'typical_set_missing');
+    for (const m of p.target_misconceptions ?? []) if (!cat.misconceptions.has(m)) hold(`misconception ${m} does not exist`, 'misconception_missing');
   }
 
   // ---- per question
@@ -70,31 +74,32 @@ export function checkFile(file: ChapterFile, cat: Catalog, opts: { gold?: boolea
     if (q.topic_id === 'ACHIEVERS' && file.subject !== 'math') {
       err(k, `topic ACHIEVERS is Math only for now; ${file.subject} has no Achiever rule yet`);
     } else if (!topic) {
-      err(k, q.topic_id === 'ACHIEVERS'
-        ? `topic ACHIEVERS: there is no Achievers row ${topicId} for ${file.chapter_id} class ${file.class}`
-        : `topic ${topicId} does not exist`);
+      if (q.topic_id === 'ACHIEVERS') err(k, `topic ACHIEVERS: there is no Achievers row ${topicId} for ${file.chapter_id} class ${file.class}`, 'achievers_missing');
+      else err(k, `topic ${topicId} does not exist`, 'topic_missing');
     } else {
-      if (topic.chapter_id !== file.chapter_id) err(k, `topic ${topicId} belongs to chapter ${topic.chapter_id}, not ${file.chapter_id}`);
-      if (topic.status !== 'active') err(k, `topic ${topicId} is ${topic.status}`);
-      if (topic.class !== file.class) err(k, `topic ${topicId} is class ${topic.class}, but the file is class ${file.class}`);
+      if (topic.chapter_id !== file.chapter_id) err(k, `topic ${topicId} belongs to chapter ${topic.chapter_id}, not ${file.chapter_id}`, 'topic_chapter');
+      if (topic.status !== 'active') err(k, `topic ${topicId} is ${topic.status}`, 'topic_retired');
+      if (topic.class !== file.class) err(k, `topic ${topicId} is class ${topic.class}, but the file is class ${file.class}`, 'topic_class');
     }
     const isAchievers = topic?.topic_kind === 'achievers';
 
     // typical set and pattern
     const set = cat.typicalSets.get(q.typical_set_id);
-    if (!set) err(k, `typical set ${q.typical_set_id} does not exist`);
-    else if (topic && set.class !== topic.class) err(k, `typical set ${q.typical_set_id} is class ${set.class}, but topic ${topicId} is class ${topic.class}`);
-    if (q.pattern_id && !cat.patterns.has(q.pattern_id) && !filePatterns.has(q.pattern_id)) err(k, `pattern ${q.pattern_id} does not exist (not in the CMS or in this file's patterns)`);
+    if (!set) err(k, `typical set ${q.typical_set_id} does not exist`, 'typical_set_missing');
+    else if (topic && set.class !== topic.class) err(k, `typical set ${q.typical_set_id} is class ${set.class}, but topic ${topicId} is class ${topic.class}`, 'typical_set_class');
+    if (q.pattern_id && !cat.patterns.has(q.pattern_id) && !filePatterns.has(q.pattern_id)) err(k, `pattern ${q.pattern_id} does not exist (not in the CMS or in this file's patterns)`, 'pattern_missing');
+    const badPattern = q.pattern_id ? unplaceablePatterns.get(q.pattern_id) : undefined;
+    if (badPattern) err(k, `pattern ${q.pattern_id} can't be placed: ${badPattern.message}`, badPattern.code);
 
     // concepts and wrong answers, question and parts
     const conceptCheck = (where: string, concepts: ConceptRef[]) => {
-      for (const c of concepts) if (!cat.concepts.has(c.concept_id)) err(k, `${where}concept ${c.concept_id} does not exist`);
+      for (const c of concepts) if (!cat.concepts.has(c.concept_id)) err(k, `${where}concept ${c.concept_id} does not exist`, 'concept_missing');
       if (!concepts.some((c) => c.involvement === 1)) err(k, `${where}needs at least one concept at involvement 1.0`);
     };
     const answerCheck = (where: string, a: Answer) => {
       for (const w of a.wrong_answers ?? []) {
-        if (w.misconception_id && !cat.misconceptions.has(w.misconception_id)) err(k, `${where}misconception ${w.misconception_id} does not exist`);
-        if (w.target_concept_id && !cat.concepts.has(w.target_concept_id)) err(k, `${where}target concept ${w.target_concept_id} does not exist`);
+        if (w.misconception_id && !cat.misconceptions.has(w.misconception_id)) err(k, `${where}misconception ${w.misconception_id} does not exist`, 'misconception_missing');
+        if (w.target_concept_id && !cat.concepts.has(w.target_concept_id)) err(k, `${where}target concept ${w.target_concept_id} does not exist`, 'concept_missing');
       }
       const need = OPTION_COUNT[a.format];
       if (need !== undefined) {

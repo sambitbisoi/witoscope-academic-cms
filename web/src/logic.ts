@@ -23,6 +23,8 @@ export type Route =
   | { name: 'question'; id: string }
   | { name: 'imports' }
   | { name: 'import'; id: number }
+  /** Q21 (17 Nov 2026): the Held-out area; id = the open item */
+  | { name: 'held'; id: number | null; status: string }
   | { name: 'notfound' };
 
 export function parseRoute(hash: string): Route {
@@ -33,6 +35,7 @@ export function parseRoute(hash: string): Route {
   if (p[0] === 'imports') return p[1] && /^\d+$/.test(p[1]) ? { name: 'import', id: Number(p[1]) } : { name: 'imports' };
   if (p[0] === 'q' && p[1]) return { name: 'question', id: p[1] };
   if (p[0] === 'review') return { name: 'review' };
+  if (p[0] === 'held-out') return { name: 'held', id: /^\d+$/.test(qs.get('id') ?? '') ? Number(qs.get('id')) : null, status: ['held', 'placed', 'discarded', 'all'].includes(qs.get('status') ?? '') ? qs.get('status')! : 'held' };
   if (p[0] === 'proposed') return { name: 'proposed', kind: qs.get('kind'), item: itemParamOk(qs.get('item')) };
   if (p[0] === 'map') {
     const show = qs.get('show');
