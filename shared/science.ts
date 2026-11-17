@@ -16,7 +16,8 @@ export const QUESTION_COLUMNS = ['File', 'Class', 'Q ID', 'Content row ID(s)', '
   'Taught in', 'Confidence', 'Notes'] as const;
 /** Q34 (Round 2, 17 Nov 2026): OPTIONAL question columns (docs/science-import-format.md). A file without them imports as before. */
 export const QUESTION_OPTIONAL_COLUMNS = ['Science question type', 'Setting', 'Setting familiarity', 'Hidden idea (Y/N)', 'Experiment (Y/N)',
-  'Tag A', 'Tag B', 'Tag C', 'Tag D', 'Gold use'] as const;
+  'Tag A', 'Tag B', 'Tag C', 'Tag D', 'Gold use',
+  /** Q35 */ 'Reading', 'Steps', 'Inhibition', 'Visual', 'Irrelevant info (Y/N)'] as const;
 export const WRONG_TAGS = ['misconception', 'concept_error', 'shortcut', 'partial', 'lost_step', 'used_irrelevant', 'misread', 'unit_slip', 'implausible'] as const;
 export const FAMILIARITY = ['Bare', 'Everyday', 'Less familiar', 'Rare'] as const;
 /** "2", "2 · Basic understanding", "2 Basic understanding" → 2 (1–5); anything else → NaN; blank → null */
@@ -35,6 +36,39 @@ export const goldUse = (v: unknown): 'prompt_example' | 'test_only' | null | und
   const s = str(v)?.toLowerCase().replace(/[\s_-]+/g, ' '); if (!s) return null;
   return s === 'prompt example' ? 'prompt_example' : s === 'test only' ? 'test_only' : undefined;
 };
+/** Q35 (17 Nov 2026): the 5 Science drivers, as OPTIONAL question columns. Same value rules as Edit (shared/edit-checks.ts
+ *  uses this list). A header may also carry its range, e.g. "Reading (1–5)". Blank = not set (attributes pending). */
+export const SCIENCE_DRIVERS = [
+  { col: 'Reading', key: 'reading', min: 1, max: 5 },
+  { col: 'Steps', key: 'steps', min: 1, max: 20 },
+  { col: 'Inhibition', key: 'inhibition', min: 0, max: 3 },
+  { col: 'Visual', key: 'visual', min: 0, max: 3 },
+  { col: 'Irrelevant info (Y/N)', key: 'has_irrelevant_info', min: null, max: null },
+] as const;
+export type DriverKey = (typeof SCIENCE_DRIVERS)[number]['key'];
+export type DriverValues = { reading?: number; steps?: number; inhibition?: number; visual?: number; has_irrelevant_info?: boolean };
+export const driverRangeMessage = (label: string, min: number, max: number) => `${label} must be a whole number from ${min} to ${max}`;
+/** The driver cells of one Questions row: the values given, and one problem per bad value (the row is then held). */
+export function scienceDrivers(v: Record<string, unknown>): { values: DriverValues; problems: string[]; present: boolean } {
+  const values: DriverValues = {}; const problems: string[] = []; let present = false;
+  for (const d of SCIENCE_DRIVERS) {
+    const alias = d.min === null ? null : `${d.col} (${d.min}–${d.max})`;
+    const key = d.col in v ? d.col : alias && alias in v ? alias : null;
+    if (key) present = true;
+    const raw = key ? v[key] : null;
+    const s = str(raw);
+    if (s === null) continue;
+    if (d.min === null) {
+      const b = yn(s);
+      if (b === null) problems.push(`${d.col.replace(' (Y/N)', '')} "${s}" is not Y or N`); else values.has_irrelevant_info = b;
+      continue;
+    }
+    const n = typeof raw === 'number' ? raw : /^-?\d+(\.0+)?$/.test(s) ? Number(s) : NaN;
+    if (!Number.isInteger(n) || n < d.min || n > d.max) problems.push(`${d.col} "${s}" is not a whole number from ${d.min} to ${d.max}`);
+    else (values as Record<string, number>)[d.key] = n;
+  }
+  return { values, problems, present };
+}
 export const LEGEND_COLUMNS = ['Section', 'Name', 'Description', 'File', 'Class', 'Offset (printed = PDF + offset)', 'Printed pages'] as const;
 
 export const missingColumns = (have: Iterable<string>, need: readonly string[]) => { const h = new Set(have); return need.filter((c) => !h.has(c)); };

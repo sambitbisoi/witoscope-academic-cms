@@ -31,7 +31,8 @@ export interface ScienceResult {
   citations: { rows: number; questions: number };
   proposals: Proposal[];
   questions: { created: string[]; replaced: string[]; unchanged: number; /** Q34: Science gold (GS<class>-NNN) */ gold: string[]; tags: number; skipped: { qid: string; why: string }[]; blocked: { qid: string; why: string }[]; not_in_master: string[];
-    /** Q21: questions that can't be placed (topic or content row not in the CMS) go to the Held-out area */ held_out: { qid: string; why: string }[] };
+    /** Q21: questions that can't be placed (topic or content row not in the CMS) go to the Held-out area */ held_out: { qid: string; why: string }[];
+    /** Q35: a bad Reading / Steps / Inhibition / Visual / Irrelevant-info value: nothing written for that question */ held_bad_value: { qid: string; why: string }[] };
   links: { direct: number; supporting: number };
   originality: { rows: Record<string, number>; questions: Record<string, number> };
   status_mismatch: { row_id: string; sheet: string; cms: string }[];
@@ -84,7 +85,7 @@ export async function runScience(sql: Sql, master: Master, report: ScienceReport
   const res: ScienceResult = {
     import_id: null, dry_run: opts.dryRun, target: opts.target, sources: { inserted: 0, updated: 0, unchanged: 0 },
     rows: { inserted: 0, updated: 0, unchanged: 0, flagged_missing: 0, back_in_master: 0, held_out: [], near_copy_badged: [], overridden: [], kept_cms: [] },
-    citations: { rows: 0, questions: 0 }, proposals: [], questions: { created: [], replaced: [], unchanged: 0, gold: [], tags: 0, skipped: [], blocked: [], not_in_master: [], held_out: [] },
+    citations: { rows: 0, questions: 0 }, proposals: [], questions: { created: [], replaced: [], unchanged: 0, gold: [], tags: 0, skipped: [], blocked: [], not_in_master: [], held_out: [], held_bad_value: [] },
     links: { direct: 0, supporting: 0 }, originality: { rows: {}, questions: {} }, status_mismatch: [],
     also_in: { rows_with_ids: 0, ids_parsed: 0, ids_kept: 0, unparsed: [...(master.also_in_unparsed ?? [])], unknown: [] }, class_mismatch: [], problems: [],
     items: null, misconceptions: { matched: 0, linked_supporting: [], unmatched: [], primary_proposed: [] },
@@ -346,6 +347,8 @@ export async function runScience(sql: Sql, master: Master, report: ScienceReport
         // Q34 (S1 fields, 0041): written when the file gives them
         science_question_type: q.science_question_type ?? null, setting_familiarity: q.setting_familiarity ?? null,
         has_hidden_idea: q.has_hidden_idea ?? null, has_experiment: q.has_experiment ?? null,
+        // Q35: the 5 drivers when the file gives them (blank stays blank: attributes pending; the trigger clears it when all 5 are set)
+        reading: q.reading ?? null, steps: q.steps ?? null, inhibition: q.inhibition ?? null, visual: q.visual ?? null, has_irrelevant_info: q.has_irrelevant_info ?? null,
       });
       // Q34: Science settings, misconception items and the wrong-option tags (S7) of the file
       const sciSettings = new Set((await tx`select setting_id from cms.cms_settings where subject = 'science' and status <> 'retired'`).map((r) => r.setting_id as string));
@@ -370,6 +373,7 @@ export async function runScience(sql: Sql, master: Master, report: ScienceReport
       };
 
       for (const q of master.questions) {
+        if (q.held_reason) { res.questions.held_bad_value.push({ qid: q.qid, why: q.held_reason }); continue; }
         const c = qCheck.get(q.qid)!;
         const cov = nearCopyCover(c, opts.overrides);
         if (cov.near && !cov.covered) { res.questions.blocked.push({ qid: q.qid, why: `near-copy (${cov.fields.join(', ')}: ${c.closest_ref}, ${c.similarity}); rewrite it or list it in override_requests.csv` }); continue; }
@@ -428,7 +432,7 @@ export async function runScience(sql: Sql, master: Master, report: ScienceReport
         if (!replaceable) { res.questions.skipped.push({ qid: q.qid, why: `${ex.question_id} changed in the master but was ${ex.approved_version !== null ? 'approved' : ex.edited_at ? 'edited' : ex.status} in the CMS; the CMS keeps its version` }); continue; }
         const vid = Number(ex.version_id);
         for (const tbl of ['cms_version_options', 'cms_version_solutions', 'cms_citations', 'cms_question_content_rows']) await tx`delete from ${tx(`cms.${tbl}`)} where version_id = ${vid}`;
-        await tx`update cms.cms_question_versions set ${tx({ ...versionCols(q), topic_id: t.topic_id, import_id: importId } as never)} where version_id = ${vid}`;
+        await tx`update cms.cms_question_versions set ${tx({ ...versionCols(q), topic_id: t.topic_id, import_id: importId, attributes_pending: true } as never)} where version_id = ${vid}`;
         await tx`update cms.cms_questions set topic_id = ${t.topic_id}, chapter_id = ${t.chapter_id}, class = ${t.class}, level = ${q.row_class}, setting_id = ${q.setting_id ?? null} where question_id = ${ex.question_id}`;
         await writeVersion(q, ex.question_id, vid);
         await writeTags(q, vid);
@@ -456,15 +460,15 @@ export async function runScience(sql: Sql, master: Master, report: ScienceReport
         if (mm) res.class_mismatch.push({ row_id: r.row_id, topic_id: r.topic_id, mapped: r.topic_classes_mapped!, approved: [...cls].sort(), only_master: mm.onlyMaster });
       }
 
-      await tx`update cms.cms_imports set finished_at = now(), result = ${res.questions.blocked.length || res.rows.held_out.length ? 'partial' : 'ok'},
+      await tx`update cms.cms_imports set finished_at = now(), result = ${res.questions.blocked.length || res.rows.held_out.length || res.questions.held_bad_value.length ? 'partial' : 'ok'},
         counts = ${tx.json({ sources: res.sources, rows: { ...res.rows, held_out: res.rows.held_out.length, near_copy_badged: res.rows.near_copy_badged.length, overridden: res.rows.overridden.length, kept_cms: res.rows.kept_cms.length },
           citations: res.citations, proposals: res.proposals.length, questions: { created: res.questions.created.length, replaced: res.questions.replaced.length, unchanged: res.questions.unchanged, gold: res.questions.gold.length, tags: res.questions.tags,
-          skipped: res.questions.skipped.length, blocked: res.questions.blocked.length }, links: res.links, originality: res.originality,
+          skipped: res.questions.skipped.length, blocked: res.questions.blocked.length, held_bad_value: res.questions.held_bad_value.length }, links: res.links, originality: res.originality,
           also_in: { rows_with_ids: res.also_in.rows_with_ids, ids_parsed: res.also_in.ids_parsed, ids_kept: res.also_in.ids_kept, unparsed: res.also_in.unparsed.length, unknown: res.also_in.unknown.length },
           class_mismatch: res.class_mismatch.length,
           items: res.items ? { created: res.items.items_created, updated: res.items.updated.length, retired: res.items.retired.length, unclear: res.items.unclear.length } : null,
           misconceptions: { matched: res.misconceptions.matched, linked_supporting: res.misconceptions.linked_supporting.length, unmatched: res.misconceptions.unmatched.length, primary_proposed: res.misconceptions.primary_proposed.length } } as never)},
-        error_report = ${tx.json([...res.questions.blocked, ...res.questions.skipped, ...res.rows.held_out.map((id) => ({ row_id: id, why: 'near-copy, held out' }))] as never)}
+        error_report = ${tx.json([...res.questions.blocked, ...res.questions.skipped, ...res.questions.held_bad_value.map((h) => ({ ...h, why: `held, bad value: ${h.why}` })), ...res.rows.held_out.map((id) => ({ row_id: id, why: 'near-copy, held out' }))] as never)}
         where import_id = ${importId}`;
       if (opts.dryRun && !opts.inTx) throw new Rollback(res);
     };

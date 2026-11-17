@@ -170,3 +170,25 @@ describe('Q34 column parsers', () => {
     expect(_tag('guess')!.tag).toBe('');
   });
 });
+
+// Q35 (17 Nov 2026): the 5 drivers as optional columns, same rules as Edit
+import { scienceDrivers as _drv } from '../shared/science.ts';
+describe('Q35 driver columns', () => {
+  it('reads valid values; blank stays blank', () => {
+    expect(_drv({ Reading: 2, Steps: '4', Inhibition: 0, Visual: '3', 'Irrelevant info (Y/N)': 'Y' })).toEqual({
+      values: { reading: 2, steps: 4, inhibition: 0, visual: 3, has_irrelevant_info: true }, problems: [], present: true });
+    expect(_drv({ Reading: '', Steps: null, 'Irrelevant info (Y/N)': 'no' })).toEqual({ values: { has_irrelevant_info: false }, problems: [], present: true });
+    expect(_drv({ Question: 'x' })).toEqual({ values: {}, problems: [], present: false });
+  });
+  it('accepts a header with its range', () => {
+    expect(_drv({ 'Reading (1–5)': 5, 'Steps (1–20)': 20, 'Inhibition (0–3)': 3, 'Visual (0–3)': 0 }).values).toEqual({ reading: 5, steps: 20, inhibition: 3, visual: 0 });
+  });
+  it('lists every bad value (the row is held)', () => {
+    const r = _drv({ Reading: 0, Steps: 21, Inhibition: '1.5', Visual: 'two', 'Irrelevant info (Y/N)': 'maybe' });
+    expect(r.values).toEqual({});
+    expect(r.problems).toEqual(['Reading "0" is not a whole number from 1 to 5', 'Steps "21" is not a whole number from 1 to 20',
+      'Inhibition "1.5" is not a whole number from 0 to 3', 'Visual "two" is not a whole number from 0 to 3', 'Irrelevant info "maybe" is not Y or N']);
+    expect(_drv({ Reading: 6 }).problems).toHaveLength(1);
+    expect(_drv({ Visual: -1 }).problems).toHaveLength(1);
+  });
+});

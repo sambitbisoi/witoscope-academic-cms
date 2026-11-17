@@ -131,3 +131,15 @@ describe('Science attributes and tags (0041)', () => {
     expect(rowsFor(m, cfg, 6, () => 6).version).not.toHaveProperty('science_question_type');
   });
 });
+
+// Q35: Edit and import:science use the same driver ranges (shared/science.ts SCIENCE_DRIVERS)
+describe('Q35 driver ranges shared with the import', () => {
+  it('Edit refuses the same values the import holds', () => {
+    const q = sci(); q.science = { ...q.science!, reading: 6, steps: 21, inhibition: 4, visual: -1 };
+    const msgs = checkEdit(q, ctx('science')).filter((p) => p.level === 'error').map((p) => p.message).join(' | ');
+    for (const m of ['Reading must be a whole number from 1 to 5', 'Steps must be a whole number from 1 to 20', 'Inhibition must be a whole number from 0 to 3', 'Visual must be a whole number from 0 to 3'])
+      expect(msgs).toContain(m);
+    q.science = { ...q.science!, reading: 1, steps: 20, inhibition: 0, visual: 3 };
+    expect(checkEdit(q, ctx('science')).filter((p) => p.level === 'error')).toEqual([]);
+  });
+});

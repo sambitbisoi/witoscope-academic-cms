@@ -261,3 +261,32 @@ describe('import:science Q34 columns (local, rolled back)', () => {
     });
   });
 });
+
+// Q35 (17 Nov 2026): the 5 drivers. All 5 → attributes no longer pending; some → pending; a bad value → held (nothing written).
+describe('import:science Q35 driver columns (local, rolled back)', () => {
+  it('writes the drivers, keeps blanks pending and holds a row with a bad value', async () => {
+    await inRollback(async (tx) => {
+      const all5: MasterQuestion = { ...question('ZZ-Q005', [{ row_id: 'C6-ZZ-001', role: 'direct' }]), reading: 2, steps: 3, inhibition: 1, visual: 0, has_irrelevant_info: false };
+      const some: MasterQuestion = { ...question('ZZ-Q006', [{ row_id: 'C6-ZZ-001', role: 'direct' }]), reading: 4 };
+      const bad: MasterQuestion = { ...question('ZZ-Q007', [{ row_id: 'C6-ZZ-001', role: 'direct' }]), reading: 2, held_reason: 'Steps "25" is not a whole number from 1 to 20' };
+      const r = await run(tx, master([R1, R2, R3, R4], [Q1, Q2, all5, some, bad], 'sha-q35'));
+      expect(r.questions.held_bad_value).toEqual([{ qid: 'ZZ-Q007', why: 'Steps "25" is not a whole number from 1 to 20' }]);
+      const vs = await tx`select q.source_qid, v.reading, v.steps, v.inhibition, v.visual, v.has_irrelevant_info, v.attributes_pending
+        from cms.cms_questions q join cms.cms_question_versions v on v.question_id = q.question_id and v.version_no = q.current_version
+       where q.source_qid in ('ZZ-Q001', 'ZZ-Q005', 'ZZ-Q006', 'ZZ-Q007') order by q.source_qid`;
+      expect(vs.map((v) => ({ ...v }))).toEqual([
+        { source_qid: 'ZZ-Q001', reading: null, steps: null, inhibition: null, visual: null, has_irrelevant_info: null, attributes_pending: true },
+        { source_qid: 'ZZ-Q005', reading: 2, steps: 3, inhibition: 1, visual: 0, has_irrelevant_info: false, attributes_pending: false },
+        { source_qid: 'ZZ-Q006', reading: 4, steps: null, inhibition: null, visual: null, has_irrelevant_info: null, attributes_pending: true },
+      ]);
+      const [imp] = await tx`select result, error_report from cms.cms_imports where import_id = ${r.import_id}`;
+      expect(imp!.result).toBe('partial');
+      expect(imp!.error_report).toContainEqual({ qid: 'ZZ-Q007', why: 'held, bad value: Steps "25" is not a whole number from 1 to 20' });
+      // an unedited imported draft re-imported without the drivers: values cleared, pending again
+      const r2 = await run(tx, master([R1, R2, R3, R4], [Q1, Q2, { ...all5, reading: undefined, hash: 'hash-ZZ-Q005-changed' }], 'sha-q35b'));
+      expect(r2.questions.replaced.length).toBe(1);
+      const [v5] = await tx`select v.reading, v.steps, v.attributes_pending from cms.cms_questions q join cms.cms_question_versions v on v.question_id = q.question_id and v.version_no = q.current_version where q.source_qid = 'ZZ-Q005'`;
+      expect({ ...v5 }).toEqual({ reading: null, steps: 3, attributes_pending: true });
+    });
+  });
+});
