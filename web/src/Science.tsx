@@ -7,6 +7,7 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Id } from './Id';
 import { LevelTag, RowClassTag } from './Tags';
 import { AddQuestionForm, OriginFlags } from './AddQuestions';
+import { ContentRowForm } from './ContentRowForm';
 import { rowDetail, scienceData, type ScienceData, type ScienceQuestion, type ScienceRow } from './scienceApi';
 import { browseHash, showsAtLevel, statusLabel } from './logic';
 import { classesLine, isDimmed, listedOrder, rightPane, rowClassLine, rowQuestions, rowsForClass, rowsInOrder, rowSplit, rowSplitLabel, topicGroups } from './scienceLogic';
@@ -54,12 +55,19 @@ export function ScienceView({ scope, cls, higher = false, topicNames, row, q, on
   const [tick, setTick] = useState(0);
   /** Q15: "+ Add question" on an open row: the right column shows the add form for that row */
   const [addFor, setAddFor] = useState<ScienceRow | null>(null);
+  /** Q14: the row form in the right column: a new row (row undefined) or edit an open row */
+  const [rowForm, setRowForm] = useState<{ row?: ScienceRow } | null>(null);
+  const [showRetired, setShowRetired] = useState(false);
   useEffect(() => { setError(null); scienceData(scope).then(setData).catch((e) => setError(e.message)); }, [key, reload, tick]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (addFor && row !== addFor.row_id) setAddFor(null); }, [row]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (rowForm?.row && row !== rowForm.row.row_id) setRowForm(null); }, [row]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Rows written for class N show in class N and above (as questions do, D3); lower-class rows are marked.
-  const rows = useMemo(() => rowsInOrder(rowsForClass(data?.rows ?? [], cls, higher)), [data, cls, higher]);
-  const hidden = (data?.rows.length ?? 0) - rows.length;
+  // Q14: retired rows are kept but hidden unless asked for
+  const live = useMemo(() => (data?.rows ?? []).filter((r) => showRetired || !r.retired_at), [data, showRetired]);
+  const nRetired = (data?.rows ?? []).filter((r) => r.retired_at).length;
+  const rows = useMemo(() => rowsInOrder(rowsForClass(live, cls, higher)), [live, cls, higher]);
+  const hidden = live.length - rows.length;
   const ceiling = cls === 'all' ? null : Number(cls);
   const qs = useMemo(() => (data?.questions ?? []).filter((x) => showsAtLevel(x.effective_level, ceiling, higher)), [data, ceiling, higher]);
   const order = useMemo(() => listedOrder(qs, row), [qs, row]);
@@ -74,7 +82,7 @@ export function ScienceView({ scope, cls, higher = false, topicNames, row, q, on
   const list = (rs: ScienceRow[]) => (
     <ol className="sci-list">
       {rs.map((r, i) => <RowItem key={r.row_id} n={i + 1} r={r} cls={cls} open={r.row_id === row} onPick={() => onRow(r.row_id === row ? null : r.row_id)} inScope={inScope} onRow={onRow}
-        onAdd={() => { setAddFor(r); onBack(); }} />)}
+        onAdd={() => { setRowForm(null); setAddFor(r); onBack(); }} onEdit={() => { setAddFor(null); setRowForm({ row: r }); onBack(); }} />)}
     </ol>
   );
   const pane = rightPane(row, q, chapterMode ? 'chapter' : 'topic');
@@ -82,10 +90,12 @@ export function ScienceView({ scope, cls, higher = false, topicNames, row, q, on
 
   return (
     <div className="sci">
-      <Coverage rows={rows} questions={qs} cls={cls} />
+      <Coverage rows={rows.filter((r) => !r.retired_at)} questions={qs} cls={cls} />
       <div className="sci-cols">
         <section className="sci-content" aria-label="Content rows">
-          <div className="eyebrow">Content · master order{hidden > 0 ? <span className="muted"> · {hidden} row{hidden === 1 ? '' : 's'} of a higher class not shown (tick "Show higher-level questions")</span> : null}</div>
+          <div className="eyebrow sci-content-head"><span>Content · master order{hidden > 0 ? <span className="muted"> · {hidden} row{hidden === 1 ? '' : 's'} of a higher class not shown (tick "Show higher-level questions")</span> : null}</span>
+            {nRetired > 0 && <button className="link small" onClick={() => setShowRetired(!showRetired)}>{showRetired ? 'Hide' : 'Show'} retired ({nRetired})</button>}
+            {!chapterMode && <button className="secondary small" onClick={() => { setAddFor(null); onRow(null); setRowForm({}); onBack(); }}>+ Add content row</button>}</div>
           {!chapterMode ? (rows.length ? list(rows) : <p className="muted small">No content rows for this topic yet.</p>)
             : groups.map((g) => {
               const t = topicNames.get(g.topic_id);
@@ -104,7 +114,16 @@ export function ScienceView({ scope, cls, higher = false, topicNames, row, q, on
             })}
         </section>
         <section className="sci-questions" aria-label={pane.kind === 'detail' ? 'Question detail' : 'Questions'}>
-          {addFor && !q ? <>
+          {rowForm && !q && 'topicId' in scope ? <>
+            <div className="sci-q-head sci-detail-nav"><button className="link" onClick={() => setRowForm(null)}>← Back{rowForm.row ? ` to row ${rowForm.row.row_id}` : ''}</button></div>
+            <ContentRowForm key={rowForm.row?.row_id ?? 'new'} topic={{ topic_id: scope.topicId, name: topicNames.get(scope.topicId)?.name ?? scope.topicId }}
+              defaultClass={cls === 'all' ? (data.rows[0]?.row_class ?? 6) : Number(cls)} row={rowForm.row}
+              onDone={(id) => { setRowForm(null); setTick((t) => t + 1); if (id) onRow(id); }} />
+          </> : rowForm && !q && rowForm.row ? <>
+            <div className="sci-q-head sci-detail-nav"><button className="link" onClick={() => setRowForm(null)}>← Back to row {rowForm.row.row_id}</button></div>
+            <ContentRowForm key={rowForm.row.row_id} topic={{ topic_id: rowForm.row.topic_id, name: topicNames.get(rowForm.row.topic_id)?.name ?? rowForm.row.topic_id }}
+              defaultClass={rowForm.row.row_class} row={rowForm.row} onDone={(id) => { setRowForm(null); setTick((t) => t + 1); if (id) onRow(id); }} />
+          </> : addFor && !q ? <>
             <div className="sci-q-head sci-detail-nav"><button className="link" onClick={() => setAddFor(null)}>← Back to row {addFor.row_id}</button></div>
             <AddQuestionForm key={addFor.row_id} topic={{ topic_id: addFor.topic_id, name: topicNames.get(addFor.topic_id)?.name ?? addFor.topic_id, class: addFor.row_class, chapter_id: addFor.chapter_id }}
               prefill={{ level: addFor.row_class, row_id: addFor.row_id }}
@@ -154,7 +173,7 @@ function QSection({ title, hint, items, rowId, q, ceiling, onQuestion, empty }: 
   );
 }
 
-function RowItem({ n, r, cls, open, onPick, inScope, onRow, onAdd }: { n: number; r: ScienceRow; cls: string; open: boolean; onPick: () => void; inScope: (id: string) => boolean; onRow: (id: string) => void; onAdd: () => void }) {
+function RowItem({ n, r, cls, open, onPick, inScope, onRow, onAdd, onEdit }: { n: number; r: ScienceRow; cls: string; open: boolean; onPick: () => void; inScope: (id: string) => boolean; onRow: (id: string) => void; onAdd: () => void; onEdit: () => void }) {
   const s = STATUS[r.status];
   return (
     <li className={`sci-row ${open ? 'sel open' : ''} ${isDimmed(r) ? 'dim' : ''} ${r.in_master ? '' : 'gone'}`} ref={open ? (el) => el?.scrollIntoView({ block: 'nearest' }) : undefined}>
@@ -171,13 +190,17 @@ function RowItem({ n, r, cls, open, onPick, inScope, onRow, onAdd }: { n: number
             <span className="muted">&nbsp;· {r.n_direct} direct · {r.n_supporting} supporting</span>
             <RowClassTag rowClass={r.row_class} cls={cls} />
             <RowTags r={r} />
+            {r.retired_at && <span className="tag gone" title={r.retired_reason ?? undefined}>Retired</span>}
+            {r.source === 'CMS' && <span className="tag" title="Added in the CMS (the master); no originality check: own writing">CMS</span>}
             <Id>{r.row_id}</Id>
           </span>
         </span>
       </button>
       {/* T2 (17 Nov 2026): the row's actions sit at the top of its details */}
-      {open && r.question_use !== 'No questions' && <div className="sci-add-row sci-add-top"><button className="secondary" onClick={onAdd}>+ Add question</button>
-        <span className="muted small"> from this row: Level {r.row_class} (row class), linked direct · primary</span></div>}
+      {open && <div className="sci-add-row sci-add-top">
+        {r.question_use !== 'No questions' && !r.retired_at && <><button className="secondary" onClick={onAdd}>+ Add question</button>
+          <span className="muted small"> from this row: Level {r.row_class} (row class), linked direct · primary</span></>}
+        <button className="link small sci-edit-row" onClick={onEdit}>{r.retired_at ? 'Restore row…' : 'Edit row'}</button></div>}
       {open && <RowDetail r={r} inScope={inScope} onRow={onRow} />}
     </li>
   );

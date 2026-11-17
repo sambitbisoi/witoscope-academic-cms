@@ -62,7 +62,7 @@ try {
   check('cms_is_admin: security definer, stable, empty search_path, authenticated only',
     !!adm && adm.prosecdef && adm.provolatile === 's' && adm.proconfig?.[0] === 'search_path=""' && adm.auth_exec && !adm.anon_exec);
 
-  const DEFINER_ALLOWED = ['cms_is_admin', 'cms_apply_save', 'cms_set_status', 'cms_retire', 'cms_record_run', 'cms_save_job', 'cms_set_catalogue_status', 'cms_save_curriculum', 'cms_decide_override', 'cms_set_topic_review', 'cms_add_questions', 'cms_save_order', 'cms_decide_topic_class', 'cms_save_science_review', 'cms_set_row_misconception_status'];
+  const DEFINER_ALLOWED = ['cms_is_admin', 'cms_apply_save', 'cms_set_status', 'cms_retire', 'cms_record_run', 'cms_save_job', 'cms_set_catalogue_status', 'cms_save_curriculum', 'cms_decide_override', 'cms_set_topic_review', 'cms_add_questions', 'cms_save_order', 'cms_decide_topic_class', 'cms_save_science_review', 'cms_set_row_misconception_status', 'cms_save_content_row'];
   const badFns = fns.filter((f) => f.proconfig?.[0] !== 'search_path=""' || f.anon_exec || (f.prosecdef && !DEFINER_ALLOWED.includes(f.proname)));
   check('every cms function: empty search_path, no anon access; only the listed functions run as owner', badFns.length === 0, badFns.map((f) => f.proname).join(', '));
 
@@ -108,6 +108,23 @@ try {
     check('misconception items are numbered 1…n per row, no gaps', x!.gaps === 0, `${x!.gaps} rows with gaps`);
     check('after science:rationalise: no free-text Science misconception, every row\'s misconceptions split into items',
       !x!.rationalised || (x!.free_text === 0 && x!.unsplit === 0), x!.rationalised ? `${x!.free_text} free text, ${x!.unsplit} rows not split` : 'not rationalised yet');
+  }
+
+  // Q14 (17 Nov 2026): content rows made or edited in the CMS
+  const hasCmsRows = (await sql`select 1 from information_schema.columns where table_schema = 'cms' and table_name = 'cms_content_rows' and column_name = 'cms_edited_at'`).length > 0;
+  if (hasCmsRows) {
+    const [c] = await sql`select
+      (select count(*)::int from cms.cms_content_rows where source = 'CMS' and (originality_result is not null or originality_ref is not null)) as cms_checked,
+      (select count(*)::int from cms.cms_content_rows r where r.cms_edited_at is not null
+         and exists (select 1 from cms.cms_row_misconceptions m0 where m0.row_id = r.row_id)
+         and r.misconceptions is distinct from (select rtrim(string_agg(case when m.text ~ '[.!?]$' then m.text else m.text || ';' end, ' ' order by m.item_no), ';') from cms.cms_row_misconceptions m where m.row_id = r.row_id and m.status = 'active')) as text_off,
+      (select count(*)::int from cms.cms_content_rows r where r.source = 'CMS' and r.row_id !~ ('^C' || r.row_class || '-') and not exists (
+         select 1 from cms.cms_reviews v where v.target_table = 'cms_content_rows' and v.target_id = r.row_id and v.action = 'science_row' and v.field_diff ? 'row_class')) as bad_id,
+      (select count(*)::int from cms.cms_content_rows r where r.cms_edited_at is not null and not exists (
+         select 1 from cms.cms_reviews v where v.target_table = 'cms_content_rows' and v.target_id = r.row_id)) as unaudited`;
+    check('CMS content rows: no originality fields (own writing), IDs follow C<class>-<code>-<n>, every change audited',
+      c!.cms_checked === 0 && c!.bad_id === 0 && c!.unaudited === 0, `${c!.cms_checked} with originality, ${c!.bad_id} odd IDs, ${c!.unaudited} unaudited`);
+    check('rows edited in the CMS: the misconceptions text equals their active items', c!.text_off === 0, `${c!.text_off} rows differ`);
   }
 
   // Q20 (17 Nov 2026): every stored tier follows "Tier uses Level" (enforced once tier:recompute has run)
