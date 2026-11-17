@@ -33,6 +33,7 @@
     "import:science": "tsx scripts/import-science.ts",
     "science:rationalise": "tsx scripts/science-rationalise.ts",
     "tier:recompute": "tsx scripts/tier-recompute.ts",
+    "concept:first-taught": "tsx scripts/concept-first-taught.ts",
     "held-out:add": "tsx scripts/held-out-add.ts"
   },
   "devDependencies": {

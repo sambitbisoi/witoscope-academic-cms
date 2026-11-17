@@ -10,13 +10,17 @@ type Tx = Sql | postgres.TransactionSql;
 export interface TierChange { version_id: number; question_id: string; version_no: number; status: string; bank: string; level: number | null;
   placement: number; strategy: number | null; max_concept_class: number | null; before: string; after: string }
 
-/** Versions whose stored tier differs from the rule (optionally only these questions). */
-export async function tierChanges(tx: Tx, questionIds?: string[]): Promise<TierChange[]> {
+/** Versions whose stored tier differs from the rule (optionally only these questions). `conceptClass` overrides stored
+ *  concept classes (Q24 preview: the tiers a class change would cause, read-only). */
+export async function tierChanges(tx: Tx, questionIds?: string[], conceptClass?: Map<string, number>): Promise<TierChange[]> {
+  const ov = [...(conceptClass ?? new Map())].map(([id, cls]) => ({ id, cls }));
   const rows = await tx`
-    with v as (
+    with ov as (select x.id, x.cls from jsonb_to_recordset(${tx.json(ov as never)}) as x(id text, cls int)),
+    v as (
       select v.version_id, v.question_id, v.version_no, v.status, q.bank, q.level, coalesce(q.class_override, q.class) as placement,
              v.strategy, v.tier,
-             (select max(c.class) from cms.cms_version_concepts vc join cms.cms_concepts c on c.concept_id = vc.concept_id
+             (select max(coalesce(ov.cls, c.class)) from cms.cms_version_concepts vc join cms.cms_concepts c on c.concept_id = vc.concept_id
+               left join ov on ov.id = c.concept_id
                where vc.version_id = v.version_id) as max_cc
         from cms.cms_question_versions v join cms.cms_questions q on q.question_id = v.question_id
        where v.tier is not null ${questionIds ? tx`and v.question_id in ${tx(questionIds.length ? questionIds : [''])}` : tx``})

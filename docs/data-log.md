@@ -2,6 +2,21 @@
 
 Changes to real (non-test) data that Sambit approved, with what was done and where the audit trail is.
 
+## 17 Nov 2026: Round 2, Iteration 1 (plan `docs/plan-2026-11-17-round2.md`)
+
+**Request (Sambit, 17 Nov 2026):** Round 2 "go" (Iteration 1: PR A → B → C), with the decisions in §10 of the plan. Q24 is **lower only**; Q25 is closed with no change (the 14 are gold, and gold is exempt from the picture rule).
+
+### Q24: concept class = "first taught in" (migration 0040, `concept:first-taught`, `tier:recompute --reason Q24`)
+
+| Step | Result |
+|---|---|
+| Backup | `~/WitoScope/CMS-backups/real-cms-2026-11-17-pre-0040.dump` (54 table-data entries) |
+| Rehearsal (fresh restore in `cms_rehearsal`) | 0040 guarded (fingerprint unchanged) · db:verify ✓ · 29 concepts (import #859, 2 batches) · 54 tiers (import #860, 3 batches) · fingerprint unchanged · db:verify ✓ |
+| Real | 0040 guarded (fingerprint unchanged) · preview and dry run = the rehearsal list (29 / 54) · **29 concepts lowered** (import #859, `derived_update` reviews on target catalogue, `class_legacy` kept) · **54 tiers** (import #860: 53 Super Achiever → School, 1 → Achiever, all draft production). The connection dropped after all 3 tier batches, during the final fingerprint. Checked afterwards: 54 audit rows, 0 left, and every content table equals the rehearsal (only `cms_schema_migrations` timestamps differ). Import #860 was then closed by hand (`ok`, with a note). db:verify ✓ |
+| Test case | MQ000181 (MC58-0022, Level 5, strategy 1): G6-LR-C1201 class 6 → 5; tier Super Achiever → School |
+
+Reports: `.local-import/concept-first-taught-{rehearsal,real}-*.md` (concept list and the tier changes that follow), `.local-import/q24-tier-expect-2026-11-17.json` (the 54). Reversible exactly: `class_legacy` plus the reviews' before → after.
+
 ## 17 Nov 2026: Round 1 (plan `docs/plan-2026-11-17-round1.md`)
 
 **Request (Sambit, 17 Nov 2026):** Round 1 items T1, T2, Q14, Q19, Q20, Q21, Q22, D18; "go" with decisions §10. Real data steps in small batches, each checked on a fresh restore first.

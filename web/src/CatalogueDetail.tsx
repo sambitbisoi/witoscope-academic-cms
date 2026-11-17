@@ -65,7 +65,7 @@ export function CatalogueDetail({ kind, id, places, where, startReject, onDecide
       <dl className="facts cat-facts">
         <dt>Kind</dt><dd>{KIND_LABEL[kind]}</dd>
         {kind !== 'setting' && <><dt>Class</dt><dd>{d.cls ? <ClassTag cls={d.cls} what={KIND_LABEL[kind].toLowerCase()} via={d.via ?? undefined} /> : <span className="muted">—</span>}
-</dd></>}
+          {d.classNote && <span className="muted small" title="Q24: the lowest Level of the book questions that test it (the catalogued class is kept)"> · {d.classNote}</span>}</dd></>}
         {d.topic && <><dt>Topic</dt><dd><a href={topicHref(d.topic.topic_id)}>{d.topic.name}</a> <Id>{d.topic.topic_id}</Id> <span className="muted small">· Class {d.topic.class}</span></dd></>}
         {d.chapter && <><dt>Chapter</dt><dd>{d.chapter.name} <Id>{d.chapter.chapter_id}</Id></dd></>}
         {d.facts.map((f) => <Fragment key={f.k}><dt>{f.k}</dt><dd>{f.v}</dd></Fragment>)}

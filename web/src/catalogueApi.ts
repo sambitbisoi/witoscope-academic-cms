@@ -115,6 +115,7 @@ export interface ItemDetail {
   proposedBy: string[]; usedBy: string[];
   history: { review_id: number; action: string; reason: string | null; at: string; by_label: string }[];
   /** for Edit (pattern form): the question types of the topic */ setOptions: [string, string][];
+  /** Q24: why the class is what it is (concepts lowered to "first taught in"), shown muted after the class */ classNote?: string;
 }
 
 const must = <T>(r: { data: unknown; error: { message: string } | null }): T => { if (r.error) throw new Error(r.error.message); return r.data as T; };
@@ -145,8 +146,9 @@ export async function itemDetail(kind: CatKind, id: string, places?: Places): Pr
   const base = { kind, id, proposedBy, usedBy, history, setOptions: [] as [string, string][] };
 
   if (kind === 'concept') {
-    const c = must<{ concept_id: string; name: string; class: number | null; type: string | null; status: string; topic_id: string | null; description: string | null } | null>(
-      await supabase.from('cms_concepts').select('concept_id, name, class, type, status, topic_id, description').eq('concept_id', id).maybeSingle());
+    const c = must<{ concept_id: string; name: string; class: number | null; type: string | null; status: string; topic_id: string | null; description: string | null;
+      class_legacy: number | null; class_basis: string | null } | null>(
+      await supabase.from('cms_concepts').select('concept_id, name, class, type, status, topic_id, description, class_legacy, class_basis').eq('concept_id', id).maybeSingle());
     if (!c) return null;
     const [miscs, sets, vc] = await Promise.all([
       supabase.from('cms_misconceptions').select('misconception_id, description, status').eq('concept_id', id).order('misconception_id').limit(50),
@@ -156,6 +158,7 @@ export async function itemDetail(kind: CatKind, id: string, places?: Places): Pr
     const setRows = must<{ typical_set_id: string; role: string }[]>(sets);
     const setNames = setRows.length ? must<{ typical_set_id: string; name: string; status: string }[]>(await supabase.from('cms_typical_sets').select('typical_set_id, name, status').in('typical_set_id', setRows.map((s) => s.typical_set_id))) : [];
     return { ...base, name: c.name, description: c.description, status: c.status, cls: catalogueClass(c.concept_id, c.class), via: c.class ? null : 'from its ID',
+      classNote: c.class_basis === 'first_taught' && c.class_legacy ? `first taught in · was Class ${c.class_legacy}` : undefined,
       topic: topicOf(c.topic_id), chapter: chapterOf(c.topic_id), facts: c.type ? [{ k: 'Type', v: c.type }] : [],
       linked: [
         { label: 'Question types', items: setRows.map((s) => ({ id: s.typical_set_id, name: `${setNames.find((x) => x.typical_set_id === s.typical_set_id)?.name ?? ''}${s.role ? ` (${s.role})` : ''}`, status: setNames.find((x) => x.typical_set_id === s.typical_set_id)?.status, kind: 'typical_set' as const })) },
