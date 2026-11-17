@@ -1,3 +1,4 @@
+import { HeldOutScreen } from './HeldOut';
 import type { Session } from '@supabase/supabase-js';
 import { useEffect, useState, type FormEvent } from 'react';
 import { Home as HomeScreen } from './Home';
@@ -92,6 +93,7 @@ function Home({ email }: { email?: string }) {
         : route.name === 'generate' ? <GenerateScreen questionId={route.q} setId={route.set} topicId={route.topic} />
         : route.name === 'run' ? <RunScreen runId={route.id} />
         : route.name === 'model-check' ? <ModelCheckScreen runId={route.id} />
+        : route.name === 'held' ? <main className="wide"><HeldOutScreen id={route.id} status={route.status} /></main>
         : route.name === 'imports' ? <main><ImportsList /></main>
         : route.name === 'import' ? <main><ImportDetail id={route.id} /></main>
         : <main><p>Page not found. <a href="#/">Home</a></p></main>}

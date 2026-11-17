@@ -16,11 +16,12 @@ import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { relative, resolve } from 'node:path';
+import { basename, relative, resolve } from 'node:path';
 import type postgres from 'postgres';
 import { assertCmsOwner, connect } from './lib/db.ts';
 import { checkFile, normaliseStem, resolveTopicId, type Catalog } from '../shared/checks.ts';
 import { derive, tierBasis } from '../shared/derive.ts';
+import { heldCatalogue, inCmsSets, insertHeld, originalityFor, placementReason, recommendTopic, type ProposalsLike } from './lib/held-out.ts';
 import { schemaProblems } from './lib/chapter/schema.ts';
 import type { Answer, ChapterFile, Problem, Question } from '../shared/types.ts';
 import { classify, structureHash, textsOf, type Texts } from '../shared/version.ts';
@@ -33,7 +34,7 @@ import { overrideAllowList } from './lib/updates.ts';
 type Sql = ReturnType<typeof connect>;
 type Tx = postgres.TransactionSql;
 
-export interface Outcome { key: string; question_id?: string; result: 'created' | 'new_version' | 'typo_fix' | 'draft_replaced' | 'unchanged' | 'blocked'; version?: number; note?: string }
+export interface Outcome { key: string; question_id?: string; result: 'created' | 'new_version' | 'typo_fix' | 'draft_replaced' | 'unchanged' | 'blocked' | 'held_out'; version?: number; note?: string }
 export interface ChapterReport {
   file: string; mode: 'validate' | 'import'; importId: number | null; result: 'ok' | 'partial' | 'failed';
   problems: Problem[]; outcomes: Outcome[]; counts: Record<string, number>;
@@ -170,7 +171,9 @@ export async function applyTypo(tx: Tx, versionId: number, questionId: string, q
 // ---------------------------------------------------------------- main
 class Rollback extends Error {}
 
-export async function runChapter(sql: Sql, filePath: string, mode: 'validate' | 'import', forceNew = false, opts: { overrideRequests?: Set<string> } = {}): Promise<ChapterReport> {
+export async function runChapter(sql: Sql, filePath: string, mode: 'validate' | 'import', forceNew = false,
+  opts: { overrideRequests?: Set<string>; /** Q21: where held-out items came from, and the proposals file with their catalogue items */
+    heldOut?: { batch?: string; proposals?: ProposalsLike; proposedBy?: string } } = {}): Promise<ChapterReport> {
   const abs = resolve(filePath);
   const raw = readFileSync(abs);
   const fileHash = createHash('sha256').update(raw).digest('hex');
@@ -216,7 +219,9 @@ export async function runChapter(sql: Sql, filePath: string, mode: 'validate' | 
       const cat = await loadCatalog(tx, valid);
       const problems = [...checkFile(valid, cat), ...orig.problems];
       report.problems.push(...problems);
-      const fileErrors = problems.filter((p) => p.level === 'error' && (p.key === 'file' || p.key.startsWith('pattern ')));
+      // Q21 decision 8: a pattern that can't be placed (coded) no longer fails the file; the questions using it are held out
+      const fileErrors = problems.filter((p) => p.level === 'error' && (p.key === 'file' || (p.key.startsWith('pattern ') && !p.code)));
+      const unplaceable = new Set(problems.filter((p) => p.code && p.key.startsWith('pattern ')).map((p) => p.key.slice('pattern '.length)));
       const blocked = new Set([...schemaBlocked, ...problems.filter((p) => p.level === 'error').map((p) => p.key)]);
 
       if (!fileErrors.length) {
@@ -224,7 +229,8 @@ export async function runChapter(sql: Sql, filePath: string, mode: 'validate' | 
 
         // patterns from the file: new → insert; changed → update + audit
         for (const p of file.patterns ?? []) {
-          const row = { pattern_id: p.pattern_id, topic_id: p.topic_id, typical_set_id: p.typical_set_id, name: p.name, template: p.template ?? null,
+          if (unplaceable.has(p.pattern_id)) continue;   // held out with the questions that use it
+          const row = { pattern_id: p.pattern_id, topic_id: p.topic_id === 'ACHIEVERS' ? `ACH-${file.chapter_id}-${file.class}` : p.topic_id, typical_set_id: p.typical_set_id, name: p.name, template: p.template ?? null,
             variables: p.variables ?? {}, target_misconceptions: p.target_misconceptions ?? [], source_refs: p.source_refs ?? [], notes: p.notes ?? null };
           const [before] = await tx`select * from cms.cms_patterns where pattern_id = ${p.pattern_id}`;
           const encoded = { ...row, variables: tx.json(row.variables as never) };
@@ -242,7 +248,25 @@ export async function runChapter(sql: Sql, filePath: string, mode: 'validate' | 
         // Q20: tier is judged against the question's Level (kept on the question; set by import:updates)
         const levels = new Map((await tx`select file_key, level from cms.cms_questions where chapter_id = ${file.chapter_id} and file_key is not null and level is not null`)
           .map((r) => [r.file_key as string, Number(r.level)]));
+        // Q21 (17 Nov 2026): a question blocked ONLY for placement / catalogue reasons goes to the Held-out area
+        // (never a near-copy: its originality error has no placement code, so it stays blocked and on the Mac)
+        const held = { by: 'chapter importer', sets: await inCmsSets(tx) };
         for (const q of file.questions) {
+          if (blocked.has(q.key) && !schemaBlocked.has(q.key)) {
+            const why = placementReason(problems, q.key);
+            if (why) {
+              const [lv] = await tx`select level from cms.cms_questions where file_key = ${q.key}`;
+              const h = await insertHeld(tx, {
+                subject: file.subject, batch: opts.heldOut?.batch ?? `import ${new Date().toISOString().slice(0, 10)} · ${shown.split('/').slice(-2, -1)[0] ?? ''}`.trim(),
+                import_id: importId, file: basename(abs), chapter_id: file.chapter_id, file_key: q.key, class: file.class, level: lv?.level ?? null,
+                reason_code: why.code, reason: why.reason, recommended_topic_id: await recommendTopic(tx, q, file, why.code), question: q,
+                catalogue: heldCatalogue(q, file, held.sets, opts.heldOut?.proposals), proposed_by: opts.heldOut?.proposedBy ?? null,
+                originality: originalityFor(orig.report, q.key),
+              }, held.by);
+              report.outcomes.push({ key: q.key, result: 'held_out', note: `${h.new ? 'held out' : 'already held out'} (#${h.held_id}): ${why.reason}` });
+              continue;
+            }
+          }
           if (blocked.has(q.key)) { report.outcomes.push({ key: q.key, result: 'blocked' }); continue; }
           const topicId = resolveTopicId(q, file);
           const hash = structureHash(q, topicId);
@@ -351,7 +375,7 @@ export async function runChapter(sql: Sql, filePath: string, mode: 'validate' | 
 
       for (const o of report.outcomes) report.counts[o.result] = (report.counts[o.result] ?? 0) + 1;
       const done = report.outcomes.filter((o) => o.result !== 'blocked').length;
-      report.result = fileErrors.length || done === 0 ? 'failed' : report.counts.blocked ? 'partial' : 'ok';
+      report.result = fileErrors.length || done === 0 ? 'failed' : report.counts.blocked || report.counts.held_out ? 'partial' : 'ok';
       await tx`update cms.cms_imports set finished_at = now(), result = ${report.result}, counts = ${tx.json(report.counts)},
                error_report = ${tx.json({ problems: report.problems, outcomes: report.outcomes } as never)} where import_id = ${importId}`;
       if (mode === 'validate') throw new Rollback();
@@ -367,7 +391,7 @@ export async function runChapter(sql: Sql, filePath: string, mode: 'validate' | 
 export function printReport(r: ChapterReport) {
   const label: Record<Outcome['result'], string> = {
     created: 'new question', new_version: 'new version', typo_fix: 'typo fix (same version)',
-    draft_replaced: 'draft replaced', unchanged: 'unchanged, skipped', blocked: 'BLOCKED',
+    draft_replaced: 'draft replaced', unchanged: 'unchanged, skipped', blocked: 'BLOCKED', held_out: 'HELD OUT (see the Held out tab)',
   };
   console.log(`\n${r.mode === 'validate' ? 'Validate (DRY RUN — nothing saved)' : `Import #${r.importId}`}: ${r.file} → ${r.result.toUpperCase()}`);
   if (Object.keys(r.counts).length) console.log('  ' + Object.entries(r.counts).map(([k, n]) => `${label[k as Outcome['result']]} ${n}`).join(' · '));
@@ -385,14 +409,18 @@ export function printReport(r: ChapterReport) {
 if (import.meta.filename === process.argv[1]) {
   const [mode, path, ...rest] = process.argv.slice(2);
   if ((mode !== 'validate' && mode !== 'import') || !path) {
-    console.error('usage: npm run chapter -- validate|import <file.json> [--force-new-version] [--override-requests <override_requests.csv>]');
+    console.error('usage: npm run chapter -- validate|import <file.json> [--force-new-version] [--override-requests <override_requests.csv>] [--batch <label>] [--proposals <file.proposals.json>]');
     process.exit(1);
   }
   const sql = connect();
   try {
     await assertCmsOwner(sql);
     const orq = rest.includes('--override-requests') ? rest[rest.indexOf('--override-requests') + 1] : undefined;
-    const r = await runChapter(sql, path, mode, rest.includes('--force-new-version'), { overrideRequests: orq ? overrideAllowList(orq) : undefined });
+    const opt = (n: string) => (rest.includes(n) ? rest[rest.indexOf(n) + 1] : undefined);
+    const props = opt('--proposals');
+    const r = await runChapter(sql, path, mode, rest.includes('--force-new-version'), { overrideRequests: orq ? overrideAllowList(orq) : undefined,
+      heldOut: { batch: opt('--batch'), proposals: props ? JSON.parse(readFileSync(resolve(props), 'utf8')) as ProposalsLike : undefined,
+        proposedBy: props ? basename(props).replace(/\.proposals\.json$/, '') : undefined } });
     printReport(r);
     process.exitCode = r.result === 'failed' ? 1 : 0;
   } finally {

@@ -38,6 +38,7 @@ export function printResult(r: ScienceResult) {
   console.log(`Questions:     ${n(r.questions.created)} new · ${n(r.questions.replaced)} drafts replaced · ${r.questions.unchanged} unchanged · ${n(r.questions.skipped)} skipped · ${n(r.questions.blocked)} blocked`);
   console.log(`               originality: ${Object.entries(r.originality.questions).map(([k, v]) => `${v} ${k.replace('_', '-')}`).join(' · ')}`);
   for (const s of r.questions.skipped) console.log(`  skipped ${s.qid}: ${s.why}`);
+  for (const s of r.questions.held_out) console.log(`  HELD OUT ${s.qid}: ${s.why} (see the Held out tab)`);
   for (const s of r.questions.blocked) console.log(`  BLOCKED ${s.qid}: ${s.why}`);
   if (r.questions.not_in_master.length) console.log(`  in the CMS but not in the master (kept): ${r.questions.not_in_master.join(', ')}`);
   console.log(`Links:         ${r.links.direct} direct · ${r.links.supporting} supporting`);

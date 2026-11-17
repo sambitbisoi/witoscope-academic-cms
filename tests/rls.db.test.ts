@@ -68,7 +68,7 @@ afterAll(async () => {
 
 describe('catalog: every table is locked the same way', () => {
   it('has 44 tables, all with RLS enabled', async () => {
-    expect(tables).toHaveLength(53); // 0018 added cms_catalogue_proposals; 0032 the four Science tables; 0035 cms_row_misconceptions
+    expect(tables).toHaveLength(54); // 0018 added cms_catalogue_proposals; 0032 the four Science tables; 0035 cms_row_misconceptions; 0038 cms_held_out
     const off = await su`select relname from pg_class c join pg_namespace n on n.oid = c.relnamespace
                          where n.nspname = 'cms' and c.relkind = 'r' and not c.relrowsecurity`;
     expect(off).toEqual([]);
@@ -119,10 +119,13 @@ describe('catalog: every table is locked the same way', () => {
       { proname: 'cms_decide_override', prosecdef: true, provolatile: 'v', proconfig: ['search_path=""'], auth_exec: true, anon_exec: false, public_exec: false },
       { proname: 'cms_decide_topic_class', prosecdef: true, provolatile: 'v', proconfig: ['search_path=""'], auth_exec: true, anon_exec: false, public_exec: false },
       // 0034 Achievers rule: invoker helpers, not callable by the app user
+      // 0038 (Q21): the Held-out area
+      { proname: 'cms_discard_held_out', prosecdef: true, provolatile: 'v', proconfig: ['search_path=""'], auth_exec: true, anon_exec: false, public_exec: false },
       { proname: 'cms_ensure_achievers', prosecdef: false, provolatile: 'v', proconfig: ['search_path=""'], auth_exec: false, anon_exec: false, public_exec: false },
       // 0035 helpers of the Science review (invoker, not callable by the app user)
       { proname: 'cms_is_admin', prosecdef: true, provolatile: 's', proconfig: ['search_path=""'], auth_exec: true, anon_exec: false, public_exec: false },
       { proname: 'cms_linked_item', prosecdef: false, provolatile: 's', proconfig: ['search_path=""'], auth_exec: false, anon_exec: false, public_exec: false },
+      { proname: 'cms_place_held_out', prosecdef: true, provolatile: 'v', proconfig: ['search_path=""'], auth_exec: true, anon_exec: false, public_exec: false },
       { proname: 'cms_record_run', prosecdef: true, provolatile: 'v', proconfig: ['search_path=""'], auth_exec: true, anon_exec: false, public_exec: false },
       { proname: 'cms_retire', prosecdef: true, provolatile: 'v', proconfig: ['search_path=""'], auth_exec: true, anon_exec: false, public_exec: false },
       // 0037 (Q14): content rows and their items edited in the CMS
@@ -208,7 +211,7 @@ describe('an app user gets zero rows', () => {
       return out;
     });
     expect(Object.values(counts).every((n) => n === 0)).toBe(true);
-    expect(Object.keys(counts)).toHaveLength(52); // + the four Science tables (0032) + cms_row_misconceptions (0035)
+    expect(Object.keys(counts)).toHaveLength(53); // + the four Science tables (0032) + cms_row_misconceptions (0035) + cms_held_out (0038)
   });
 
   it('SQL: zero rows from every cms view (views are security_invoker)', async () => {

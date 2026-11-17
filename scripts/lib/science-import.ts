@@ -7,7 +7,9 @@
 // override_requests.csv lists that row and field; on the LOCAL database it is imported with an "Originality
 // flagged" badge. A near-copy question is blocked (as for Math) unless the CSV lists it, then it comes in as a
 // draft with a pending override request.
+import { basename } from 'node:path';
 import type postgres from 'postgres';
+import { insertHeld } from './held-out.ts';
 import { classMismatch, extraRole } from '../../shared/science.ts';
 import type { Sql } from './db.ts';
 import type { AlsoInProblem, Master, MasterQuestion, MasterRow } from './science-master.ts';
@@ -28,7 +30,8 @@ export interface ScienceResult {
     /** Q14: rows added or edited in the CMS (the master since 17 Nov 2026): never overwritten, never flagged */ kept_cms: string[] };
   citations: { rows: number; questions: number };
   proposals: Proposal[];
-  questions: { created: string[]; replaced: string[]; unchanged: number; skipped: { qid: string; why: string }[]; blocked: { qid: string; why: string }[]; not_in_master: string[] };
+  questions: { created: string[]; replaced: string[]; unchanged: number; skipped: { qid: string; why: string }[]; blocked: { qid: string; why: string }[]; not_in_master: string[];
+    /** Q21: questions that can't be placed (topic or content row not in the CMS) go to the Held-out area */ held_out: { qid: string; why: string }[] };
   links: { direct: number; supporting: number };
   originality: { rows: Record<string, number>; questions: Record<string, number> };
   status_mismatch: { row_id: string; sheet: string; cms: string }[];
@@ -81,7 +84,7 @@ export async function runScience(sql: Sql, master: Master, report: ScienceReport
   const res: ScienceResult = {
     import_id: null, dry_run: opts.dryRun, target: opts.target, sources: { inserted: 0, updated: 0, unchanged: 0 },
     rows: { inserted: 0, updated: 0, unchanged: 0, flagged_missing: 0, back_in_master: 0, held_out: [], near_copy_badged: [], overridden: [], kept_cms: [] },
-    citations: { rows: 0, questions: 0 }, proposals: [], questions: { created: [], replaced: [], unchanged: 0, skipped: [], blocked: [], not_in_master: [] },
+    citations: { rows: 0, questions: 0 }, proposals: [], questions: { created: [], replaced: [], unchanged: 0, skipped: [], blocked: [], not_in_master: [], held_out: [] },
     links: { direct: 0, supporting: 0 }, originality: { rows: {}, questions: {} }, status_mismatch: [],
     also_in: { rows_with_ids: 0, ids_parsed: 0, ids_kept: 0, unparsed: [...(master.also_in_unparsed ?? [])], unknown: [] }, class_mismatch: [], problems: [],
     items: null, misconceptions: { matched: 0, linked_supporting: [], unmatched: [], primary_proposed: [] },
@@ -110,7 +113,7 @@ export async function runScience(sql: Sql, master: Master, report: ScienceReport
         if (!t) bad.push(`${r.row_id}: topic ${r.topic_id} is not in the CMS`);
         else if (t.chapter_id !== r.chapter_id) bad.push(`${r.row_id}: topic ${r.topic_id} is in chapter ${t.chapter_id} in the CMS, ${r.chapter_id} in the master`);
       }
-      for (const q of master.questions) if (!topics.has(q.topic_id)) bad.push(`${q.qid}: topic ${q.topic_id} is not in the CMS`);
+      // Q21 (17 Nov 2026): a question whose topic is not in the CMS is held out (below), not a reason to stop the import
       if (bad.length) throw new Error(`${bad.length} problem(s) against the CMS, e.g. ${bad.slice(0, 5).join('; ')}`);
 
       const [imp] = await tx`insert into cms.cms_imports (kind, file_path, file_hash, options, counts)
@@ -346,8 +349,24 @@ export async function runScience(sql: Sql, master: Master, report: ScienceReport
         const c = qCheck.get(q.qid)!;
         const cov = nearCopyCover(c, opts.overrides);
         if (cov.near && !cov.covered) { res.questions.blocked.push({ qid: q.qid, why: `near-copy (${cov.fields.join(', ')}: ${c.closest_ref}, ${c.similarity}); rewrite it or list it in override_requests.csv` }); continue; }
-        const heldLink = q.links.find((l) => held.has(l.row_id) || !rowIds.has(l.row_id));
+        const heldLink = q.links.find((l) => held.has(l.row_id));
         if (heldLink) { res.questions.blocked.push({ qid: q.qid, why: `its content row ${heldLink.row_id} is held out of this import` }); continue; }
+        // Q21: can't be placed (topic or a linked content row not in the CMS) → the Held-out area (never a near-copy: blocked above)
+        const missingRow = q.links.find((l) => !rowIds.has(l.row_id));
+        if (!topics.has(q.topic_id) || missingRow) {
+          const why = !topics.has(q.topic_id) ? { code: 'topic_missing' as const, reason: `topic ${q.topic_id} is not in the CMS` }
+            : { code: 'row_missing' as const, reason: `content row ${missingRow!.row_id} is not in the CMS` };
+          const chapterId = master.rows.find((r) => q.links.some((l) => l.row_id === r.row_id))?.chapter_id ?? topics.get(q.topic_id)?.chapter_id;
+          if (!chapterId) { res.questions.blocked.push({ qid: q.qid, why: `${why.reason}, and no chapter is known for it` }); continue; }
+          await insertHeld(tx, { subject: 'science', batch: `import:science ${new Date().toISOString().slice(0, 10)} · ${basename(master.path)}`, import_id: importId,
+            file: basename(master.path), chapter_id: chapterId, file_key: q.qid, class: q.row_class, level: q.row_class, reason_code: why.code, reason: why.reason,
+            recommended_topic_id: null, question: q as never, catalogue: { concepts: [], misconceptions: [], typical_sets: [], patterns: [] }, proposed_by: null,
+            originality: c ? { checked_at: report.checked_at, result: c.result, similarity: c.similarity, same_numbers: c.same_numbers, closest_ref: c.closest_ref,
+              field: (c as { field?: string }).field ?? null, checked: report.read, missing: report.missing, threshold: report.threshold, near_copy_threshold: report.near_copy_threshold, tool: report.tool } : null,
+          }, by);
+          res.questions.held_out.push({ qid: q.qid, why: why.reason });
+          continue;
+        }
         const t = topics.get(q.topic_id)!;
         const ex = known.get(q.qid);
         if (!ex) {
