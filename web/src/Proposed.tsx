@@ -102,7 +102,8 @@ export function ProposedList({ kind: routeKind, item: routeItem }: { kind: strin
       </div>
       {rowItemsTab ? <RowItemsTab show={show} /> : <>
       <div className="filters">
-        {kind !== 'setting' && FACETS.map((f) => (
+        {/* Q28: settings have only a subject (one shared SET list) */}
+        {(kind === 'setting' ? FACETS.filter((f) => f.id === 'subject') : FACETS).map((f) => (
           <MultiSelect key={f.id} label={f.label} options={options[f.id] ?? []} selected={facets[f.id]} onChange={(v) => { setFacets({ ...facets, [f.id]: v }); setPicked(new Set()); }} />
         ))}
         {anyFilter && <button className="link small" onClick={() => setFacets({ subject: [], cls: [], strand: [], chapter: [], topic: [] })}>Clear filters</button>}

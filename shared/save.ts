@@ -48,6 +48,9 @@ function scienceVersion(q: Question) {
     ...placementAndBody(q),
     ...MATH_ONLY_NULL,
     is_pure_fact: sc.is_pure_fact, reading: sc.reading, has_irrelevant_info: sc.has_irrelevant_info, steps: sc.steps, inhibition: sc.inhibition, visual: sc.visual,
+    // Q26 (S1, 0041)
+    science_question_type: sc.science_question_type ?? null, setting_familiarity: sc.setting_familiarity ?? null,
+    has_hidden_idea: sc.has_hidden_idea ?? null, has_experiment: sc.has_experiment ?? null,
     ...taggingCols(q),
   };
 }
@@ -80,7 +83,7 @@ function rowsCommon<V>(q: Question, version: V) {
   const wrong_answers = answers.flatMap(([label, a]) => (a.wrong_answers ?? []).map((w) => {
     const pos = (a.options ?? []).indexOf(w.value);
     return { part_label: label, value: w.value, option_position: pos >= 0 ? pos + 1 : null, tag: w.tag, misconception_id: w.misconception_id ?? null, target_concept_id: w.target_concept_id ?? null, why: w.why ?? null,
-      mc_row_id: w.mc?.row_id ?? null, mc_item_no: w.mc?.item_no ?? null };
+      mc_row_id: w.mc?.row_id ?? null, mc_item_no: w.mc?.item_no ?? null, target_row_id: w.target_row_id ?? null };
   }));
   return {
     version, options, wrong_answers,
@@ -135,7 +138,9 @@ export function planSave(args: {
   const payload = {
     question_id: args.questionId, mode, base_version_no: args.baseVersionNo, content_hash: next.structureHash,
     question: { topic_id: after.topic_id, typical_set_id: after.typical_set_id, pattern_id: after.pattern_id ?? null, clone_batch_id: after.clone_batch_id,
-      class_override: after.class_override ?? null, placement_note: after.placement_note ?? null },
+      class_override: after.class_override ?? null, placement_note: after.placement_note ?? null,
+      // Q26/Q28 (0041): a Science question's setting is saved with it (a Math save leaves the setting untouched)
+      ...(after.science ? { setting_id: after.science.setting_id ?? null } : {}) },
     version: rows.version, parts: rows.parts, options: rows.options, wrong_answers: rows.wrong_answers, concepts: rows.concepts,
     solutions: rows.solutions, hints: rows.hints, source_refs: rows.source_refs,
     diff: { structure: changedFields, texts: textDiff }, reason: args.reason ?? null,

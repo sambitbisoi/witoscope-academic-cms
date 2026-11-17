@@ -5,6 +5,7 @@
 // Content rows are read-only here. Selected topic, row and question live in the URL hash.
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Id } from './Id';
+import { SCIENCE_QUESTION_TYPES } from '../../shared/types.ts';
 import { LevelTag, RowClassTag } from './Tags';
 import { AddQuestionForm, OriginFlags } from './AddQuestions';
 import { ContentRowForm } from './ContentRowForm';
@@ -34,8 +35,10 @@ export function Coverage({ rows, questions, cls = 'all' }: { rows: ScienceRow[];
       <span className="cov ne">○ {n('not_eligible')} not eligible</span>
       <span className="cov none">⚠ {n('none')} none yet</span>
       <span className="sep" aria-hidden>|</span>
-      <span><strong>{live.length}</strong> question{live.length === 1 ? '' : 's'}: {TIERS.map((t) => `${t} ${live.filter((q) => q.level_tier === t).length}`).join(' · ')}
-        {live.some((q) => !q.level_tier) ? ` · no tier ${live.filter((q) => !q.level_tier).length}` : ''}</span>
+      {/* Q27 (0041): L1–L3 is the retired authored tier (legacy); Q26: the Science question type, once set */}
+      <span><strong>{live.length}</strong> question{live.length === 1 ? '' : 's'}: {live.some((q) => q.science_question_type) ? `typed ${live.filter((q) => q.science_question_type).length} · untyped ${live.filter((q) => !q.science_question_type).length} · ` : 'untyped · '}
+        <span className="muted" title="The authored L1–L3 tier is retired (Q27); kept read-only">old tier {TIERS.map((t) => `${t} ${live.filter((q) => q.level_tier === t).length}`).join(' · ')}
+        {live.some((q) => !q.level_tier) ? ` · none ${live.filter((q) => !q.level_tier).length}` : ''}</span></span>
     </div>
   );
 }
@@ -271,7 +274,8 @@ function QItem({ q, rowId, ceiling, selected, onPick }: { q: ScienceQuestion; ro
     <button className={`qrow sci-qrow ${selected ? 'sel' : ''}`} onClick={onPick} title={q.text} ref={selected ? (el) => el?.scrollIntoView({ block: 'nearest' }) : undefined}>
       <span className="qtext">{q.text}</span>
       <span className="sci-q-meta small">
-        {q.level_tier && <span className={`tag tier tier-${q.level_tier}`} title="Tier (L1–L3)">{q.level_tier}</span>}
+        {q.science_question_type ? <span className="tag tier" title={`Science question type ${q.science_question_type} · ${SCIENCE_QUESTION_TYPES[q.science_question_type as 1]}`}>Type {q.science_question_type}</span>
+          : q.level_tier && <span className="muted" title="Old tier (legacy, retired): the type is not set yet">{q.level_tier}</span>}
         <LevelTag q={q} ceiling={ceiling} />
         {here && here.rank && here.rank !== 'context' && <span className={`tag rank-${here.rank}${here.rank_proposed ? ' rank-proposed' : ''}`} title="This row's rank for the question">{here.rank === 'primary' ? `Primary${here.rank_proposed ? ' (proposed)' : ''}` : 'Secondary'}</span>}
         <span className="muted">{nd} direct{ns ? ` · ${ns} supporting` : ''}</span>

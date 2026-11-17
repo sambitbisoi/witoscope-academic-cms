@@ -341,7 +341,7 @@ export async function runScience(sql: Sql, master: Master, report: ScienceReport
       };
       const versionCols = (q: MasterQuestion) => ({
         text: q.text, figure_description: q.figure_description, image_status: q.picture_needed ? 'needs_image' : null, format: q.format, correct: q.correct,
-        author_notes: q.notes, content_hash: q.hash, level_tier: q.tier, display_format: q.sheet_format, misconception_targeted: null, misconception_targeted_legacy: q.misconception_targeted,
+        author_notes: q.notes, content_hash: q.hash, science_tier_legacy: q.tier, display_format: q.sheet_format, misconception_targeted: null, misconception_targeted_legacy: q.misconception_targeted,
         safety_note: q.safety_note, confidence: q.confidence,
       });
 

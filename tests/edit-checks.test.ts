@@ -87,3 +87,47 @@ describe('Q20: tier uses Level', () => {
     expect(derive({ ...q, signature: { ...q.signature, strategy: 3 } }, tierBasis({ level: 6, class: 6 }), () => 1, cfg).tier).toBe('Super Achiever');
   });
 });
+
+// 0041 (Round 2): Q26 S1 fields, Q28 settings, Q32 Science wrong-option tags
+describe('Science attributes and tags (0041)', () => {
+  const errs = (q: Question, c = ctx('science') as Parameters<typeof checkEdit>[1]) => checkEdit(q, c).filter((p) => p.level === 'error').map((p) => p.message);
+  it('any of the 9 tags; a concept error targets one of its rows; a target row only with a concept error', () => {
+    const q = sci();
+    q.answer.wrong_answers = [{ value: 'a', tag: 'shortcut' }, { value: 'c', tag: 'concept_error', target_row_id: 'C6-ZZ-001' }, { value: 'd', tag: 'unit_slip', why: 'x' }];
+    expect(errs(q)).toEqual([]);
+    q.answer.wrong_answers = [{ value: 'c', tag: 'concept_error' }];
+    expect(errs(q).join()).toMatch(/needs a target row/);
+    q.answer.wrong_answers = [{ value: 'c', tag: 'concept_error', target_row_id: 'C6-ZZ-009' }];
+    expect(errs(q).join()).toMatch(/not one of this question's content rows/);
+    q.answer.wrong_answers = [{ value: 'c', tag: 'misread', target_row_id: 'C6-ZZ-001' }];
+    expect(errs(q).join()).toMatch(/only with a concept error/);
+  });
+  it('S1 fields: unset is fine; a set value must be valid; the setting must be a Science setting', () => {
+    const q = sci();
+    q.science = { ...q.science!, science_question_type: 4, setting_familiarity: 'Rare', has_hidden_idea: true, has_experiment: false, setting_id: 'SET0101' };
+    expect(errs(q, { ...ctx('science'), settings: new Set(['SET0101']) })).toEqual([]);
+    expect(errs(q, { ...ctx('science'), settings: new Set() }).join()).toMatch(/not a Science setting/);
+    q.science.science_question_type = 6 as never;
+    expect(errs(q).join()).toMatch(/Science question type/);
+    q.science.science_question_type = 1; q.science.setting_familiarity = 'Odd' as never;
+    expect(errs(q).join()).toMatch(/setting familiarity/);
+  });
+  it('rowsFor writes S1 fields and target rows; the S1 fields are structure (a change = a new version)', () => {
+    const q = sci();
+    q.science = { ...q.science!, science_question_type: 3, setting_familiarity: 'Everyday', has_hidden_idea: false, has_experiment: true };
+    q.answer.wrong_answers = [{ value: 'c', tag: 'concept_error', target_row_id: 'C6-ZZ-001' }];
+    const r = rowsFor(q, cfg, 6, () => 6);
+    expect(r.version).toMatchObject({ science_question_type: 3, setting_familiarity: 'Everyday', has_hidden_idea: false, has_experiment: true, tier: null });
+    expect(r.wrong_answers[0]).toMatchObject({ tag: 'concept_error', target_row_id: 'C6-ZZ-001' });
+    const h1 = structureHash(q, q.topic_id);
+    q.science.science_question_type = 4;
+    expect(structureHash(q, q.topic_id)).not.toBe(h1);
+    q.science.science_question_type = 3; q.science.setting_id = 'SET0101';
+    expect(structureHash(q, q.topic_id)).not.toBe(h1);
+  });
+  it('Math structure hashes are unchanged by the new fields', () => {
+    const m = base();
+    expect(structureHash(m, m.topic_id)).toBe(structureHash({ ...m, answer: { ...m.answer, wrong_answers: m.answer.wrong_answers!.map((w) => ({ ...w })) } }, m.topic_id));
+    expect(rowsFor(m, cfg, 6, () => 6).version).not.toHaveProperty('science_question_type');
+  });
+});

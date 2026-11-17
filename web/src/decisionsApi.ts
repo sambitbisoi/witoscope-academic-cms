@@ -14,6 +14,7 @@ export const BLOCK_LABEL: Record<string, string> = {
   picture_pending: 'Picture pending', attributes_pending: 'Attributes pending (fill in the signature)', science_solution1_empty: 'Science: Solution 1 empty',
   science_primary_not_confirmed: 'Science: primary row not confirmed', science_free_text_misconception: 'Science: misconception is free text',
   science_item_not_active: 'Science: misconception item not active', science_wrong_option_item_not_active: 'Science: a wrong option\'s item not active',
+  science_type_missing: 'Science: question type not set', science_concept_error_row_not_linked: 'Science: a concept error\'s target row is not one of its rows',
 };
 
 export async function gatherDecisions(f: { subject: string; cls: string }): Promise<DecisionCard[]> {

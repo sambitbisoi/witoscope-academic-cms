@@ -75,12 +75,12 @@ describe('import:science (local, rolled back)', () => {
       expect(prop).toEqual({ status: 'proposed', source: 'Science master' });
 
       // the question: Needs review, attributes pending, image pending, tier stored apart from the class Level
-      const [v] = await tx`select q.subject, q.level, q.class, q.source_qid, v.status, v.created_from, v.attributes_pending, v.originality_pending, v.image_status, v.level_tier,
+      const [v] = await tx`select q.subject, q.level, q.class, q.source_qid, v.status, v.created_from, v.attributes_pending, v.originality_pending, v.image_status, v.level_tier, v.science_tier_legacy,
           v.display_format, v.misconception_targeted, v.misconception_targeted_legacy, v.safety_note, v.format, v.correct, v.version_id,
           (select count(*)::int from cms.cms_originality_checks c where c.version_id = v.version_id) as checks
         from cms.cms_questions q join cms.cms_question_versions v on v.question_id = q.question_id and v.version_no = q.current_version where q.source_qid = 'ZZ-Q001'`;
       expect(v).toMatchObject({ subject: 'science', level: 6, class: 6, status: 'in_review', created_from: 'import', attributes_pending: true, originality_pending: false,
-        image_status: 'needs_image', level_tier: 'L2', display_format: 'Scenario MCQ', misconception_targeted: null, misconception_targeted_legacy: 'Thinks w.', safety_note: 'Adult only.', format: 'MCQ-4', correct: 'y', checks: 1 });
+        image_status: 'needs_image', level_tier: null, science_tier_legacy: 'L2', display_format: 'Scenario MCQ', misconception_targeted: null, misconception_targeted_legacy: 'Thinks w.', safety_note: 'Adult only.', format: 'MCQ-4', correct: 'y', checks: 1 });
       const links = await tx`select row_id, role from cms.cms_question_content_rows where version_id = ${v!.version_id} order by row_id`;
       expect(links.map((l) => `${l.row_id}:${l.role}`)).toEqual(['C6-ZZ-001:direct', 'C6-ZZ-002:supporting']);
       // 0035: rows' misconceptions are split into items; the only direct row is the primary; "Thinks w." matches no item → reported, kept as legacy

@@ -17,7 +17,8 @@ export interface ContentRow {
 }
 export type RowStatus = 'direct' | 'supporting' | 'not_eligible' | 'none';
 export type ScienceRow = ContentRow & { status: RowStatus; n_direct: number; n_supporting: number };
-export type ScienceQuestion = QuestionRow & { level_tier: string | null; display_format: string | null; safety_note: string | null; links: { row_id: string; role: 'direct' | 'supporting'; rank?: string; rank_proposed?: boolean }[] };
+/** level_tier here = the retired authored tier (Q27: science_tier_legacy, or level_tier on versions from before 0041) */
+export type ScienceQuestion = QuestionRow & { level_tier: string | null; science_question_type: number | null; display_format: string | null; safety_note: string | null; links: { row_id: string; role: 'direct' | 'supporting'; rank?: string; rank_proposed?: boolean }[] };
 export interface Citation { source_id: string; page_from: number; page_to: number; raw: string; for_row_id: string | null }
 
 const ROW_COLS = 'row_id, topic_id, chapter_id, row_class, type, chapter_role, content, why_it_matters, misconceptions, diagram_description, picture_question, question_use, safety, source, found_in, confidence, notes, time_sensitive, time_checked_year, accuracy_flag, book, book_chapter_no, book_chapter_title, appears_in, sort, topic_classes_mapped, topic_taught_in, revisit, also_in_rows, originality_result, originality_field, originality_score, originality_ref, originality_override, in_master, retired_at, retired_reason, cms_edited_at';
@@ -33,14 +34,15 @@ export async function scienceData(scope: { topicId: string } | { chapterId: stri
   ]);
   const vids = questions.map((q) => q.version_id);
   const [extra, links] = await Promise.all([
-    vids.length ? all<{ version_id: number; level_tier: string | null; display_format: string | null; safety_note: string | null }>((a, b) => supabase.from('cms_question_versions').select('version_id, level_tier, display_format, safety_note').in('version_id', vids).range(a, b)) : Promise.resolve([]),
+    vids.length ? all<{ version_id: number; level_tier: string | null; science_tier_legacy: string | null; science_question_type: number | null; display_format: string | null; safety_note: string | null }>((a, b) => supabase.from('cms_question_versions').select('version_id, level_tier, science_tier_legacy, science_question_type, display_format, safety_note').in('version_id', vids).range(a, b)) : Promise.resolve([]),
     vids.length ? all<{ version_id: number; row_id: string; role: 'direct' | 'supporting'; rank: string; rank_proposed: boolean }>((a, b) => supabase.from('cms_question_content_rows').select('version_id, row_id, role, rank, rank_proposed').in('version_id', vids).order('row_id').range(a, b)) : Promise.resolve([]),
   ]);
   const st = new Map(status.map((s) => [s.row_id, s]));
   const ex = new Map(extra.map((e) => [e.version_id, e]));
   return {
     rows: rows.map((r) => ({ ...r, status: st.get(r.row_id)?.status ?? 'none', n_direct: st.get(r.row_id)?.n_direct ?? 0, n_supporting: st.get(r.row_id)?.n_supporting ?? 0 })) as ScienceRow[],
-    questions: questions.map((q) => ({ ...q, level_tier: ex.get(q.version_id)?.level_tier ?? null, display_format: ex.get(q.version_id)?.display_format ?? null,
+    questions: questions.map((q) => ({ ...q, level_tier: ex.get(q.version_id)?.science_tier_legacy ?? ex.get(q.version_id)?.level_tier ?? null,
+      science_question_type: ex.get(q.version_id)?.science_question_type ?? null, display_format: ex.get(q.version_id)?.display_format ?? null,
       safety_note: ex.get(q.version_id)?.safety_note ?? null, links: links.filter((l) => l.version_id === q.version_id).map((l) => ({ row_id: l.row_id, role: l.role, rank: l.rank, rank_proposed: l.rank_proposed })) })) as ScienceQuestion[],
   };
 }
@@ -69,9 +71,9 @@ export async function scienceDetail(versionId: number) {
   const [rows, cites, v, items, wrong] = await Promise.all([
     links.length ? supabase.from('cms_content_rows').select(ROW_COLS).in('row_id', links.map((l) => l.row_id)) : Promise.resolve({ data: [] }),
     supabase.from('cms_citations').select('source_id, page_from, page_to, raw, for_row_id').eq('version_id', versionId).order('citation_id'),
-    supabase.from('cms_question_versions').select('level_tier, display_format, misconception_targeted, misconception_targeted_legacy, misconception_row_id, misconception_item_no, safety_note, confidence').eq('version_id', versionId).single(),
+    supabase.from('cms_question_versions').select('level_tier, science_tier_legacy, science_question_type, setting_familiarity, has_hidden_idea, has_experiment, display_format, misconception_targeted, misconception_targeted_legacy, misconception_row_id, misconception_item_no, safety_note, confidence').eq('version_id', versionId).single(),
     rowItems(links.map((l) => l.row_id), true),
-    supabase.from('cms_version_wrong_answers').select('option_position, mc_row_id, mc_item_no').eq('version_id', versionId).not('mc_row_id', 'is', null),
+    supabase.from('cms_version_wrong_answers').select('option_position, tag, mc_row_id, mc_item_no, target_row_id').eq('version_id', versionId).not('tag', 'is', null),
   ]);
   const byId = new Map(((rows.data ?? []) as ContentRow[]).map((r) => [r.row_id, r]));
   const citations = (cites.data ?? []) as Citation[];
@@ -81,11 +83,15 @@ export async function scienceDetail(versionId: number) {
     links: links.map((l) => ({ ...l, weight: Number(l.weight), row: byId.get(l.row_id) ?? null }))
       .sort((a, b) => RANK_ORDER[a.rank] - RANK_ORDER[b.rank] || a.row_id.localeCompare(b.row_id)),
     citations, sources: new Map(sources.map((s) => [s.source_id, s])),
-    version: (v.data ?? {}) as { level_tier: string | null; display_format: string | null; misconception_targeted: string | null; misconception_targeted_legacy: string | null;
+    version: (v.data ?? {}) as { level_tier: string | null; science_tier_legacy: string | null; science_question_type: number | null; setting_familiarity: string | null;
+      has_hidden_idea: boolean | null; has_experiment: boolean | null; display_format: string | null; misconception_targeted: string | null; misconception_targeted_legacy: string | null;
       misconception_row_id: string | null; misconception_item_no: number | null; safety_note: string | null; confidence: string | null },
     items,
-    wrongItems: new Map(((wrong.data ?? []) as { option_position: number | null; mc_row_id: string; mc_item_no: number }[])
-      .filter((w) => w.option_position !== null).map((w) => [w.option_position!, `${w.mc_row_id} #${w.mc_item_no}`])),
+    wrongItems: new Map(((wrong.data ?? []) as WrongTagRow[])
+      .filter((w) => w.option_position !== null && w.mc_row_id).map((w) => [w.option_position!, `${w.mc_row_id} #${w.mc_item_no}`])),
+    /** Q32 (0041): each tagged wrong option, encoded "tag|ref" (ref = "C6-04-014 #2" for a misconception, a row ID for a concept error) */
+    wrongTags: new Map(((wrong.data ?? []) as WrongTagRow[]).filter((w) => w.option_position !== null)
+      .map((w) => [w.option_position!, encodeWrongTag(w)])),
   };
 }
 
@@ -119,8 +125,12 @@ const RANK_ORDER: Record<Rank, number> = { primary: 0, secondary: 1, context: 2 
 export type ScienceDetail = Awaited<ReturnType<typeof scienceDetail>>;
 
 /** The Science review box (0035): misconception item, wrong options' items, primary row, Solution 1. Open drafts only; audited. */
+type WrongTagRow = { option_position: number | null; tag: string; mc_row_id: string | null; mc_item_no: number | null; target_row_id: string | null };
+export const encodeWrongTag = (w: { tag: string | null; mc_row_id?: string | null; mc_item_no?: number | null; target_row_id?: string | null }) =>
+  !w.tag ? '' : `${w.tag}|${w.tag === 'misconception' && w.mc_row_id ? `${w.mc_row_id} #${w.mc_item_no}` : w.tag === 'concept_error' && w.target_row_id ? w.target_row_id : ''}`;
 export async function saveScienceReview(p: { question_id: string; version_no: number; reason?: string; misconception?: { row_id: string; item_no: number } | null;
-  wrong?: { position: number; mc: { row_id: string; item_no: number } | null }[]; primary_row_id?: string; solution1?: string }) {
+  wrong?: ({ position: number; mc: { row_id: string; item_no: number } | null } | { position: number; tag: string | null; mc?: { row_id: string; item_no: number }; target_row_id?: string })[];
+  primary_row_id?: string; solution1?: string }) {
   const { data, error } = await supabase.rpc('cms_save_science_review', { p });
   if (error) throw new Error(error.message);
   return data as { changed: boolean };

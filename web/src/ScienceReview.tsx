@@ -3,7 +3,7 @@
 // Solution 1. Only items of the question's own content rows can be picked. Explicit Save; one audit row.
 // A misconception that is not an item yet can't be added here (that needs Q14, content-row editing).
 import { useMemo, useState } from 'react';
-import { browseHash } from './logic';
+import { browseHash, TAG_LABEL } from './logic';
 import { saveScienceReview, type ScienceDetail } from './scienceApi';
 import { checkSolutionSupport } from '../../shared/science-items.ts';
 
@@ -22,7 +22,8 @@ export function ScienceReview({ questionId, versionNo, x, options, solution1, on
   const wrongOpts = options.filter((o) => !o.is_correct);
 
   const [misc, setMisc] = useState(curMisc);
-  const [wrong, setWrong] = useState<Record<number, string>>(() => Object.fromEntries(wrongOpts.map((o) => [o.position, x.wrongItems.get(o.position) ?? ''])));
+  // Q32 (0041): per wrong option "tag|ref" ("" = not tagged); see encodeWrongTag
+  const [wrong, setWrong] = useState<Record<number, string>>(() => Object.fromEntries(wrongOpts.map((o) => [o.position, x.wrongTags.get(o.position) ?? ''])));
   const [primary, setPrimary] = useState(curPrimary?.row_id ?? '');
   const [primaryTouched, setPrimaryTouched] = useState(false);
   const [sol, setSol] = useState(solution1 ?? '');
@@ -30,8 +31,9 @@ export function ScienceReview({ questionId, versionNo, x, options, solution1, on
   const [err, setErr] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
 
-  const wrongChanged = wrongOpts.filter((o) => (wrong[o.position] ?? '') !== (x.wrongItems.get(o.position) ?? ''));
+  const wrongChanged = wrongOpts.filter((o) => (wrong[o.position] ?? '') !== (x.wrongTags.get(o.position) ?? ''));
   const primaryChange = primaryTouched && (primary !== curPrimary?.row_id || curPrimary?.rank_proposed);
+  const incomplete = wrongOpts.some((o) => /^(misconception|concept_error)\|$/.test(wrong[o.position] ?? ''));
   const dirty = misc !== curMisc || wrongChanged.length > 0 || primaryChange || sol.trim() !== (solution1 ?? '').trim();
 
   const save = async () => {
@@ -40,14 +42,17 @@ export function ScienceReview({ questionId, versionNo, x, options, solution1, on
       await saveScienceReview({
         question_id: questionId, version_no: versionNo, reason: 'Science review',
         ...(misc !== curMisc ? { misconception: misc ? parse(misc) : null } : {}),
-        ...(wrongChanged.length ? { wrong: wrongChanged.map((o) => ({ position: o.position, mc: wrong[o.position] ? parse(wrong[o.position]!) : null })) } : {}),
+        ...(wrongChanged.length ? { wrong: wrongChanged.map((o) => {
+          const [tag, r] = (wrong[o.position] ?? '').split('|');
+          return { position: o.position, tag: tag || null, ...(tag === 'misconception' && r ? { mc: parse(r)! } : {}), ...(tag === 'concept_error' && r ? { target_row_id: r } : {}) };
+        }) } : {}),
         ...(primaryChange && primary ? { primary_row_id: primary } : {}),
         ...(sol.trim() !== (solution1 ?? '').trim() ? { solution1: sol } : {}),
       });
       setSaved(true); setPrimaryTouched(false); onSaved();
     } catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
   };
-  const reset = () => { setMisc(curMisc); setWrong(Object.fromEntries(wrongOpts.map((o) => [o.position, x.wrongItems.get(o.position) ?? '']))); setPrimary(curPrimary?.row_id ?? ''); setPrimaryTouched(false); setSol(solution1 ?? ''); setErr(null); };
+  const reset = () => { setMisc(curMisc); setWrong(Object.fromEntries(wrongOpts.map((o) => [o.position, x.wrongTags.get(o.position) ?? '']))); setPrimary(curPrimary?.row_id ?? ''); setPrimaryTouched(false); setSol(solution1 ?? ''); setErr(null); };
 
   const itemSelect = (value: string, set: (v: string) => void, label: string) => (
     <select aria-label={label} value={value} onChange={(e) => set(e.target.value)}>
@@ -88,10 +93,23 @@ export function ScienceReview({ questionId, versionNo, x, options, solution1, on
       {wrongOpts.length > 0 && <div className="sci-rv-f">
         <div className="sci-rv-l">Wrong options</div>
         <div className="sci-rv-wrong">
-          {wrongOpts.map((o) => (
-            <div key={o.position} className="small"><span className="opt-label">{String.fromCharCode(64 + o.position)} · {o.text}</span>
-              {itemSelect(wrong[o.position] ?? '', (v) => setWrong({ ...wrong, [o.position]: v }), `Misconception of option ${String.fromCharCode(64 + o.position)}`)}</div>
-          ))}
+          {wrongOpts.map((o) => {
+            const L = String.fromCharCode(64 + o.position);
+            const [tag = '', r = ''] = (wrong[o.position] ?? '').split('|');
+            const put = (t: string, ref: string) => setWrong({ ...wrong, [o.position]: t ? `${t}|${ref}` : '' });
+            return (
+              <div key={o.position} className="small"><span className="opt-label">{L} · {o.text}</span>
+                <select aria-label={`Mistake tag of option ${L}`} value={tag} onChange={(e) => put(e.target.value, '')}>
+                  <option value="">Not tagged</option>{Object.entries(TAG_LABEL).map(([t, label]) => <option key={t} value={t}>{label}</option>)}</select>
+                {tag === 'misconception' && itemSelect(r, (v) => put('misconception', v), `Misconception of option ${L}`)}
+                {tag === 'concept_error' && <select aria-label={`Target row of option ${L}`} value={r} onChange={(e) => put('concept_error', e.target.value)}>
+                  <option value="">Choose a target row…</option>{x.links.map((l) => <option key={l.row_id} value={l.row_id}>{l.row_id} · {(l.row?.content ?? '').slice(0, 60)}</option>)}</select>}
+                {tag === 'misconception' && !r && <span className="warn-text"> choose an item</span>}
+                {tag === 'concept_error' && !r && <span className="warn-text"> choose a target row</span>}
+              </div>
+            );
+          })}
+          <div className="muted small">Tag where confident; untagged is fine and never blocks approval.</div>
         </div>
       </div>}
 
@@ -105,7 +123,7 @@ export function ScienceReview({ questionId, versionNo, x, options, solution1, on
       </div>
 
       <div className="sci-rv-actions">
-        <button disabled={busy || !dirty} onClick={save}>Save</button>{' '}
+        <button disabled={busy || !dirty || incomplete} onClick={save}>Save</button>{' '}
         <button className="link" disabled={busy || !dirty} onClick={reset}>Reset</button>
         {saved && !dirty && <span className="muted small"> Saved.</span>}
         <span className="muted small"> A misconception that is not an item yet can't be added here (content-row editing, Q14, is not built).</span>
