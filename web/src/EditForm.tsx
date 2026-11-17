@@ -2,9 +2,9 @@
 // (planSave: same or new version, diff, derived fields, checks) and applied by
 // cms_apply_save in one transaction. Explicit Save; the preview says what will happen.
 import { useEffect, useMemo, useState } from 'react';
-import { checkFile } from '../../shared/checks.ts';
+import { checkEdit, scienceAttributesMissing } from '../../shared/edit-checks.ts';
 import { planSave } from '../../shared/save.ts';
-import type { Answer, ChapterFile, Question, WrongAnswer } from '../../shared/types.ts';
+import type { Answer, Question, ScienceSignature, WrongAnswer } from '../../shared/types.ts';
 import { applySave, loadForEdit, type EditContext } from './editApi';
 import { TAG_LABEL } from './logic';
 
@@ -31,14 +31,14 @@ export function EditForm({ questionId, onDone }: { questionId: string; onDone: (
     const d = ctx.detail;
     return planSave({ questionId, baseVersionNo: d.question.current_version, currentStatus: d.version.status, retired: !!d.question.retired_at,
       before: ctx.question, after: q, cfg: ctx.cfg, questionClass: q.class_override ?? d.question.class, conceptClass: ctx.conceptClass,
-      forceNewVersion: forceNew, reason: reason.trim() || undefined });
+      forceNewVersion: forceNew, reason: reason.trim() || undefined, storedHash: (d.version as { content_hash?: string }).content_hash ?? null });
   }, [ctx, q, forceNew, reason, questionId]);
   const problems = useMemo(() => {
     if (!ctx || !q) return [];
     const d = ctx.detail;
-    const file: ChapterFile = { file_schema: 'cms-chapter/1.0', attribute_version: ctx.ruleVersion, subject: d.question.subject as 'math',
-      class: d.question.class, chapter_id: d.question.chapter_id, generated: { by: 'CMS editor', date: new Date().toISOString().slice(0, 10) }, questions: [q] };
-    return checkFile(file, ctx.catalog, { gold: true }).filter((p) => p.key !== 'file' || p.level === 'error');
+    // T1: subject-aware (Math: the chapter-file checks as before; Science: its own rules)
+    return checkEdit(q, { subject: ctx.subject, ruleVersion: ctx.ruleVersion, cls: d.question.class, chapterId: d.question.chapter_id,
+      catalog: ctx.catalog, linkedRows: ctx.linkedRows, rowItems: ctx.rowItems });
   }, [ctx, q]);
 
   if (error) return <p className="error">Couldn't open {questionId} for editing: {error}</p>;
@@ -46,6 +46,9 @@ export function EditForm({ questionId, onDone }: { questionId: string; onDone: (
   const set = (f: (x: Question) => void) => setQ((cur) => { const x = clone(cur!); f(x); return x; });
   const errors = problems.filter((p) => p.level === 'error');
   const L = ctx.lists;
+  const isSci = ctx.subject === 'science';
+  const setSci = (k: keyof ScienceSignature, v: number | boolean | null) => set((x) => { (x.science as unknown as Record<string, unknown>)[k] = v; });
+  const missingAttrs = scienceAttributesMissing(q);
   const canSave = !!plan.mode && errors.length === 0 && !busy;
 
   async function save() {
@@ -77,10 +80,23 @@ export function EditForm({ questionId, onDone }: { questionId: string; onDone: (
           if (need) { x.answer.options = [...(x.answer.options ?? []), '', '', '', ''].slice(0, need); if (f === 'True/False') x.answer.options = ['True', 'False']; }
           else delete x.answer.options;
         })}>{FORMATS.map((f) => <option key={f}>{f}</option>)}</select></label>
-        {q.answer.format === 'Multi-part' ? <PartsEditor q={q} set={set} /> : <AnswerEditor a={q.answer} onChange={(f) => set((x) => f(x.answer))} lists={L} />}
+        {q.answer.format === 'Multi-part' ? <PartsEditor q={q} set={set} /> : <AnswerEditor a={q.answer} onChange={(f) => set((x) => f(x.answer))} lists={L}
+          science={isSci ? { linkedRows: ctx.linkedRows, items: ctx.rowItems } : undefined} />}
       </Sec>
 
-      <Sec title="Concepts">
+      {isSci && q.science && <Sec title="Science signature">
+        <div className="form-grid">
+          <NumOpt label="Reading (1–5)" v={q.science.reading} min={1} max={5} on={(v) => setSci('reading', v)} />
+          <NumOpt label="Steps (1–20)" v={q.science.steps} min={1} max={20} on={(v) => setSci('steps', v)} />
+          <NumOpt label="Inhibition (0–3)" v={q.science.inhibition} min={0} max={3} on={(v) => setSci('inhibition', v)} />
+          <NumOpt label="Visual (0–3)" v={q.science.visual} min={0} max={3} on={(v) => setSci('visual', v)} />
+          <YesNo label="Irrelevant info" v={q.science.has_irrelevant_info} on={(v) => setSci('has_irrelevant_info', v)} />
+          <YesNo label="Pure fact" v={q.science.is_pure_fact} on={(v) => setSci('is_pure_fact', v)} />
+        </div>
+        <p className="small muted">{missingAttrs.length ? `Attributes pending until these are set: ${missingAttrs.join(', ')}.` : 'All attributes set.'} Science has no typical set, concepts or Math signature; they are never saved for a Science question.</p>
+      </Sec>}
+
+      {!isSci && <Sec title="Concepts">
         {q.concepts.map((c, i) => (
           <div key={i} className="row3">
             <input list="concept-ids" value={c.concept_id} onChange={(e) => set((x) => { x.concepts[i]!.concept_id = e.target.value.trim(); })} placeholder="G6-FRC-C1" />
@@ -90,9 +106,9 @@ export function EditForm({ questionId, onDone }: { questionId: string; onDone: (
         ))}
         {q.concepts.length < 3 && <button className="link" onClick={() => set((x) => { x.concepts.push({ concept_id: '', involvement: 0.5 }); })}>+ Concept</button>}
         <datalist id="concept-ids">{L.concepts.map((c) => <option key={c.concept_id} value={c.concept_id}>{c.name}</option>)}</datalist>
-      </Sec>
+      </Sec>}
 
-      <Sec title={`Signature (${ctx.ruleVersion} rules)`}>
+      {!isSci && <Sec title={`Signature (${ctx.ruleVersion} rules)`}>
         <div className="form-grid">
           <label>Math difficulty<select value={q.signature.math_difficulty} onChange={(e) => set((x) => { x.signature.math_difficulty = e.target.value as 'Simple'; })}>{['Simple', 'Medium', 'Complex'].map((v) => <option key={v}>{v}</option>)}</select></label>
           <Num label="Reading (1–5)" v={q.signature.reading} min={1} max={5} on={(v) => set((x) => { x.signature.reading = v; })} />
@@ -108,10 +124,10 @@ export function EditForm({ questionId, onDone }: { questionId: string; onDone: (
           <label>Duration<select value={q.duration_s} onChange={(e) => set((x) => { x.duration_s = n(e.target.value) as 60; })}>{[30, 60, 90, 120].map((d) => <option key={d} value={d}>{d} s</option>)}</select></label>
         </div>
         {(q.signature.strategy_type === 'Other' || q.signature.strategy_other_note) && <label className="wide">Strategy note (for "Other")<input value={q.signature.strategy_other_note ?? ''} onChange={(e) => set((x) => { x.signature.strategy_other_note = e.target.value; })} /></label>}
-      </Sec>
+      </Sec>}
 
       <Sec title="Solutions and hints">
-        <label className="wide">Solution 1 (school method)<textarea rows={2} value={q.solutions.school} onChange={(e) => set((x) => { x.solutions.school = e.target.value; })} /></label>
+        <label className="wide">{isSci ? 'Solution 1 (answer + short reasoning from its content rows)' : 'Solution 1 (school method)'}<textarea rows={2} value={q.solutions.school} onChange={(e) => set((x) => { x.solutions.school = e.target.value; })} /></label>
         <label className="check"><input type="checkbox" checked={!!q.solutions.second} onChange={(e) => set((x) => { if (e.target.checked) x.solutions.second = { text: '', type: 'Another way' }; else delete x.solutions.second; })} /> Solution 2</label>
         {q.solutions.second && <div className="form-grid">
           <label className="wide">Solution 2<textarea rows={2} value={q.solutions.second.text} onChange={(e) => set((x) => { x.solutions.second!.text = e.target.value; })} /></label>
@@ -130,8 +146,10 @@ export function EditForm({ questionId, onDone }: { questionId: string; onDone: (
       <Sec title="Placement">
         <div className="form-grid">
           <label>Topic<select value={q.topic_id} onChange={(e) => set((x) => { x.topic_id = e.target.value; })}>{L.topics.map((t) => <option key={t.topic_id} value={t.topic_id}>{t.topic_kind === 'achievers' ? t.name : `${t.topic_id} ${t.name}`} (C{t.class})</option>)}</select></label>
+          {!isSci && <>
           <label>Typical set<select value={q.typical_set_id} onChange={(e) => set((x) => { x.typical_set_id = e.target.value; })}>{L.sets.map((s) => <option key={s.typical_set_id} value={s.typical_set_id}>{s.typical_set_id} · {s.name}</option>)}</select></label>
           <label>Pattern<select value={q.pattern_id ?? ''} onChange={(e) => set((x) => { if (e.target.value) x.pattern_id = e.target.value; else delete x.pattern_id; })}><option value="">—</option>{L.patterns.filter((p) => p.typical_set_id === q.typical_set_id || p.pattern_id === q.pattern_id).map((p) => <option key={p.pattern_id} value={p.pattern_id}>{p.pattern_id} · {p.name}</option>)}</select></label>
+          </>}
         </div>
       </Sec>
 
@@ -167,7 +185,8 @@ export function EditForm({ questionId, onDone }: { questionId: string; onDone: (
   );
 }
 
-function AnswerEditor({ a, onChange, lists }: { a: Answer; onChange: (f: (a: Answer) => void) => void; lists: EditContext['lists'] }) {
+type SciItems = { linkedRows: string[]; items: EditContext['rowItems'] };
+function AnswerEditor({ a, onChange, lists, science }: { a: Answer; onChange: (f: (a: Answer) => void) => void; lists: EditContext['lists']; science?: SciItems }) {
   const opts = a.options ?? [];
   const wrongFor = (v: string) => (a.wrong_answers ?? []).find((w) => w.value === v);
   const setWrong = (value: string, patch: Partial<WrongAnswer> | null) => onChange((x) => {
@@ -176,6 +195,7 @@ function AnswerEditor({ a, onChange, lists }: { a: Answer; onChange: (f: (a: Ans
     if (patch === null) { if (i >= 0) list.splice(i, 1); return; }
     if (i >= 0) Object.assign(list[i]!, patch); else list.push({ value, tag: 'misread', ...patch } as WrongAnswer);
   });
+  if (science && opts.length > 0) return <ScienceOptions a={a} onChange={onChange} science={science} />;
   return (
     <>
       {opts.length > 0 ? (
@@ -230,6 +250,57 @@ function PartsEditor({ q, set }: { q: Question; set: (f: (x: Question) => void) 
       ))}
     </>
   );
+}
+
+/** T1: Science options. A wrong option's misconception is optional; if chosen, it is an item of one of the question's own
+ *  content rows (0035). "None" removes the tag. */
+function ScienceOptions({ a, onChange, science }: { a: Answer; onChange: (f: (a: Answer) => void) => void; science: SciItems }) {
+  const opts = a.options ?? [];
+  const usable = science.items.filter((i) => i.status !== 'retired' && science.linkedRows.includes(i.row_id));
+  const wrongFor = (v: string) => (a.wrong_answers ?? []).find((w) => w.value === v);
+  const setMc = (value: string, ref: string) => onChange((x) => {
+    const list = x.wrong_answers ?? (x.wrong_answers = []);
+    const i = list.findIndex((w) => w.value === value);
+    if (!ref) { if (i >= 0) list.splice(i, 1); return; }
+    const [row_id, no] = ref.split(' #');
+    const mc = { row_id: row_id!, item_no: Number(no) };
+    if (i >= 0) { list[i]!.tag = 'misconception'; list[i]!.mc = mc; delete list[i]!.misconception_id; } else list.push({ value, tag: 'misconception', mc });
+  });
+  return (
+    <>
+      <table className="opts small">
+        <thead><tr><th>Correct</th><th>Option</th><th>Misconception (optional; an item of its content rows)</th></tr></thead>
+        <tbody>{opts.map((o, i) => {
+          const w = wrongFor(o);
+          const cur = w?.mc ? `${w.mc.row_id} #${w.mc.item_no}` : '';
+          return (
+            <tr key={i}>
+              <td><input type="radio" name="correct" checked={a.correct === o} onChange={() => onChange((x) => { x.correct = o; x.wrong_answers = (x.wrong_answers ?? []).filter((y) => y.value !== o); })} /></td>
+              <td><input value={o} onChange={(e) => onChange((x) => {
+                const old = x.options![i]!; x.options![i] = e.target.value;
+                if (x.correct === old) x.correct = e.target.value;
+                for (const y of x.wrong_answers ?? []) if (y.value === old) y.value = e.target.value;
+              })} /></td>
+              <td>{a.correct === o ? <span className="muted">Correct answer</span> : (
+                <select value={cur} onChange={(e) => setMc(o, e.target.value)}>
+                  <option value="">None</option>
+                  {cur && !usable.some((u) => `${u.row_id} #${u.item_no}` === cur) && <option value={cur}>{cur} (not an item of its rows)</option>}
+                  {usable.map((u) => <option key={`${u.row_id}#${u.item_no}`} value={`${u.row_id} #${u.item_no}`}>{u.row_id} #{u.item_no} · {u.text.slice(0, 80)}{u.status === 'needs_review' ? ' (needs review)' : ''}</option>)}
+                </select>)}</td>
+            </tr>
+          );
+        })}</tbody>
+      </table>
+      {usable.length === 0 && <p className="small muted">Its content rows have no misconception items.</p>}
+    </>
+  );
+}
+
+function NumOpt({ label, v, min, max, on }: { label: string; v: number | null; min: number; max: number; on: (v: number | null) => void }) {
+  return <label>{label}<input type="number" min={min} max={max} value={v ?? ''} placeholder="—" onChange={(e) => on(e.target.value === '' ? null : Number(e.target.value))} /></label>;
+}
+function YesNo({ label, v, on }: { label: string; v: boolean | null; on: (v: boolean | null) => void }) {
+  return <label>{label}<select value={v === null ? '' : v ? 'yes' : 'no'} onChange={(e) => on(e.target.value === '' ? null : e.target.value === 'yes')}><option value="">—</option><option value="yes">Yes</option><option value="no">No</option></select></label>;
 }
 
 function Sec({ title, children }: { title: string; children: React.ReactNode }) {

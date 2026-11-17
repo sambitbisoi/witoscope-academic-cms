@@ -5,6 +5,8 @@ import type { Answer, Question, WrongAnswer } from './types.ts';
 export interface DbQuestion {
   question_id: string; file_key: string | null; topic_id: string; typical_set_id: string | null; pattern_id: string | null;
   clone_batch_id: string | null; locale: string; class_override: number | null; placement_note: string | null;
+  /** 'science' → the Science signature is kept as it is (nulls stay null) in Question.science */
+  subject?: string;
 }
 export interface DbVersion {
   topic_id: string | null; typical_set_id: string | null; pattern_id: string | null;
@@ -78,5 +80,8 @@ export function questionFromDb(b: DbBundle): Question {
     ...(b.refs.length ? { source_refs: b.refs.map((r) => ({ ref_id: r.ref_id, relation: r.relation as 'modelled_on' })) } : {}),
     tagging: { ...(v.tagged_by ? { tagged_by: v.tagged_by as 'human' } : {}), ...(v.tagging_why ? { why: v.tagging_why } : {}), ...(v.tagging_summary ? { summary: v.tagging_summary } : {}) },
     ...(v.author_notes ? { author_notes: v.author_notes } : {}),
+    ...(q.subject === 'science' ? { science: {
+      reading: v.reading ?? null, steps: v.steps ?? null, inhibition: v.inhibition ?? null, visual: v.visual ?? null,
+      has_irrelevant_info: v.has_irrelevant_info ?? null, is_pure_fact: v.is_pure_fact ?? null } } : {}),
   };
 }

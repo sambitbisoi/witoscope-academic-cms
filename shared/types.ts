@@ -23,6 +23,13 @@ export interface Question {
   hints: string[]; source_refs?: { ref_id: string; relation: 'modelled_on' | 'same_idea' | 'checked_against' }[];
   tagging?: { tagged_by?: 'human' | 'ai'; why?: Record<string, { why: string; confidence: 'high' | 'medium' | 'low' }>; summary?: string };
   author_notes?: string;
+  /** Science only (T1, 17 Nov 2026): the Science signature, each field may be unset (null). When present, the Math
+   *  signature above is a placeholder and is never saved; Math signature and derived columns are saved as null. */
+  science?: ScienceSignature;
+}
+export interface ScienceSignature {
+  reading: number | null; steps: number | null; inhibition: number | null; visual: number | null;
+  has_irrelevant_info: boolean | null; is_pure_fact: boolean | null;
 }
 export interface Pattern {
   pattern_id: string; topic_id: string; typical_set_id: string; name: string; template?: string;
