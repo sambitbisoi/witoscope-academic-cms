@@ -7,6 +7,9 @@ import { tierBasis } from '../../shared/derive.ts';
 import { planSave } from '../../shared/save.ts';
 import { SCIENCE_QUESTION_TYPES, SETTING_FAMILIARITY, type Answer, type Question, type ScienceSignature, type WrongAnswer } from '../../shared/types.ts';
 import { applySave, loadForEdit, type EditContext } from './editApi';
+import { scienceDerive } from '../../shared/science-derive.ts';
+import { scienceWarnings } from '../../shared/science-warnings.ts';
+import { ScienceDerivedKV } from './ScienceDerivedKV';
 import { TAG_LABEL } from './logic';
 
 const FORMATS: Answer['format'][] = ['MCQ-4', 'MCQ-3', 'True/False', 'Typed-number', 'Typed-decimal', 'Typed-fraction', 'Typed-text', 'Multi-part'];
@@ -50,6 +53,9 @@ export function EditForm({ questionId, onDone }: { questionId: string; onDone: (
   const isSci = ctx.subject === 'science';
   const setSci = (k: keyof ScienceSignature, v: number | boolean | string | null) => set((x) => { (x.science as unknown as Record<string, unknown>)[k] = v; });
   const missingAttrs = scienceAttributesMissing(q);
+  // Q29 + Q31 (0042): live derived values and review warnings (warnings never block Save or approval)
+  const sciD = isSci && q.science ? scienceDerive({ ...q.science, links: ctx.sciRows, wrongTags: (q.answer.wrong_answers ?? []).map((w) => w.tag) }, ctx.stepsBands) : null;
+  const sciWarn = isSci && q.science && sciD ? scienceWarnings({ ...q.science, level: (ctx.detail.question.level as number | null) ?? null, rows: ctx.sciRows, derived: sciD }) : [];
   const canSave = !!plan.mode && errors.length === 0 && !busy;
 
   async function save() {
@@ -85,31 +91,39 @@ export function EditForm({ questionId, onDone }: { questionId: string; onDone: (
           science={isSci ? { linkedRows: ctx.linkedRows, items: ctx.rowItems } : undefined} />}
       </Sec>
 
+      {/* Q30 (S5, 0042): the Science form. Shown: the Science question attributes, then Reading, Steps, Inhibition, Irrelevant info,
+          Visual; derived values read-only. Hidden for Science: Math difficulty, Working memory, Strategy, Strategy type, Insight,
+          Typical set, Concepts (never saved for Science). Pure fact is under More. */}
+      {isSci && q.science && <Sec title="Science question">
+        <div className="form-grid">
+          <label>Science question type<select value={q.science.science_question_type ?? ''} onChange={(e) => setSci('science_question_type', e.target.value ? Number(e.target.value) : null)}>
+            <option value="">— (needed to approve)</option>
+            {(Object.entries(SCIENCE_QUESTION_TYPES) as [string, string][]).map(([k, label]) => <option key={k} value={k}>{k} · {label}</option>)}</select></label>
+          <label className="wide">Setting (blank = bare)<select value={q.science.setting_id ?? ''} onChange={(e) => setSci('setting_id', e.target.value || null)}>
+            <option value="">— bare (no setting)</option>
+            {q.science.setting_id && !ctx.sciSettings.some((s) => s.setting_id === q.science!.setting_id) && <option value={q.science.setting_id}>{q.science.setting_id} (not a Science setting)</option>}
+            {ctx.sciSettings.map((s) => <option key={s.setting_id} value={s.setting_id}>{s.name} · {s.setting_id}{s.status === 'proposed' ? ' (proposed)' : ''}</option>)}</select></label>
+          <label>Setting familiarity<select value={q.science.setting_familiarity ?? ''} onChange={(e) => setSci('setting_familiarity', e.target.value || null)}>
+            <option value="">—</option>{SETTING_FAMILIARITY.map((f) => <option key={f} value={f}>{f}</option>)}</select></label>
+          <YesNo label="Hidden idea" v={q.science.has_hidden_idea ?? null} on={(v) => setSci('has_hidden_idea', v)} />
+          <YesNo label="Experiment" v={q.science.has_experiment ?? null} on={(v) => setSci('has_experiment', v)} />
+        </div>
+        {ctx.sciSettings.length === 0 && <p className="small muted">No Science settings yet (the SET list is shared; Science settings arrive with the Science imports).</p>}
+      </Sec>}
+
       {isSci && q.science && <Sec title="Science signature">
         <div className="form-grid">
           <NumOpt label="Reading (1–5)" v={q.science.reading} min={1} max={5} on={(v) => setSci('reading', v)} />
           <NumOpt label="Steps (1–20)" v={q.science.steps} min={1} max={20} on={(v) => setSci('steps', v)} />
           <NumOpt label="Inhibition (0–3)" v={q.science.inhibition} min={0} max={3} on={(v) => setSci('inhibition', v)} />
-          <NumOpt label="Visual (0–3)" v={q.science.visual} min={0} max={3} on={(v) => setSci('visual', v)} />
           <YesNo label="Irrelevant info" v={q.science.has_irrelevant_info} on={(v) => setSci('has_irrelevant_info', v)} />
-          <YesNo label="Pure fact" v={q.science.is_pure_fact} on={(v) => setSci('is_pure_fact', v)} />
+          <NumOpt label="Visual (0–3)" v={q.science.visual} min={0} max={3} on={(v) => setSci('visual', v)} />
         </div>
-        {/* Q26 (S1, 0041): the Science question attributes; the type is needed to approve */}
-        <div className="form-grid">
-          <label>Science question type<select value={q.science.science_question_type ?? ''} onChange={(e) => setSci('science_question_type', e.target.value ? Number(e.target.value) : null)}>
-            <option value="">— (needed to approve)</option>
-            {(Object.entries(SCIENCE_QUESTION_TYPES) as [string, string][]).map(([k, label]) => <option key={k} value={k}>{k} · {label}</option>)}</select></label>
-          <label>Setting familiarity<select value={q.science.setting_familiarity ?? ''} onChange={(e) => setSci('setting_familiarity', e.target.value || null)}>
-            <option value="">—</option>{SETTING_FAMILIARITY.map((f) => <option key={f} value={f}>{f}</option>)}</select></label>
-          <YesNo label="Hidden idea" v={q.science.has_hidden_idea ?? null} on={(v) => setSci('has_hidden_idea', v)} />
-          <YesNo label="Experiment" v={q.science.has_experiment ?? null} on={(v) => setSci('has_experiment', v)} />
-          <label className="wide">Setting (blank = bare)<select value={q.science.setting_id ?? ''} onChange={(e) => setSci('setting_id', e.target.value || null)}>
-            <option value="">— bare (no setting)</option>
-            {q.science.setting_id && !ctx.sciSettings.some((s) => s.setting_id === q.science!.setting_id) && <option value={q.science.setting_id}>{q.science.setting_id} (not a Science setting)</option>}
-            {ctx.sciSettings.map((s) => <option key={s.setting_id} value={s.setting_id}>{s.name} · {s.setting_id}{s.status === 'proposed' ? ' (proposed)' : ''}</option>)}</select></label>
-        </div>
-        {ctx.sciSettings.length === 0 && <p className="small muted">No Science settings yet (the SET list is shared; Science settings arrive with the Science imports).</p>}
-        <p className="small muted">{missingAttrs.length ? `Attributes pending until these are set: ${missingAttrs.join(', ')}.` : 'All attributes set.'} Science has no typical set, concepts or Math signature; they are never saved for a Science question.</p>
+        <p className="small muted">{missingAttrs.length ? `Attributes pending until these are set: ${missingAttrs.join(', ')}.` : 'All attributes set.'}</p>
+      </Sec>}
+
+      {isSci && sciD && <Sec title="Derived (read-only)">
+        <ScienceDerivedKV d={sciD} />
       </Sec>}
 
       {!isSci && <Sec title="Concepts">
@@ -177,6 +191,7 @@ export function EditForm({ questionId, onDone }: { questionId: string; onDone: (
           <label className="wide">Placement note<input value={q.placement_note ?? ''} onChange={(e) => set((x) => { x.placement_note = e.target.value; })} /></label>
           <label className="wide">Tagging summary<textarea rows={2} value={q.tagging?.summary ?? ''} onChange={(e) => set((x) => { x.tagging = { ...(x.tagging ?? {}), summary: e.target.value }; })} /></label>
           <label className="wide">Author notes<textarea rows={2} value={q.author_notes ?? ''} onChange={(e) => set((x) => { x.author_notes = e.target.value; })} /></label>
+          {isSci && q.science && <YesNo label="Pure fact" v={q.science.is_pure_fact} on={(v) => setSci('is_pure_fact', v)} />}
           <label className="check wide"><input type="checkbox" checked={forceNew} onChange={(e) => setForceNew(e.target.checked)} /> Save as a new version even if it's only a wording change</label>
         </div>
       </Sec>}
@@ -190,6 +205,7 @@ export function EditForm({ questionId, onDone }: { questionId: string; onDone: (
             <li key={k}><span className="muted">{k}:</span> <del>{d.before ?? '—'}</del> → <ins>{d.after ?? '—'}</ins></li>))}</ul>
         )}
         {problems.length > 0 && <ul className="small">{problems.map((p, i) => <li key={i} className={p.level === 'error' ? 'error' : 'warn'}>{p.level === 'error' ? 'Error' : 'Warning'}: {p.message}</li>)}</ul>}
+        {sciWarn.length > 0 && <ul className="small">{sciWarn.map((w, i) => <li key={`sw${i}`} className="warn">Review: {w}</li>)}</ul>}
         {plan.mode && <label className="wide small">Reason (optional, kept in the audit log)<input value={reason} onChange={(e) => setReason(e.target.value)} /></label>}
         {error && <p className="error small">{error}</p>}
         <div className="editor-actions">

@@ -743,3 +743,9 @@ table.proposed-table td.col-topic { min-width: 160px; }
 .decision-title { font-weight: 600; }
 .decision-items { margin: 4px 0 0; max-height: 260px; overflow: auto; }
 .decision-items li { margin: 2px 0; }
+
+/* Round 2, Q29–Q31: Science derived values and review warnings */
+.tint-box.warn-box { background: var(--card); border-color: var(--warn); margin-top: 10px; }
+.tint-box.warn-box ul, .sci-rv-warn { margin: 4px 0 0; padding-left: 18px; }
+.tint-box.derived, .tint-box.signature + .tint-box { margin-top: 10px; }
+.sci-derived .held-kv { grid-template-columns: 120px 1fr; margin: 3px 0; }

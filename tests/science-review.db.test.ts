@@ -4,6 +4,8 @@
 import postgres from 'postgres';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { assertLocal, LOCAL_SUPERUSER_URL } from '../scripts/local-bootstrap.ts';
+import { tierChanges } from '../scripts/lib/tier.ts';
+import { scienceDerive } from '../shared/science-derive.ts';
 
 assertLocal(LOCAL_SUPERUSER_URL);
 const su = postgres(LOCAL_SUPERUSER_URL, { max: 1, onnotice: () => {} });
@@ -257,6 +259,58 @@ describe('Science attributes (0041)', () => {
       await h.owner(); await tx`update cms.cms_version_wrong_answers set target_row_id = 'C6-ZY-002' where version_id = ${v.version_id} and tag = 'concept_error'`; await h.as();
       await approve(tx, id, 1);
       expect((await ver(tx, id)).status).toBe('approved');
+    });
+  });
+});
+
+// 0042 (Round 2, Q29): the stored Science tier, the computed values (TS = SQL), Math-only tier recompute.
+describe('Science derived (0042)', () => {
+  it('the trigger sets the tier from the type; tier:recompute never judges Science', async () => {
+    await rolledBack(async (tx, h) => {
+      await setup(tx); await h.as();
+      const id = await addQ(tx, newQ());
+      const v = await ver(tx, id);
+      expect(v.tier).toBeNull();
+      await h.owner();
+      for (const [t, tier] of [[1, 'School'], [3, 'School'], [4, 'Achiever'], [5, 'Super Achiever'], [null, null]] as const) {
+        await tx`update cms.cms_question_versions set science_question_type = ${t} where version_id = ${v.version_id}`;
+        expect((await ver(tx, id)).tier).toBe(tier);
+      }
+      await tx`update cms.cms_question_versions set science_question_type = 5 where version_id = ${v.version_id}`;
+      expect((await tierChanges(tx as never)).some((c) => c.question_id === id)).toBe(false);
+      expect((await tx`select science_question_type, markers from cms.cms_question_list where question_id = ${id}`)[0]).toMatchObject({ science_question_type: 5 });
+    });
+  });
+
+  it('TS = SQL: markers, load, steps band, trap level and clone group on every Science version, plus a full fixture', async () => {
+    await rolledBack(async (tx, h) => {
+      await setup(tx); await h.as();
+      const id = await addQ(tx, newQ());
+      const v = await ver(tx, id);
+      await h.owner();
+      await tx`update cms.cms_question_versions set science_question_type = 4, reading = 2, steps = 6, inhibition = 3, has_hidden_idea = true, setting_familiarity = 'Rare' where version_id = ${v.version_id}`;
+      await tx`delete from cms.cms_version_wrong_answers where version_id = ${v.version_id} and option_position = 3`;
+      await tx`insert into cms.cms_version_wrong_answers (version_id, part_label, value, option_position, tag) values (${v.version_id}, '', 'Glass', 3, 'shortcut')`;
+      const rows = await tx`
+        select d.*, v.science_question_type, v.reading, v.steps, v.inhibition, v.has_hidden_idea, v.setting_familiarity, q.setting_id,
+               (select coalesce(json_agg(json_build_object('row_id', l.row_id, 'role', l.role, 'rank', l.rank)), '[]') from cms.cms_question_content_rows l where l.version_id = d.version_id) as links,
+               (select coalesce(json_agg(w.tag), '[]') from cms.cms_version_wrong_answers w where w.version_id = d.version_id) as tags
+          from cms.cms_science_derived d join cms.cms_question_versions v on v.version_id = d.version_id join cms.cms_questions q on q.question_id = d.question_id`;
+      expect(rows.length).toBeGreaterThan(1);
+      for (const r of rows) {
+        const ts = scienceDerive({ science_question_type: r.science_question_type, reading: r.reading, steps: r.steps, inhibition: r.inhibition, has_hidden_idea: r.has_hidden_idea,
+          setting_familiarity: r.setting_familiarity, setting_id: r.setting_id, links: r.links, wrongTags: r.tags });
+        expect(`${r.question_id} ${r.markers} ${(r.marker_list as string[]).join(',')} ${r.load} ${r.load_driver} ${r.steps_band} ${r.trap_level} ${r.primary_row_id} ${r.clone_key !== null}`)
+          .toBe(`${r.question_id} ${ts.markers} ${ts.markerList.join(',')} ${ts.load} ${ts.loadDriver} ${ts.stepsBand} ${ts.trapLevel} ${ts.primaryRow} ${ts.cloneGroup !== null}`);
+      }
+      const mine = rows.find((r) => r.question_id === id)!;
+      expect(mine).toMatchObject({ markers: 5, load: 4, load_driver: 'multi_step', steps_band: 4, trap_level: 1 });
+      // same primary + type + setting → same clone group
+      const id2 = await addQ(tx, newQ({ text: 'Which one does a magnet pull? (twin)' }));
+      const v2 = await ver(tx, id2);
+      await tx`update cms.cms_question_versions set science_question_type = 4 where version_id = ${v2.version_id}`;
+      const ck = await tx`select question_id, clone_key from cms.cms_question_list where question_id in (${id}, ${id2})`;
+      expect(ck[0]!.clone_key).toBe(ck[1]!.clone_key);
     });
   });
 });

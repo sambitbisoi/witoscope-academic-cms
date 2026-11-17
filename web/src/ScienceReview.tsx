@@ -6,12 +6,14 @@ import { useMemo, useState } from 'react';
 import { browseHash, TAG_LABEL } from './logic';
 import { saveScienceReview, type ScienceDetail } from './scienceApi';
 import { checkSolutionSupport } from '../../shared/science-items.ts';
+import type { ScienceDerived } from '../../shared/science-derive.ts';
 
 const ref = (r: { row_id: string; item_no: number }) => `${r.row_id} #${r.item_no}`;
 const parse = (s: string) => { const m = /^(.+) #(\d+)$/.exec(s); return m ? { row_id: m[1]!, item_no: Number(m[2]) } : null; };
 
-export function ScienceReview({ questionId, versionNo, x, options, solution1, onSaved }: {
+export function ScienceReview({ questionId, versionNo, x, options, solution1, onSaved, derived = null, warnings = [] }: {
   questionId: string; versionNo: number; x: ScienceDetail; options: { position: number; text: string; is_correct: boolean }[]; solution1: string | null; onSaved: () => void;
+  /** Q29/Q31 (0042): read-only derived values and review warnings (never block approval) */ derived?: ScienceDerived | null; warnings?: string[];
 }) {
   const linked = new Set(x.links.map((l) => l.row_id));
   const items = useMemo(() => x.items.filter((i) => i.status !== 'retired' && linked.has(i.row_id))
@@ -64,6 +66,9 @@ export function ScienceReview({ questionId, versionNo, x, options, solution1, on
   return (
     <div className="tint-box sci-review" aria-label="Science review">
       <div className="tint-title">Science review <span className="muted small">· explicit Save · logged</span></div>
+      {derived && <div className="small sci-rv-derived"><span className="muted">Derived:</span> Tier {derived.tier ?? '— (no type)'} · Markers {derived.markers} · Load {derived.load ?? '—'} · Trap {derived.trapLevel}
+        <span className="muted"> · type and attributes are set in Edit</span></div>}
+      {warnings.length > 0 && <ul className="small sci-rv-warn">{warnings.map((w, i) => <li key={i} className="warn">Review: {w}</li>)}</ul>}
 
       <div className="sci-rv-f">
         <div className="sci-rv-l">Primary row</div>
