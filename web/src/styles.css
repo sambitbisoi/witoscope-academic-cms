@@ -713,6 +713,9 @@ table.proposed-table td.col-topic { min-width: 160px; }
 .held-card h2 { font-size: 1.1rem; margin: 6px 0 10px; }
 .held-cols > * { min-width: 0; }
 .held-list .qrow .qtext { white-space: normal; }
+/* T3 (Round 2): the Place panel flows below the item details (not sticky), so Answer and below stay readable */
+.held-place { margin-top: 14px; background: var(--card); border: 2px solid var(--accent); border-radius: 10px; padding: 12px 14px; display: flex; flex-direction: column; gap: 6px; scroll-margin-top: 12px; }
+.held-place .warn { color: var(--warn); }
 .held-kv { display: grid; grid-template-columns: 170px 1fr; gap: 10px; margin: 5px 0; }
 @media (max-width: 600px) { .held-kv { grid-template-columns: 1fr; gap: 0; } }
 .ok { color: var(--ok, #1a7f37); }
