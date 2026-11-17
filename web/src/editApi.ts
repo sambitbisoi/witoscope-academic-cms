@@ -1,5 +1,7 @@
 // Phase 5: loading a question for editing, the checks' catalogue, and the three write
 // functions (cms_apply_save, cms_set_status, cms_retire). No table is written directly.
+import { SCIENCE_STEPS_BANDS, type StepsBand } from '../../shared/science-derive.ts';
+import type { WarningRow } from '../../shared/science-warnings.ts';
 import type { Catalog } from '../../shared/checks.ts';
 import { questionFromDb, type DbBundle } from '../../shared/fromDb.ts';
 import { currentRuleVersion } from '../../shared/rules.ts';
@@ -39,6 +41,9 @@ export interface EditContext {
   rowItems: { row_id: string; item_no: number; text: string; status: string }[];
   /** Q28 (0041): the settings a Science question may use (Science, not retired) */
   sciSettings: { setting_id: string; name: string; status: string }[];
+  /** Q29–Q31 (0042): the linked rows with rank and the row facts the derived values and warnings need */
+  sciRows: WarningRow[];
+  stepsBands: StepsBand[];
 }
 
 export async function loadForEdit(questionId: string): Promise<EditContext> {
@@ -53,7 +58,7 @@ export async function loadForEdit(questionId: string): Promise<EditContext> {
     supabase.from('cms_misconceptions').select('misconception_id, description, concept_id').order('misconception_id'),
     supabase.from('cms_insights').select('insight_id, name, status').order('insight_id'),
     supabase.from('cms_strategy_types').select('value, active, sort').order('sort'),
-    supabase.from('cms_config').select('key, value').in('key', ['multistep_bands', 'difficulty_points', 'load_thresholds', 'current_rule_version']),
+    supabase.from('cms_config').select('key, value').in('key', ['multistep_bands', 'difficulty_points', 'load_thresholds', 'current_rule_version', 'science_steps_bands']),
     supabase.from('cms_rule_versions').select('rule_version'),
   ]);
   const T = must<{ topic_id: string; name: string; class: number; topic_kind: string; chapter_id: string; taught_in_school: boolean; status: string }[]>(topics);
@@ -85,15 +90,20 @@ export async function loadForEdit(questionId: string): Promise<EditContext> {
   let linkedRows: string[] = [];
   let rowItems: EditContext['rowItems'] = [];
   let sciSettings: EditContext['sciSettings'] = [];
+  let sciRows: WarningRow[] = [];
   if (subject === 'science') {
     sciSettings = must<EditContext['sciSettings']>(await supabase.from('cms_settings').select('setting_id, name, status').eq('subject', 'science').neq('status', 'retired').order('setting_id'));
-    linkedRows = must<{ row_id: string }[]>(await supabase.from('cms_question_content_rows').select('row_id').eq('version_id', detail.version.version_id))
-      .map((r) => r.row_id).sort();
+    const links = must<{ row_id: string; role: string; rank: string }[]>(await supabase.from('cms_question_content_rows').select('row_id, role, rank').eq('version_id', detail.version.version_id));
+    linkedRows = links.map((r) => r.row_id).sort();
+    const facts = linkedRows.length ? must<{ row_id: string; source: string; chapter_role: string; row_class: number; safety: string | null; question_use: string }[]>(
+      await supabase.from('cms_content_rows').select('row_id, source, chapter_role, row_class, safety, question_use').in('row_id', linkedRows)) : [];
+    sciRows = links.map((l) => ({ ...l, ...(facts.find((f) => f.row_id === l.row_id) ?? {}) }));
     if (linkedRows.length) rowItems = must<EditContext['rowItems']>(await supabase.from('cms_row_misconceptions').select('row_id, item_no, text, status')
       .in('row_id', linkedRows).order('row_id').order('item_no'));
   }
   return {
-    subject, linkedRows, rowItems, sciSettings,
+    subject, linkedRows, rowItems, sciSettings, sciRows,
+    stepsBands: ((cfg as unknown as Record<string, unknown>).science_steps_bands as StepsBand[] | undefined) ?? SCIENCE_STEPS_BANDS,
     detail, question: questionFromDb(bundleOf(detail)), cfg, catalog, ruleVersion, conceptClass: (id) => conceptClasses.get(id),
     lists: { topics: T, sets: S, patterns: P, concepts: C, misconceptions: M, insights: I,
       strategyTypes: must<{ value: string; active: boolean }[]>(strategies).filter((s) => s.active).map((s) => s.value) },

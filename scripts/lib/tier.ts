@@ -1,7 +1,8 @@
 // Q20 (Sambit, 17 Nov 2026): Tier uses Level. The same rule as shared/derive.ts, in SQL, for stored tiers:
 //   Super Achiever = strategy 3, or any tested concept (question + parts, any involvement) catalogued in a class
 //   above the question's Level (the placement class class_override ?? class when Level is empty);
-//   Achiever = strategy 2; School otherwise. Only versions that have a tier (Math) are judged; Science's level_tier
+//   Achiever = strategy 2; School otherwise. Only versions that have a tier are judged, and never Science (Round 2, Q29:
+//   a Science tier comes from its Science question type, set by the 0042 trigger). Science's retired level_tier
 //   (L1–L3) is a different field and is never touched.
 import type postgres from 'postgres';
 import type { Sql } from './db.ts';
@@ -23,7 +24,7 @@ export async function tierChanges(tx: Tx, questionIds?: string[], conceptClass?:
                left join ov on ov.id = c.concept_id
                where vc.version_id = v.version_id) as max_cc
         from cms.cms_question_versions v join cms.cms_questions q on q.question_id = v.question_id
-       where v.tier is not null ${questionIds ? tx`and v.question_id in ${tx(questionIds.length ? questionIds : [''])}` : tx``})
+       where v.tier is not null and q.subject <> 'science' ${questionIds ? tx`and v.question_id in ${tx(questionIds.length ? questionIds : [''])}` : tx``})
     select version_id, question_id, version_no, status, bank, level, placement, strategy, max_cc, tier as before,
            case when strategy >= 3 or coalesce(max_cc, 0) > coalesce(level, placement) then 'Super Achiever'
                 when strategy = 2 then 'Achiever' else 'School' end as after

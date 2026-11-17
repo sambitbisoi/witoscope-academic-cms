@@ -183,6 +183,15 @@ try {
       `${s1!.on_math} non-Science with Science fields, ${s1!.legacy_lost} legacy tiers not kept, ${s1!.setting_subject} settings of another subject, ${s1!.ce_unlinked} concept errors off its rows, ${s1!.approved_untyped} approved untyped`);
   }
 
+  // 0042 (Q29): a Science tier follows its Science question type (1–3 School · 4 Achiever · 5 Super Achiever; untyped none)
+  const [has42] = await sql`select exists (select 1 from information_schema.views where table_schema = 'cms' and table_name = 'cms_science_derived') as yes`;
+  if (has42!.yes) {
+    const [st] = await sql`select count(*)::int as n from cms.cms_question_versions v join cms.cms_questions q on q.question_id = v.question_id
+      where q.subject = 'science' and v.tier is distinct from case when v.science_question_type between 1 and 3 then 'School'
+        when v.science_question_type = 4 then 'Achiever' when v.science_question_type = 5 then 'Super Achiever' end`;
+    check('Science tiers follow the Science question type (Q29)', st!.n === 0, `${st!.n} version(s) differ`);
+  }
+
   const [admin] = await sql`select value #>> '{}' as id from cms.cms_config where key = 'admin_user_id'`;
   check('cms_config.admin_user_id is set to a UUID', /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(admin?.id ?? ''), admin?.id ?? 'not set');
 

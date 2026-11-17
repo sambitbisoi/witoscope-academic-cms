@@ -27,6 +27,16 @@ Reports: `.local-import/concept-first-taught-{rehearsal,real}-*.md` (concept lis
 
 **Not changed:** no Science question was typed. The 134 Magnets questions wait for the Science thread (Q27).
 
+## 17 Nov 2026: Round 2, Iteration 2 ("go 2", same plan)
+
+### Q29: Science derived values (migration 0042)
+
+| Step | Result |
+|---|---|
+| Backup | `~/WitoScope/CMS-backups/real-cms-2026-11-17-pre-0042.dump` |
+| Rehearsal | 0042 guarded (only `cms_config` + 1 key `science_steps_bands`) · 0 Science versions typed → 0 tier changes, 0 audit rows · view: 134 rows · db:verify ✓ |
+| Real | The same (0 tier changes, 134 derived rows, 19 markers in all) · db:verify ✓ |
+
 ## 17 Nov 2026: Round 1 (plan `docs/plan-2026-11-17-round1.md`)
 
 **Request (Sambit, 17 Nov 2026):** Round 1 items T1, T2, Q14, Q19, Q20, Q21, Q22, D18; "go" with decisions §10. Real data steps in small batches, each checked on a fresh restore first.

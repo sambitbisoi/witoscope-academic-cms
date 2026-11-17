@@ -4,6 +4,9 @@ import { browseHash, derivedRows, involvementOf, tierBasisLabel, signatureRows, 
 import { latestOriginality, officialLink, sourceItems, type OriginalityCheck } from './sourcesApi';
 import { questionFromDb } from '../../shared/fromDb.ts';
 import { SCIENCE_QUESTION_TYPES } from '../../shared/types.ts';
+import { scienceDerive } from '../../shared/science-derive.ts';
+import { scienceWarnings } from '../../shared/science-warnings.ts';
+import { ScienceDerivedKV } from './ScienceDerivedKV';
 import { structureDiff } from '../../shared/save.ts';
 import { textsOf } from '../../shared/version.ts';
 import { bundleOf, retire, setStatus } from './editApi';
@@ -507,6 +510,18 @@ function scienceBlockersOf(d: QuestionDetailData, x: ScienceDetail): string[] {
   });
 }
 
+/** Q29 + Q31 (0042): derived values and review warnings of a Science version, from the loaded detail (same TS as Edit). */
+function scienceOf(d: QuestionDetailData, x: ScienceDetail) {
+  const v = d.version as unknown as Record<string, unknown>;
+  const sig = { science_question_type: x.version.science_question_type, reading: (v.reading as number | null) ?? null, steps: (v.steps as number | null) ?? null,
+    inhibition: (v.inhibition as number | null) ?? null, has_irrelevant_info: (v.has_irrelevant_info as boolean | null) ?? null,
+    has_hidden_idea: x.version.has_hidden_idea, setting_familiarity: x.version.setting_familiarity, setting_id: (d.question as { setting_id?: string | null }).setting_id ?? null };
+  const rows = x.links.map((l) => ({ row_id: l.row_id, role: l.role, rank: l.rank, source: l.row?.source ?? null, chapter_role: l.row?.chapter_role ?? null,
+    row_class: l.row?.row_class ?? null, safety: l.row?.safety ?? null, question_use: l.row?.question_use ?? null }));
+  const derived = scienceDerive({ ...sig, links: rows, wrongTags: d.wrong.filter((w) => w.part_label === '').map((w) => w.tag) });
+  return { derived, warnings: scienceWarnings({ ...sig, level: (d.question.level as number | null) ?? null, rows, derived }) };
+}
+
 function ScienceBody({ d, x, err, isCurrent, onVersion, onSaved, actions }: { d: QuestionDetailData; x: ScienceDetail | null; err: string | null; isCurrent: boolean;
   onVersion: (v: number | null) => void; onSaved: () => void; actions: ReactNode }) {
   const { question: q, version: v } = d;
@@ -518,6 +533,8 @@ function ScienceBody({ d, x, err, isCurrent, onVersion, onSaved, actions }: { d:
   // Order (Sambit, 14 Nov 2026): actions · preview · explanation · misconception · safety / taught in / level and placement
   // · the boxes (attributes pending · linked content · attributes) · background (folded, shared with Math)
   const hasCites = !!x && (x.citations.length > 0 || !!x.version.confidence);
+  const yn = (b: boolean | null | undefined) => (b === null || b === undefined ? '—' : b ? 'yes' : 'no');
+  const sci = x ? scienceOf(d, x) : null;
   return (
     <>
       {!isCurrent && <div className="notice small">You're looking at an older version. <button className="link" onClick={() => onVersion(null)}>Show current (v{q.current_version})</button></div>}
@@ -586,22 +603,31 @@ function ScienceBody({ d, x, err, isCurrent, onVersion, onSaved, actions }: { d:
       </div>
 
       {open && x && <ScienceReview key={`${v.version_id}-${x.links.map((l) => l.rank + l.rank_proposed).join()}-${x.version.misconception_row_id}`} questionId={q.question_id} versionNo={v.version_no} x={x}
-        options={d.options.filter((o) => o.part_label === '')} solution1={d.solutions.find((s) => s.slot === 1)?.text ?? null} onSaved={onSaved} />}
+        options={d.options.filter((o) => o.part_label === '')} solution1={d.solutions.find((s) => s.slot === 1)?.text ?? null} onSaved={onSaved}
+        derived={sci?.derived ?? null} warnings={sci?.warnings ?? []} />}
 
+      {/* Q30 (0042): Science attributes in form order; derived values read-only; Q31 warnings never block */}
       <div className="tint-box signature">
         <div className="tint-title">Attributes{d.flags?.attributes_pending ? <span className="muted small"> · pending</span> : ''}</div>
         <KV rows={[
-          ...SCIENCE_ATTRS.map((a) => ({ k: a.k, v: attr(a.col) })),
-          // Q26 (S1, 0041) + Q27: the authored tier is retired (legacy, read-only)
           { k: 'Science question type', v: x?.version.science_question_type ? `${x.version.science_question_type} · ${SCIENCE_QUESTION_TYPES[x.version.science_question_type as 1]}` : <span className="warn-text">Not set (needed to approve)</span> },
           { k: 'Setting', v: d.setting ? <>{d.setting.name} <Id>{d.setting.setting_id}</Id></> : <span className="muted">bare (no setting)</span> },
           { k: 'Setting familiarity', v: x?.version.setting_familiarity ?? '—' },
-          { k: 'Hidden idea', v: x?.version.has_hidden_idea === null || x?.version.has_hidden_idea === undefined ? '—' : x.version.has_hidden_idea ? 'yes' : 'no' },
-          { k: 'Experiment', v: x?.version.has_experiment === null || x?.version.has_experiment === undefined ? '—' : x.version.has_experiment ? 'yes' : 'no' },
-          { k: 'Old tier (legacy)', v: <span className="muted" title="The authored L1–L3 tier is retired (Q27); kept read-only">{x?.version.science_tier_legacy ?? x?.version.level_tier ?? '—'}</span> },
+          { k: 'Hidden idea', v: yn(x?.version.has_hidden_idea) },
+          { k: 'Experiment', v: yn(x?.version.has_experiment) },
+          ...SCIENCE_ATTRS.map((a) => ({ k: a.k, v: attr(a.col) })),
           { k: 'Level (class)', v: q.level ?? '—' },
+          { k: 'Old tier (legacy)', v: <span className="muted" title="The authored L1–L3 tier is retired (Q27); kept read-only">{x?.version.science_tier_legacy ?? x?.version.level_tier ?? '—'}</span> },
         ]} />
       </div>
+      {sci && <div className="tint-box derived">
+        <div className="tint-title">Derived <span className="muted small">· read-only</span></div>
+        <ScienceDerivedKV d={sci.derived} storedTier={(v as unknown as { tier: string | null }).tier ?? null} />
+      </div>}
+      {sci && sci.warnings.length > 0 && <div className="tint-box warn-box">
+        <div className="tint-title">Review warnings <span className="muted small">· never block approval</span></div>
+        <ul className="small">{sci.warnings.map((w, i) => <li key={i} className="warn">{w}</li>)}</ul>
+      </div>}
 
     </>
   );
