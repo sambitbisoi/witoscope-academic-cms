@@ -93,13 +93,7 @@ export async function loadForEdit(questionId: string): Promise<EditContext> {
   let sciRows: WarningRow[] = [];
   if (subject === 'science') {
     sciSettings = must<EditContext['sciSettings']>(await supabase.from('cms_settings').select('setting_id, name, status').eq('subject', 'science').neq('status', 'retired').order('setting_id'));
-    const links = must<{ row_id: string; role: string; rank: string }[]>(await supabase.from('cms_question_content_rows').select('row_id, role, rank').eq('version_id', detail.version.version_id));
-    linkedRows = links.map((r) => r.row_id).sort();
-    const facts = linkedRows.length ? must<{ row_id: string; source: string; chapter_role: string; row_class: number; safety: string | null; question_use: string }[]>(
-      await supabase.from('cms_content_rows').select('row_id, source, chapter_role, row_class, safety, question_use').in('row_id', linkedRows)) : [];
-    sciRows = links.map((l) => ({ ...l, ...(facts.find((f) => f.row_id === l.row_id) ?? {}) }));
-    if (linkedRows.length) rowItems = must<EditContext['rowItems']>(await supabase.from('cms_row_misconceptions').select('row_id, item_no, text, status')
-      .in('row_id', linkedRows).order('row_id').order('item_no'));
+    ({ linkedRows, rowItems, sciRows } = await scienceLinkContext(detail.version.version_id));
   }
   return {
     subject, linkedRows, rowItems, sciSettings, sciRows,
@@ -216,3 +210,15 @@ export const addQuestions = (p: { topic_id: string; origin: 'manual' | 'upload';
 /** Sequencing (13 Nov 2026): save the order of one or more lists (one class + one subject; audited before → after). */
 export const saveOrder = (p: { subject: string; class: number; lists: { level: string; parent_id: string | null; ids: string[] }[] }) =>
   rpc('cms_save_order', { p }) as Promise<{ lists_changed: number }>;
+
+/** The Science links of a version as the Edit form uses them (Q23: reloaded after "Save links" without losing the form). */
+export async function scienceLinkContext(versionId: number): Promise<Pick<EditContext, 'linkedRows' | 'rowItems' | 'sciRows'>> {
+  const links = must<{ row_id: string; role: string; rank: string }[]>(await supabase.from('cms_question_content_rows').select('row_id, role, rank').eq('version_id', versionId));
+  const linkedRows = links.map((r) => r.row_id).sort();
+  const facts = linkedRows.length ? must<{ row_id: string; source: string; chapter_role: string; row_class: number; safety: string | null; question_use: string }[]>(
+    await supabase.from('cms_content_rows').select('row_id, source, chapter_role, row_class, safety, question_use').in('row_id', linkedRows)) : [];
+  const sciRows = links.map((l) => ({ ...l, ...(facts.find((f) => f.row_id === l.row_id) ?? {}) })) as WarningRow[];
+  const rowItems = linkedRows.length ? must<EditContext['rowItems']>(await supabase.from('cms_row_misconceptions').select('row_id, item_no, text, status')
+    .in('row_id', linkedRows).order('row_id').order('item_no')) : [];
+  return { linkedRows, rowItems, sciRows };
+}

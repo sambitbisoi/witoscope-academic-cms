@@ -228,3 +228,46 @@ export async function topicClasses(topicId: string): Promise<number[]> {
   if (error) throw new Error(error.message);
   return (data ?? []).map((x) => x.class as number).sort();
 }
+
+// ---------------------------------------------------------------- Q23 (0044): linked content rows on a Science draft
+export interface LinkedRow { row_id: string; rank: Rank; rank_proposed: boolean; row: { content: string; topic_id: string; chapter_id: string; row_class: number; retired_at: string | null } | null }
+/** A version's links (with a short view of each row) and the references that keep rows on it. */
+export async function linkedContent(versionId: number) {
+  const [l, v, w] = await Promise.all([
+    supabase.from('cms_question_content_rows').select('row_id, rank, rank_proposed').eq('version_id', versionId),
+    supabase.from('cms_question_versions').select('misconception_row_id, misconception_item_no').eq('version_id', versionId).single(),
+    supabase.from('cms_version_wrong_answers').select('option_position, mc_row_id, mc_item_no, target_row_id').eq('version_id', versionId).not('option_position', 'is', null),
+  ]);
+  for (const r of [l, v, w]) if (r.error) throw new Error(r.error.message);
+  const links = (l.data ?? []) as { row_id: string; rank: Rank; rank_proposed: boolean }[];
+  const rows = links.length ? must((await supabase.from('cms_content_rows').select('row_id, content, topic_id, chapter_id, row_class, retired_at').in('row_id', links.map((x) => x.row_id)))) : [];
+  const byId = new Map((rows as ({ row_id: string } & NonNullable<LinkedRow['row']>)[]).map((r) => [r.row_id, r]));
+  const refs: { row_id: string; what: string }[] = [];
+  const vv = v.data as { misconception_row_id: string | null; misconception_item_no: number | null } | null;
+  if (vv?.misconception_row_id) refs.push({ row_id: vv.misconception_row_id, what: `the misconception targeted (${vv.misconception_row_id} #${vv.misconception_item_no})` });
+  for (const x of (w.data ?? []) as { option_position: number; mc_row_id: string | null; mc_item_no: number | null; target_row_id: string | null }[]) {
+    const L = String.fromCharCode(64 + x.option_position);
+    if (x.mc_row_id) refs.push({ row_id: x.mc_row_id, what: `option ${L}'s misconception (${x.mc_row_id} #${x.mc_item_no})` });
+    if (x.target_row_id) refs.push({ row_id: x.target_row_id, what: `option ${L}'s concept-error target` });
+  }
+  return {
+    links: links.map((x) => ({ ...x, row: byId.get(x.row_id) ?? null })).sort((a, b) => RANK_ORDER[a.rank] - RANK_ORDER[b.rank] || a.row_id.localeCompare(b.row_id)) as LinkedRow[],
+    refs,
+  };
+}
+const must = <T,>(r: { data: T | null; error: { message: string } | null }) => { if (r.error) throw new Error(r.error.message); return (r.data ?? []) as T; };
+/** "+ Link a row": rows (not retired) whose ID starts with, or whose text contains, the search. */
+export async function searchContentRows(text: string, exclude: string[]) {
+  const s = text.trim().replace(/[,()*%\\]/g, ' ').trim();
+  if (s.length < 2) return [];
+  const { data, error } = await supabase.from('cms_content_rows').select('row_id, content, topic_id, row_class')
+    .is('retired_at', null).or(`row_id.ilike.${s}%,content.ilike.%${s}%`).order('row_id').limit(15);
+  if (error) throw new Error(error.message);
+  return ((data ?? []) as { row_id: string; content: string; topic_id: string; row_class: number }[]).filter((r) => !exclude.includes(r.row_id)).slice(0, 12);
+}
+/** Save the full set of links of an open Science draft (cms_save_content_links). Audited before → after. */
+export async function saveContentLinks(p: { question_id: string; version_no: number; reason?: string; links: { row_id: string; rank: Rank }[] }) {
+  const { data, error } = await supabase.rpc('cms_save_content_links', { p });
+  if (error) throw new Error(error.message);
+  return data as { changed: boolean; links: string[] };
+}

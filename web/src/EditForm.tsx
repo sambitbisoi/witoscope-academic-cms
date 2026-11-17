@@ -6,7 +6,8 @@ import { checkEdit, scienceAttributesMissing } from '../../shared/edit-checks.ts
 import { tierBasis } from '../../shared/derive.ts';
 import { planSave } from '../../shared/save.ts';
 import { SCIENCE_QUESTION_TYPES, SETTING_FAMILIARITY, type Answer, type Question, type ScienceSignature, type WrongAnswer } from '../../shared/types.ts';
-import { applySave, loadForEdit, type EditContext } from './editApi';
+import { applySave, loadForEdit, scienceLinkContext, type EditContext } from './editApi';
+import { LinkedContent } from './LinkedContent';
 import { scienceDerive } from '../../shared/science-derive.ts';
 import { scienceWarnings } from '../../shared/science-warnings.ts';
 import { ScienceDerivedKV } from './ScienceDerivedKV';
@@ -94,6 +95,12 @@ export function EditForm({ questionId, onDone }: { questionId: string; onDone: (
       {/* Q30 (S5, 0042): the Science form. Shown: the Science question attributes, then Reading, Steps, Inhibition, Irrelevant info,
           Visual; derived values read-only. Hidden for Science: Math difficulty, Working memory, Strategy, Strategy type, Insight,
           Typical set, Concepts (never saved for Science). Pure fact is under More. */}
+      {/* Q23 (0044): linked content rows, saved on their own (Save links) on an open draft; the form keeps its edits */}
+      {isSci && <Sec title="Linked content">
+        <LinkedContent questionId={questionId} versionId={ctx.detail.version.version_id} versionNo={ctx.detail.question.current_version} status={ctx.detail.version.status}
+          onSaved={() => { scienceLinkContext(ctx.detail.version.version_id).then((x) => setCtx((c) => c && { ...c, ...x })).catch((e) => setError(e.message)); }} />
+      </Sec>}
+
       {isSci && q.science && <Sec title="Science question">
         <div className="form-grid">
           <label>Science question type<select value={q.science.science_question_type ?? ''} onChange={(e) => setSci('science_question_type', e.target.value ? Number(e.target.value) : null)}>

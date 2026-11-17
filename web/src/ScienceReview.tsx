@@ -1,42 +1,38 @@
 // Science review box (Sambit, 16 Nov 2026; docs/plan-2026-11-16-q11-q18.md Q16 Q17 Q18): on an open Science draft,
 // pick the misconception item (no free text), each wrong option's item, confirm the primary content row and write
 // Solution 1. Only items of the question's own content rows can be picked. Explicit Save; one audit row.
-// A misconception that is not an item yet can't be added here (that needs Q14, content-row editing).
+// A misconception that is not an item yet is added on its row (Q14). Q23: linked content rows are edited here too (own Save).
 import { useMemo, useState } from 'react';
 import { browseHash, TAG_LABEL } from './logic';
 import { saveScienceReview, type ScienceDetail } from './scienceApi';
+import { LinkedContent } from './LinkedContent';
 import { checkSolutionSupport } from '../../shared/science-items.ts';
 import type { ScienceDerived } from '../../shared/science-derive.ts';
 
 const ref = (r: { row_id: string; item_no: number }) => `${r.row_id} #${r.item_no}`;
 const parse = (s: string) => { const m = /^(.+) #(\d+)$/.exec(s); return m ? { row_id: m[1]!, item_no: Number(m[2]) } : null; };
 
-export function ScienceReview({ questionId, versionNo, x, options, solution1, onSaved, derived = null, warnings = [] }: {
-  questionId: string; versionNo: number; x: ScienceDetail; options: { position: number; text: string; is_correct: boolean }[]; solution1: string | null; onSaved: () => void;
+export function ScienceReview({ questionId, versionNo, versionId, status, x, options, solution1, onSaved, derived = null, warnings = [] }: {
+  questionId: string; versionNo: number; /** Q23 */ versionId: number; status: string; x: ScienceDetail; options: { position: number; text: string; is_correct: boolean }[]; solution1: string | null; onSaved: () => void;
   /** Q29/Q31 (0042): read-only derived values and review warnings (never block approval) */ derived?: ScienceDerived | null; warnings?: string[];
 }) {
   const linked = new Set(x.links.map((l) => l.row_id));
   const items = useMemo(() => x.items.filter((i) => i.status !== 'retired' && linked.has(i.row_id))
     .sort((a, b) => x.links.findIndex((l) => l.row_id === a.row_id) - x.links.findIndex((l) => l.row_id === b.row_id) || a.item_no - b.item_no), [x]); // eslint-disable-line react-hooks/exhaustive-deps
-  const direct = x.links.filter((l) => l.role === 'direct');
-  const curPrimary = x.links.find((l) => l.rank === 'primary') ?? null;
   const curMisc = x.version.misconception_row_id ? `${x.version.misconception_row_id} #${x.version.misconception_item_no}` : '';
   const wrongOpts = options.filter((o) => !o.is_correct);
 
   const [misc, setMisc] = useState(curMisc);
   // Q32 (0041): per wrong option "tag|ref" ("" = not tagged); see encodeWrongTag
   const [wrong, setWrong] = useState<Record<number, string>>(() => Object.fromEntries(wrongOpts.map((o) => [o.position, x.wrongTags.get(o.position) ?? ''])));
-  const [primary, setPrimary] = useState(curPrimary?.row_id ?? '');
-  const [primaryTouched, setPrimaryTouched] = useState(false);
   const [sol, setSol] = useState(solution1 ?? '');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
 
   const wrongChanged = wrongOpts.filter((o) => (wrong[o.position] ?? '') !== (x.wrongTags.get(o.position) ?? ''));
-  const primaryChange = primaryTouched && (primary !== curPrimary?.row_id || curPrimary?.rank_proposed);
   const incomplete = wrongOpts.some((o) => /^(misconception|concept_error)\|$/.test(wrong[o.position] ?? ''));
-  const dirty = misc !== curMisc || wrongChanged.length > 0 || primaryChange || sol.trim() !== (solution1 ?? '').trim();
+  const dirty = misc !== curMisc || wrongChanged.length > 0 || sol.trim() !== (solution1 ?? '').trim();
 
   const save = async () => {
     setBusy(true); setErr(null); setSaved(false);
@@ -48,13 +44,12 @@ export function ScienceReview({ questionId, versionNo, x, options, solution1, on
           const [tag, r] = (wrong[o.position] ?? '').split('|');
           return { position: o.position, tag: tag || null, ...(tag === 'misconception' && r ? { mc: parse(r)! } : {}), ...(tag === 'concept_error' && r ? { target_row_id: r } : {}) };
         }) } : {}),
-        ...(primaryChange && primary ? { primary_row_id: primary } : {}),
         ...(sol.trim() !== (solution1 ?? '').trim() ? { solution1: sol } : {}),
       });
-      setSaved(true); setPrimaryTouched(false); onSaved();
+      setSaved(true); onSaved();
     } catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
   };
-  const reset = () => { setMisc(curMisc); setWrong(Object.fromEntries(wrongOpts.map((o) => [o.position, x.wrongTags.get(o.position) ?? '']))); setPrimary(curPrimary?.row_id ?? ''); setPrimaryTouched(false); setSol(solution1 ?? ''); setErr(null); };
+  const reset = () => { setMisc(curMisc); setWrong(Object.fromEntries(wrongOpts.map((o) => [o.position, x.wrongTags.get(o.position) ?? '']))); setSol(solution1 ?? ''); setErr(null); };
 
   const itemSelect = (value: string, set: (v: string) => void, label: string) => (
     <select aria-label={label} value={value} onChange={(e) => set(e.target.value)}>
@@ -70,18 +65,9 @@ export function ScienceReview({ questionId, versionNo, x, options, solution1, on
         <span className="muted"> · type and attributes are set in Edit</span></div>}
       {warnings.length > 0 && <ul className="small sci-rv-warn">{warnings.map((w, i) => <li key={i} className="warn">Review: {w}</li>)}</ul>}
 
-      <div className="sci-rv-f">
-        <div className="sci-rv-l">Primary row</div>
-        <div>
-          {direct.length === 0 ? <span className="muted small">No direct row: link one first.</span> : direct.map((l) => (
-            <label key={l.row_id} className="check small sci-rv-radio">
-              <input type="radio" name={`primary-${questionId}`} checked={primary === l.row_id} onChange={() => { setPrimary(l.row_id); setPrimaryTouched(true); }} />
-              <span className="mono">{l.row_id}</span> <span className="muted">{(l.row?.content ?? '').slice(0, 80)}{(l.row?.content.length ?? 0) > 80 ? '…' : ''}</span>
-            </label>
-          ))}
-          {curPrimary?.rank_proposed && !primaryTouched && <div className="small warn-text">Proposed by the rationaliser: pick the primary row (it can be the same one) and Save to confirm it.</div>}
-        </div>
-      </div>
+      {/* Q23 (0044): linked content rows (own Save): add, change role (primary / secondary / supporting), remove. Replaces the
+          primary-row radio of Q16: the role select sets the primary, and Save links confirms a proposed one. */}
+      <LinkedContent compact questionId={questionId} versionId={versionId} versionNo={versionNo} status={status} onSaved={onSaved} />
 
       <div className="sci-rv-f">
         <div className="sci-rv-l">Misconception targeted</div>

@@ -602,7 +602,7 @@ function ScienceBody({ d, x, err, isCurrent, onVersion, onSaved, actions }: { d:
         )}
       </div>
 
-      {open && x && <ScienceReview key={`${v.version_id}-${x.links.map((l) => l.rank + l.rank_proposed).join()}-${x.version.misconception_row_id}`} questionId={q.question_id} versionNo={v.version_no} x={x}
+      {open && x && <ScienceReview key={`${v.version_id}-${x.links.map((l) => l.rank + l.rank_proposed).join()}-${x.version.misconception_row_id}`} questionId={q.question_id} versionNo={v.version_no} versionId={v.version_id} status={v.status} x={x}
         options={d.options.filter((o) => o.part_label === '')} solution1={d.solutions.find((s) => s.slot === 1)?.text ?? null} onSaved={onSaved}
         derived={sci?.derived ?? null} warnings={sci?.warnings ?? []} />}
 
