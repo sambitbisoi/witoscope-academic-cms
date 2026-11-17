@@ -7,6 +7,7 @@
 //   Untagged is valid. Q26: the Science question attributes may be unset (the type is required only to approve).
 import { checkFile, type Catalog } from './checks.ts';
 import { SETTING_FAMILIARITY, type Answer, type ChapterFile, type Problem, type Question } from './types.ts';
+import { driverRangeMessage, SCIENCE_DRIVERS } from './science.ts';
 
 export interface RowItemRef { row_id: string; item_no: number; text: string; status: string }
 export interface EditCheckContext {
@@ -71,9 +72,10 @@ function checkScience(q: Question, ctx: EditCheckContext): Problem[] {
   const sc = q.science;
   if (sc) {
     const range = (label: string, v: number | null, min: number, max: number) => {
-      if (v !== null && (!Number.isInteger(v) || v < min || v > max)) err(`${label} must be a whole number from ${min} to ${max}`);
+      if (v !== null && (!Number.isInteger(v) || v < min || v > max)) err(driverRangeMessage(label, min, max));
     };
-    range('Reading', sc.reading, 1, 5); range('Steps', sc.steps, 1, 20); range('Inhibition', sc.inhibition, 0, 3); range('Visual', sc.visual, 0, 3);
+    // Q35: the same ranges as import:science (one list, shared/science.ts)
+    for (const d of SCIENCE_DRIVERS) if (d.min !== null) range(d.col, sc[d.key as 'reading'] ?? null, d.min, d.max);
     range('Science question type', sc.science_question_type ?? null, 1, 5);
     if (sc.setting_familiarity && !SETTING_FAMILIARITY.includes(sc.setting_familiarity)) err(`setting familiarity "${sc.setting_familiarity}" is not one of ${SETTING_FAMILIARITY.join(', ')}`);
     if (sc.setting_id && ctx.settings && !ctx.settings.has(sc.setting_id)) err(`setting ${sc.setting_id} is not a Science setting`);

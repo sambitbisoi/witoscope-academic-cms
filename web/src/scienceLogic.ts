@@ -112,3 +112,30 @@ export function sciFilter<Q extends { science_question_type: number | null; tier
     && (f.tier === '' || (f.tier === 'none' ? !q.tier : q.tier === f.tier))
     && (f.markers === '' || (f.markers === '3+' ? (q.markers ?? 0) >= 3 : (q.markers ?? 0) === Number(f.markers))));
 }
+
+// ---------------------------------------------------------------- Q23 (0044): linked content rows on a Science draft
+export type LinkRank = 'primary' | 'secondary' | 'context';
+export const LINK_ROLE_LABEL: Record<LinkRank, string> = { primary: 'Primary', secondary: 'Secondary', context: 'Supporting' };
+export interface DraftLink { row_id: string; rank: LinkRank }
+/** A reference that keeps a row on the question: the misconception targeted, a wrong option's item, a concept-error target. */
+export interface LinkRef { row_id: string; what: string }
+/** The same rules the database applies (cms_save_content_links), so the screen can say why before Save.
+ *  `saved` = the links as stored now (a referenced row that is direct now can't become supporting). */
+export function linkChecks(draft: DraftLink[], saved: DraftLink[], refs: LinkRef[]) {
+  const primaries = draft.filter((l) => l.rank === 'primary').length;
+  const problems: string[] = [];
+  if (primaries !== 1) problems.push(`A Science question needs exactly one primary row (it now has ${primaries}).`);
+  const lock = new Map<string, { remove: string | null; support: string | null }>();
+  for (const r of refs) {
+    const wasDirect = saved.some((s) => s.row_id === r.row_id && s.rank !== 'context');
+    const x = lock.get(r.row_id) ?? { remove: null, support: null };
+    x.remove ??= `Used by ${r.what}: clear the reference first.`;
+    if (wasDirect) x.support ??= `Used by ${r.what}: clear the reference first, then make it supporting.`;
+    lock.set(r.row_id, x);
+    const d = draft.find((l) => l.row_id === r.row_id);
+    if (!d) problems.push(`Row ${r.row_id} is still used by ${r.what}; clear the reference first.`);
+    else if (wasDirect && d.rank === 'context') problems.push(`Row ${r.row_id} is still used by ${r.what}; clear the reference first, then make it supporting.`);
+  }
+  const key = (ls: DraftLink[]) => ls.map((l) => `${l.row_id}:${l.rank}`).sort().join();
+  return { problems, lock, dirty: key(draft) !== key(saved) };
+}

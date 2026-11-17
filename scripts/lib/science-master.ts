@@ -4,7 +4,7 @@
 import { createHash } from 'node:crypto';
 import {
   alsoInRows, CONTENT_COLUMNS, CONTENT_TYPES, davPages, figureDescription, idList, LEGEND_COLUMNS, legendBooks, missingColumns, ncertPages, notesFlags, QUESTION_COLUMNS, QUESTION_USES,
-  questionLinks, resolveCitation, sheetStatus, sourcesFromLegend, storedFormat, str, taughtIn, TIERS, yn, familiarity, FAMILIARITY, goldUse, optionTag, scienceType, WRONG_TAGS, type LegendBook, type RowStatus, type ScienceSource,
+  questionLinks, resolveCitation, sheetStatus, sourcesFromLegend, storedFormat, str, taughtIn, TIERS, yn, familiarity, FAMILIARITY, goldUse, optionTag, scienceType, scienceDrivers, WRONG_TAGS, type LegendBook, type RowStatus, type ScienceSource,
 } from '../../shared/science.ts';
 import { stableJson } from '../../shared/json.ts';
 import { readWorkbook } from './xlsx.ts';
@@ -28,6 +28,10 @@ export interface MasterQuestion {
    *  (so an older master never clears tags set in the CMS). See docs/science-import-format.md. */
   science_question_type?: number | null; setting_id?: string | null; setting_familiarity?: string | null; has_hidden_idea?: boolean | null; has_experiment?: boolean | null;
   option_tags?: ({ tag: string; ref: string | null } | null)[] | null; gold_use?: 'prompt_example' | 'test_only' | null;
+  /** Q35: the 5 drivers given in the file (absent = blank = attributes pending) */
+  reading?: number; steps?: number; inhibition?: number; visual?: number; has_irrelevant_info?: boolean;
+  /** Q35: a bad driver value. The question is HELD (nothing written for it); the other questions still import */
+  held_reason?: string;
 }
 export interface MasterProblem { level: 'error' | 'warning'; where: string; message: string }
 /** Notes that mention "also in" but gave no valid row ID, or carried tokens that are not row IDs. */
@@ -162,7 +166,14 @@ export async function readMaster(path: string): Promise<Master> {
     }
     const gu = goldUse(v['Gold use']);
     if (gu === undefined) err(where, `Gold use "${str(v['Gold use'])}" is not "Prompt example" or "Test only" (blank = production)`); else if (gu !== null) extra.gold_use = gu;
-    const { sheet: _s, ...hashed } = { ...q, ...extra };
+    // Q35: the 5 drivers (same rules as Edit). A bad value holds this question only, with the reason; never imported half-tagged
+    const drv = scienceDrivers(v);
+    Object.assign(extra, drv.values);
+    if (drv.problems.length) {
+      extra.held_reason = drv.problems.join('; ');
+      warn(where, `held (not imported): ${extra.held_reason}`);
+    }
+    const { sheet: _s, held_reason: _h, ...hashed } = { ...q, ...extra };
     questions.push({ ...q, ...extra, hash: createHash('sha256').update(stableJson(hashed)).digest('hex') });
   }
   return { path, sha256: wb.sha256, rows, also_in_unparsed: alsoUnparsed, questions, books, sources, problems };

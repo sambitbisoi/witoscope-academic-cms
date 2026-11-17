@@ -2,6 +2,25 @@
 
 Changes to real (non-test) data that Sambit approved, with what was done and where the audit trail is.
 
+## 17 Nov 2026: Q23 + Q35 (plan note `docs/plan-2026-11-17-q23-q35.md`)
+
+**Request (Sambit, 17 Nov 2026):** build Q35 and Q23 and make them live in one go.
+
+### Q23: linked content rows edited on a Science draft (migration 0044)
+
+| Step | Result |
+|---|---|
+| Backup | `~/WitoScope/CMS-backups/real-cms-2026-11-17-pre-0044.dump` (schema `cms`, read-only file) |
+| Rehearsal | Fresh restore into `cms_rehearsal` (5,171 questions · 5,183 versions · 3,505 content rows) · 0044 guarded: fingerprint of every cms table **unchanged** (two functions added, no table or data change) · db:verify ✓ · smoke test (rolled back): saving SQ000135's links unchanged → `changed: false` |
+| Real | The same: 0044 guarded, fingerprint **unchanged** · db:verify ✓ (fresh connection) |
+
+### Q35: Science import reads the 5 drivers (no migration)
+
+| Check | Result |
+|---|---|
+| Re-import safety | Today's Science snapshot (`_snapshots/WitoScope_Science_Master_2026-11-15_import2.xlsx`) read with the new reader: 134/134 question hashes equal the stored ones, 0 held, so a re-import replaces nothing |
+| Data | **No data changed** on real |
+
 ## 17 Nov 2026: Round 2, Iteration 1 (plan `docs/plan-2026-11-17-round2.md`)
 
 **Request (Sambit, 17 Nov 2026):** Round 2 "go" (Iteration 1: PR A → B → C), with the decisions in §10 of the plan. Q24 is **lower only**; Q25 is closed with no change (the 14 are gold, and gold is exempt from the picture rule).

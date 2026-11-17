@@ -35,12 +35,13 @@ export function printResult(r: ScienceResult) {
   console.log(`Citations:     ${r.citations.rows} for content rows · ${r.citations.questions} for questions`);
   console.log(`Topic–class links PROPOSED (not active; approve in Proposed): ${r.proposals.length}${r.proposals.some((p) => !p.isNew) ? ` (${r.proposals.filter((p) => p.isNew).length} new)` : ''}`);
   for (const p of r.proposals) console.log(`  ${p.topic_id} ${p.name} · home class ${p.home_class} · row class ${p.row_class} · suggested role: from a ${p.role} class · ${p.rows} row${p.rows === 1 ? '' : 's'}`);
-  console.log(`Questions:     ${n(r.questions.created)} new · ${n(r.questions.replaced)} drafts replaced · ${r.questions.unchanged} unchanged · ${n(r.questions.skipped)} skipped · ${n(r.questions.blocked)} blocked`);
+  console.log(`Questions:     ${n(r.questions.created)} new · ${n(r.questions.replaced)} drafts replaced · ${r.questions.unchanged} unchanged · ${n(r.questions.skipped)} skipped · ${n(r.questions.blocked)} blocked · ${n(r.questions.held_bad_value ?? [])} held (bad value)`);
   if (r.questions.gold.length || r.questions.tags) console.log(`               Q34: ${r.questions.gold.length} Science gold (${r.questions.gold.join(', ') || '—'}) · ${r.questions.tags} wrong-option tags written (docs/science-import-format.md)`);
   console.log(`               originality: ${Object.entries(r.originality.questions).map(([k, v]) => `${v} ${k.replace('_', '-')}`).join(' · ')}`);
   for (const s of r.questions.skipped) console.log(`  skipped ${s.qid}: ${s.why}`);
   for (const s of r.questions.held_out) console.log(`  HELD OUT ${s.qid}: ${s.why} (see the Held out tab)`);
   for (const s of r.questions.blocked) console.log(`  BLOCKED ${s.qid}: ${s.why}`);
+  for (const s of r.questions.held_bad_value ?? []) console.log(`  HELD ${s.qid}: ${s.why} (nothing written; fix the file and import again)`);
   if (r.questions.not_in_master.length) console.log(`  in the CMS but not in the master (kept): ${r.questions.not_in_master.join(', ')}`);
   console.log(`Links:         ${r.links.direct} direct · ${r.links.supporting} supporting`);
   console.log(`Also in:       ${r.also_in.rows_with_ids} rows with IDs in Notes · ${r.also_in.ids_parsed} IDs parsed · ${r.also_in.ids_kept} kept · ${r.also_in.unknown.length} not in the CMS (dropped) · ${r.also_in.unparsed.length} notes with "also in" not fully parsed`);
