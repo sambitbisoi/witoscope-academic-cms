@@ -162,6 +162,27 @@ try {
       drift.length ? `${drift.length} concept(s) would change: ${drift.slice(0, 5).map((d) => `${d.concept_id} ${d.before}→${d.after}`).join(', ')}` : 'in step');
   }
 
+  // 0041 (Round 2, 17 Nov 2026): Science question attributes (Q26), the retired authored tier (Q27), settings by subject (Q28),
+  // Science wrong-option tags (Q32)
+  const [has41] = await sql`select exists (select 1 from information_schema.columns where table_schema = 'cms' and table_name = 'cms_question_versions' and column_name = 'science_question_type') as yes`;
+  if (has41!.yes) {
+    const [s1] = await sql`
+      select (select count(*) from cms.cms_question_versions v join cms.cms_questions q on q.question_id = v.question_id
+               where q.subject <> 'science' and (v.science_question_type is not null or v.setting_familiarity is not null or v.has_hidden_idea is not null
+                     or v.has_experiment is not null or v.science_tier_legacy is not null))::int as on_math,
+             (select count(*) from cms.cms_question_versions v where v.level_tier is not null and v.science_tier_legacy is distinct from v.level_tier)::int as legacy_lost,
+             (select count(*) from cms.cms_questions q join cms.cms_settings s on s.setting_id = q.setting_id where s.subject <> q.subject)::int as setting_subject,
+             (select count(*) from cms.cms_question_versions v join cms.cms_questions q on q.question_id = v.question_id
+               join cms.cms_version_wrong_answers w on w.version_id = v.version_id
+               where q.subject = 'science' and v.status = 'approved' and w.tag = 'concept_error'
+                 and not exists (select 1 from cms.cms_question_content_rows l where l.version_id = v.version_id and l.row_id = w.target_row_id))::int as ce_unlinked,
+             (select count(*) from cms.cms_question_versions v join cms.cms_questions q on q.question_id = v.question_id
+               where q.subject = 'science' and q.bank = 'production' and v.status = 'approved' and v.science_question_type is null)::int as approved_untyped`;
+    check('Science attributes (0041): Science-only fields, legacy tier kept, settings match the subject, concept errors on own rows, approved Science typed',
+      s1!.on_math === 0 && s1!.legacy_lost === 0 && s1!.setting_subject === 0 && s1!.ce_unlinked === 0 && s1!.approved_untyped === 0,
+      `${s1!.on_math} non-Science with Science fields, ${s1!.legacy_lost} legacy tiers not kept, ${s1!.setting_subject} settings of another subject, ${s1!.ce_unlinked} concept errors off its rows, ${s1!.approved_untyped} approved untyped`);
+  }
+
   const [admin] = await sql`select value #>> '{}' as id from cms.cms_config where key = 'admin_user_id'`;
   check('cms_config.admin_user_id is set to a UUID', /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(admin?.id ?? ''), admin?.id ?? 'not set');
 

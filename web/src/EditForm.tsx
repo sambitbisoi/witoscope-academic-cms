@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { checkEdit, scienceAttributesMissing } from '../../shared/edit-checks.ts';
 import { tierBasis } from '../../shared/derive.ts';
 import { planSave } from '../../shared/save.ts';
-import type { Answer, Question, ScienceSignature, WrongAnswer } from '../../shared/types.ts';
+import { SCIENCE_QUESTION_TYPES, SETTING_FAMILIARITY, type Answer, type Question, type ScienceSignature, type WrongAnswer } from '../../shared/types.ts';
 import { applySave, loadForEdit, type EditContext } from './editApi';
 import { TAG_LABEL } from './logic';
 
@@ -39,7 +39,7 @@ export function EditForm({ questionId, onDone }: { questionId: string; onDone: (
     const d = ctx.detail;
     // T1: subject-aware (Math: the chapter-file checks as before; Science: its own rules)
     return checkEdit(q, { subject: ctx.subject, ruleVersion: ctx.ruleVersion, cls: d.question.class, chapterId: d.question.chapter_id,
-      catalog: ctx.catalog, linkedRows: ctx.linkedRows, rowItems: ctx.rowItems });
+      catalog: ctx.catalog, linkedRows: ctx.linkedRows, rowItems: ctx.rowItems, settings: new Set(ctx.sciSettings.map((s) => s.setting_id)) });
   }, [ctx, q]);
 
   if (error) return <p className="error">Couldn't open {questionId} for editing: {error}</p>;
@@ -48,7 +48,7 @@ export function EditForm({ questionId, onDone }: { questionId: string; onDone: (
   const errors = problems.filter((p) => p.level === 'error');
   const L = ctx.lists;
   const isSci = ctx.subject === 'science';
-  const setSci = (k: keyof ScienceSignature, v: number | boolean | null) => set((x) => { (x.science as unknown as Record<string, unknown>)[k] = v; });
+  const setSci = (k: keyof ScienceSignature, v: number | boolean | string | null) => set((x) => { (x.science as unknown as Record<string, unknown>)[k] = v; });
   const missingAttrs = scienceAttributesMissing(q);
   const canSave = !!plan.mode && errors.length === 0 && !busy;
 
@@ -94,6 +94,21 @@ export function EditForm({ questionId, onDone }: { questionId: string; onDone: (
           <YesNo label="Irrelevant info" v={q.science.has_irrelevant_info} on={(v) => setSci('has_irrelevant_info', v)} />
           <YesNo label="Pure fact" v={q.science.is_pure_fact} on={(v) => setSci('is_pure_fact', v)} />
         </div>
+        {/* Q26 (S1, 0041): the Science question attributes; the type is needed to approve */}
+        <div className="form-grid">
+          <label>Science question type<select value={q.science.science_question_type ?? ''} onChange={(e) => setSci('science_question_type', e.target.value ? Number(e.target.value) : null)}>
+            <option value="">— (needed to approve)</option>
+            {(Object.entries(SCIENCE_QUESTION_TYPES) as [string, string][]).map(([k, label]) => <option key={k} value={k}>{k} · {label}</option>)}</select></label>
+          <label>Setting familiarity<select value={q.science.setting_familiarity ?? ''} onChange={(e) => setSci('setting_familiarity', e.target.value || null)}>
+            <option value="">—</option>{SETTING_FAMILIARITY.map((f) => <option key={f} value={f}>{f}</option>)}</select></label>
+          <YesNo label="Hidden idea" v={q.science.has_hidden_idea ?? null} on={(v) => setSci('has_hidden_idea', v)} />
+          <YesNo label="Experiment" v={q.science.has_experiment ?? null} on={(v) => setSci('has_experiment', v)} />
+          <label className="wide">Setting (blank = bare)<select value={q.science.setting_id ?? ''} onChange={(e) => setSci('setting_id', e.target.value || null)}>
+            <option value="">— bare (no setting)</option>
+            {q.science.setting_id && !ctx.sciSettings.some((s) => s.setting_id === q.science!.setting_id) && <option value={q.science.setting_id}>{q.science.setting_id} (not a Science setting)</option>}
+            {ctx.sciSettings.map((s) => <option key={s.setting_id} value={s.setting_id}>{s.name} · {s.setting_id}{s.status === 'proposed' ? ' (proposed)' : ''}</option>)}</select></label>
+        </div>
+        {ctx.sciSettings.length === 0 && <p className="small muted">No Science settings yet (the SET list is shared; Science settings arrive with the Science imports).</p>}
         <p className="small muted">{missingAttrs.length ? `Attributes pending until these are set: ${missingAttrs.join(', ')}.` : 'All attributes set.'} Science has no typical set, concepts or Math signature; they are never saved for a Science question.</p>
       </Sec>}
 
@@ -253,24 +268,33 @@ function PartsEditor({ q, set }: { q: Question; set: (f: (x: Question) => void) 
   );
 }
 
-/** T1: Science options. A wrong option's misconception is optional; if chosen, it is an item of one of the question's own
- *  content rows (0035). "None" removes the tag. */
+/** T1 + Q32 (0041): Science options. A wrong option may take any of Math's 9 tags, or none (untagged is valid and never
+ *  blocks approval). A misconception is an item of one of the question's own content rows (0035); a concept error
+ *  targets one of its content rows. */
 function ScienceOptions({ a, onChange, science }: { a: Answer; onChange: (f: (a: Answer) => void) => void; science: SciItems }) {
   const opts = a.options ?? [];
   const usable = science.items.filter((i) => i.status !== 'retired' && science.linkedRows.includes(i.row_id));
   const wrongFor = (v: string) => (a.wrong_answers ?? []).find((w) => w.value === v);
-  const setMc = (value: string, ref: string) => onChange((x) => {
+  const update = (value: string, f: ((w: WrongAnswer) => void) | null) => onChange((x) => {
     const list = x.wrong_answers ?? (x.wrong_answers = []);
-    const i = list.findIndex((w) => w.value === value);
-    if (!ref) { if (i >= 0) list.splice(i, 1); return; }
-    const [row_id, no] = ref.split(' #');
-    const mc = { row_id: row_id!, item_no: Number(no) };
-    if (i >= 0) { list[i]!.tag = 'misconception'; list[i]!.mc = mc; delete list[i]!.misconception_id; } else list.push({ value, tag: 'misconception', mc });
+    let i = list.findIndex((w) => w.value === value);
+    if (f === null) { if (i >= 0) list.splice(i, 1); return; }
+    if (i < 0) { list.push({ value, tag: 'misread' }); i = list.length - 1; }
+    f(list[i]!);
+  });
+  const setTag = (value: string, tag: string) => update(value, tag ? (w) => {
+    w.tag = tag as WrongAnswer['tag']; delete w.misconception_id; delete w.target_concept_id;
+    if (tag !== 'misconception') delete w.mc;
+    if (tag !== 'concept_error') delete w.target_row_id;
+  } : null);
+  const setMc = (value: string, ref: string) => update(value, (w) => {
+    if (!ref) { delete w.mc; return; }
+    const [row_id, no] = ref.split(' #'); w.mc = { row_id: row_id!, item_no: Number(no) };
   });
   return (
     <>
       <table className="opts small">
-        <thead><tr><th>Correct</th><th>Option</th><th>Misconception (optional; an item of its content rows)</th></tr></thead>
+        <thead><tr><th>Correct</th><th>Option</th><th>Mistake tag (optional)</th><th>Item / target row</th><th>Why</th></tr></thead>
         <tbody>{opts.map((o, i) => {
           const w = wrongFor(o);
           const cur = w?.mc ? `${w.mc.row_id} #${w.mc.item_no}` : '';
@@ -282,12 +306,22 @@ function ScienceOptions({ a, onChange, science }: { a: Answer; onChange: (f: (a:
                 if (x.correct === old) x.correct = e.target.value;
                 for (const y of x.wrong_answers ?? []) if (y.value === old) y.value = e.target.value;
               })} /></td>
-              <td>{a.correct === o ? <span className="muted">Correct answer</span> : (
-                <select value={cur} onChange={(e) => setMc(o, e.target.value)}>
-                  <option value="">None</option>
-                  {cur && !usable.some((u) => `${u.row_id} #${u.item_no}` === cur) && <option value={cur}>{cur} (not an item of its rows)</option>}
-                  {usable.map((u) => <option key={`${u.row_id}#${u.item_no}`} value={`${u.row_id} #${u.item_no}`}>{u.row_id} #{u.item_no} · {u.text.slice(0, 80)}{u.status === 'needs_review' ? ' (needs review)' : ''}</option>)}
-                </select>)}</td>
+              {a.correct === o ? <td colSpan={3} className="muted">Correct answer</td> : <>
+                <td><select value={w?.tag ?? ''} onChange={(e) => setTag(o, e.target.value)}><option value="">Not tagged</option>{TAGS.map((t) => <option key={t} value={t}>{TAG_LABEL[t]}</option>)}</select></td>
+                <td>{w?.tag === 'misconception' ? (
+                  <select value={cur} onChange={(e) => setMc(o, e.target.value)}>
+                    <option value="">Choose an item…</option>
+                    {cur && !usable.some((u) => `${u.row_id} #${u.item_no}` === cur) && <option value={cur}>{cur} (not an item of its rows)</option>}
+                    {usable.map((u) => <option key={`${u.row_id}#${u.item_no}`} value={`${u.row_id} #${u.item_no}`}>{u.row_id} #{u.item_no} · {u.text.slice(0, 80)}{u.status === 'needs_review' ? ' (needs review)' : ''}</option>)}
+                  </select>)
+                  : w?.tag === 'concept_error' ? (
+                  <select value={w.target_row_id ?? ''} onChange={(e) => update(o, (x) => { if (e.target.value) x.target_row_id = e.target.value; else delete x.target_row_id; })}>
+                    <option value="">Choose a target row…</option>
+                    {w.target_row_id && !science.linkedRows.includes(w.target_row_id) && <option value={w.target_row_id}>{w.target_row_id} (not one of its rows)</option>}
+                    {science.linkedRows.map((r) => <option key={r} value={r}>{r}</option>)}
+                  </select>) : null}</td>
+                <td>{w && <input value={w.why ?? ''} onChange={(e) => update(o, (x) => { x.why = e.target.value || undefined; })} />}</td>
+              </>}
             </tr>
           );
         })}</tbody>

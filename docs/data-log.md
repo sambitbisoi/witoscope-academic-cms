@@ -17,6 +17,16 @@ Changes to real (non-test) data that Sambit approved, with what was done and whe
 
 Reports: `.local-import/concept-first-taught-{rehearsal,real}-*.md` (concept list and the tier changes that follow), `.local-import/q24-tier-expect-2026-11-17.json` (the 54). Reversible exactly: `class_legacy` plus the reviews' before → after.
 
+### Q26–Q28, Q32: Science question attributes (migration 0041)
+
+| Step | Result |
+|---|---|
+| Backup | `~/WitoScope/CMS-backups/real-cms-2026-11-17-pre-0041.dump` (54 table-data entries) |
+| Rehearsal (fresh restore) | 0041 guarded: every existing column unchanged, apart from new `cms_reviews` rows · 134 `science_tier_legacy` copies · 175 audit rows (134 `derived_update`, 41 `edit_catalogue`) · 41 settings → math · db:verify ✓ |
+| Real | The same: 134 legacy tiers kept (`level_tier` stays, now frozen) · 41 settings → math · 175 audit rows (`by_label` "migration 0041") · fingerprint of every existing column unchanged · db:verify ✓ |
+
+**Not changed:** no Science question was typed. The 134 Magnets questions wait for the Science thread (Q27).
+
 ## 17 Nov 2026: Round 1 (plan `docs/plan-2026-11-17-round1.md`)
 
 **Request (Sambit, 17 Nov 2026):** Round 1 items T1, T2, Q14, Q19, Q20, Q21, Q22, D18; "go" with decisions §10. Real data steps in small batches, each checked on a fresh restore first.

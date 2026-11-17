@@ -3,6 +3,7 @@ import { questionDetail, type QuestionDetailData } from './api';
 import { browseHash, derivedRows, involvementOf, tierBasisLabel, signatureRows, STATUS_LABEL, subjectOfChapter, TAG_LABEL } from './logic';
 import { latestOriginality, officialLink, sourceItems, type OriginalityCheck } from './sourcesApi';
 import { questionFromDb } from '../../shared/fromDb.ts';
+import { SCIENCE_QUESTION_TYPES } from '../../shared/types.ts';
 import { structureDiff } from '../../shared/save.ts';
 import { textsOf } from '../../shared/version.ts';
 import { bundleOf, retire, setStatus } from './editApi';
@@ -501,6 +502,8 @@ function scienceBlockersOf(d: QuestionDetailData, x: ScienceDetail): string[] {
     solution1: d.solutions.find((s) => s.slot === 1)?.text ?? null, links: x.links, misconceptionText: x.version.misconception_targeted,
     misconception: item(x.version.misconception_row_id, x.version.misconception_item_no),
     wrongItems: [...x.wrongItems.values()].map((r) => { const [rowId, no] = r.split(' #'); return item(rowId!, Number(no))!; }),
+    typeSet: !!x.version.science_question_type,
+    conceptErrorRowsOk: [...x.wrongTags.values()].filter((t) => t.startsWith('concept_error|')).every((t) => x.links.some((l) => l.row_id === t.split('|')[1])),
   });
 }
 
@@ -529,7 +532,8 @@ function ScienceBody({ d, x, err, isCurrent, onVersion, onSaved, actions }: { d:
         <div className="options">
           {d.options.filter((o) => o.part_label === '').map((o) => (
             <div key={o.position} className={`option ${o.is_correct ? 'correct' : ''}`}><span className="opt-label">{String.fromCharCode(64 + o.position)} · {o.text}{o.is_correct ? ' ✓' : ''}</span>
-              {x?.wrongItems.get(o.position) && <span className="muted small mono" title={x.items.find((i) => `${i.row_id} #${i.item_no}` === x.wrongItems.get(o.position))?.text}> → {x.wrongItems.get(o.position)}</span>}</div>
+              {x?.wrongItems.get(o.position) ? <span className="muted small mono" title={x.items.find((i) => `${i.row_id} #${i.item_no}` === x.wrongItems.get(o.position))?.text}> → {x.wrongItems.get(o.position)}</span>
+                : x?.wrongTags.get(o.position) ? <span className="muted small"> → {TAG_LABEL[x.wrongTags.get(o.position)!.split('|')[0]!] ?? x.wrongTags.get(o.position)!.split('|')[0]}{x.wrongTags.get(o.position)!.split('|')[1] ? <span className="mono"> {x.wrongTags.get(o.position)!.split('|')[1]}</span> : null}</span> : null}</div>
           ))}
         </div>
       </div>
@@ -588,7 +592,13 @@ function ScienceBody({ d, x, err, isCurrent, onVersion, onSaved, actions }: { d:
         <div className="tint-title">Attributes{d.flags?.attributes_pending ? <span className="muted small"> · pending</span> : ''}</div>
         <KV rows={[
           ...SCIENCE_ATTRS.map((a) => ({ k: a.k, v: attr(a.col) })),
-          { k: 'Tier', v: x?.version.level_tier ?? '—' },
+          // Q26 (S1, 0041) + Q27: the authored tier is retired (legacy, read-only)
+          { k: 'Science question type', v: x?.version.science_question_type ? `${x.version.science_question_type} · ${SCIENCE_QUESTION_TYPES[x.version.science_question_type as 1]}` : <span className="warn-text">Not set (needed to approve)</span> },
+          { k: 'Setting', v: d.setting ? <>{d.setting.name} <Id>{d.setting.setting_id}</Id></> : <span className="muted">bare (no setting)</span> },
+          { k: 'Setting familiarity', v: x?.version.setting_familiarity ?? '—' },
+          { k: 'Hidden idea', v: x?.version.has_hidden_idea === null || x?.version.has_hidden_idea === undefined ? '—' : x.version.has_hidden_idea ? 'yes' : 'no' },
+          { k: 'Experiment', v: x?.version.has_experiment === null || x?.version.has_experiment === undefined ? '—' : x.version.has_experiment ? 'yes' : 'no' },
+          { k: 'Old tier (legacy)', v: <span className="muted" title="The authored L1–L3 tier is retired (Q27); kept read-only">{x?.version.science_tier_legacy ?? x?.version.level_tier ?? '—'}</span> },
           { k: 'Level (class)', v: q.level ?? '—' },
         ]} />
       </div>

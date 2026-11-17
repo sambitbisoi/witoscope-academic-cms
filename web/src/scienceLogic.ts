@@ -86,6 +86,7 @@ export interface BlockerInput {
   misconceptionText: string | null;
   misconception: { status: string } | null;
   wrongItems: { status: string }[];
+  /** Q26/Q32 (0041) */ typeSet?: boolean; conceptErrorRowsOk?: boolean;
 }
 /** Why a Science version can't be approved yet (the SQL trigger enforces the same, 0035). */
 export function scienceBlockers(x: BlockerInput): string[] {
@@ -97,5 +98,7 @@ export function scienceBlockers(x: BlockerInput): string[] {
   if (x.misconceptionText?.trim()) out.push('misconception is free text');
   if (x.misconception && x.misconception.status !== 'active') out.push('misconception item needs review');
   if (x.wrongItems.some((w) => w.status !== 'active')) out.push("a wrong option's item needs review");
+  if (x.typeSet === false) out.push('Science question type not set');
+  if (x.conceptErrorRowsOk === false) out.push("a concept error's target row is not one of its content rows");
   return out;
 }

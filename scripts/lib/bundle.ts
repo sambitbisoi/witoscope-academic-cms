@@ -10,7 +10,7 @@ export async function loadBundle(sql: Sql, versionId: number): Promise<DbBundle>
   const [parts, options, wrong, concepts, solutions, hints, refs] = await Promise.all([
     sql`select part_label, text, format, correct, accepted from cms.cms_version_parts where version_id = ${versionId}`,
     sql`select part_label, position, text, is_correct from cms.cms_version_options where version_id = ${versionId}`,
-    sql`select part_label, value, tag, misconception_id, target_concept_id, why, mc_row_id, mc_item_no from cms.cms_version_wrong_answers where version_id = ${versionId} order by wrong_answer_id`,
+    sql`select part_label, value, tag, misconception_id, target_concept_id, why, mc_row_id, mc_item_no, target_row_id from cms.cms_version_wrong_answers where version_id = ${versionId} order by wrong_answer_id`,
     sql`select part_label, concept_id, involvement from cms.cms_version_concepts where version_id = ${versionId}`,
     sql`select slot, text, type, strategy from cms.cms_version_solutions where version_id = ${versionId}`,
     sql`select level, text from cms.cms_version_hints where version_id = ${versionId}`,

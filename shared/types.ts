@@ -4,7 +4,8 @@ export type Format = 'MCQ-4' | 'MCQ-3' | 'True/False' | 'Typed-number' | 'Typed-
 export type WrongTag = 'misconception' | 'concept_error' | 'shortcut' | 'partial' | 'lost_step' | 'used_irrelevant' | 'misread' | 'unit_slip' | 'implausible';
 
 export interface WrongAnswer { value: string; tag: WrongTag; misconception_id?: string; target_concept_id?: string; why?: string;
-  /** Science (0035): the content-row misconception item this wrong option shows, e.g. C6-04-014 #2 */ mc?: { row_id: string; item_no: number } }
+  /** Science (0035): the content-row misconception item this wrong option shows, e.g. C6-04-014 #2 */ mc?: { row_id: string; item_no: number };
+  /** Science (Q32, 0041): a concept error's target, one of the question's linked content rows */ target_row_id?: string }
 export interface Answer { format: Format; options?: string[]; correct: string; accepted?: string[]; wrong_answers?: WrongAnswer[] }
 export interface ConceptRef { concept_id: string; involvement: 1 | 0.5 | 0.2 }
 export interface Part { part_label: string; text: string; answer: Answer; concepts: ConceptRef[] }
@@ -30,7 +31,16 @@ export interface Question {
 export interface ScienceSignature {
   reading: number | null; steps: number | null; inhibition: number | null; visual: number | null;
   has_irrelevant_info: boolean | null; is_pure_fact: boolean | null;
+  /** Q26 (S1, 0041). Each may be unset; the type is required to approve a Science production question. */
+  science_question_type?: ScienceQuestionType | null; setting_familiarity?: SettingFamiliarity | null;
+  has_hidden_idea?: boolean | null; has_experiment?: boolean | null;
+  /** the question's setting (cms_questions.setting_id, SET catalogue, Science settings only); blank = bare */
+  setting_id?: string | null;
 }
+export type ScienceQuestionType = 1 | 2 | 3 | 4 | 5;
+export type SettingFamiliarity = 'Bare' | 'Everyday' | 'Less familiar' | 'Rare';
+export const SCIENCE_QUESTION_TYPES: Record<ScienceQuestionType, string> = { 1: 'Fact', 2: 'Basic understanding', 3: 'Curiosity/application', 4: 'Achiever', 5: 'Super Achiever' };
+export const SETTING_FAMILIARITY: SettingFamiliarity[] = ['Bare', 'Everyday', 'Less familiar', 'Rare'];
 export interface Pattern {
   pattern_id: string; topic_id: string; typical_set_id: string; name: string; template?: string;
   variables?: Record<string, unknown>; target_misconceptions?: string[]; source_refs?: string[]; notes?: string;

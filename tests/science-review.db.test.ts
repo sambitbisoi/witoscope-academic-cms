@@ -45,7 +45,7 @@ const review = (tx: Tx, p: Record<string, unknown>) => tx`select cms.cms_save_sc
 const approve = (tx: Tx, qid: string, vno: number) => tx`select cms.cms_set_status(${qid}, ${vno}, 'approve', null)`;
 async function readyForApproval(tx: Tx, h: { as: () => Promise<void>; owner: () => Promise<void> }, qid: string) {
   await h.owner();
-  await tx`update cms.cms_question_versions set reading = 2, steps = 1, inhibition = 1, visual = 0, has_irrelevant_info = false, originality_pending = false where question_id = ${qid}`;
+  await tx`update cms.cms_question_versions set reading = 2, steps = 1, inhibition = 1, visual = 0, has_irrelevant_info = false, science_question_type = 2, originality_pending = false where question_id = ${qid}`;
   await h.as();
 }
 
@@ -124,7 +124,7 @@ describe('Science review (0035)', () => {
       await approve(tx, id, 1);
       const v1 = await ver(tx, id);
       await h.owner();
-      await tx`update cms.cms_question_versions set level_tier = 'L2', safety_note = 'Adult only.' where version_id = ${v1.version_id}`;
+      await tx`update cms.cms_question_versions set science_tier_legacy = 'L2', safety_note = 'Adult only.' where version_id = ${v1.version_id}`;
       await tx`insert into cms.cms_citations (version_id, source_id, page_from, page_to, raw) select ${v1.version_id}, source_id, 1, 1, 'NCERT p.1' from cms.cms_sources limit 1`;
       await h.as();
       const payload = { question_id: id, mode: 'new_version', base_version_no: 1, content_hash: 'a'.repeat(64), reason: 'test',
@@ -134,7 +134,7 @@ describe('Science review (0035)', () => {
         solutions: [{ slot: 1, text: 'Iron nail.' }] };
       await tx`select cms.cms_apply_save(${tx.json(payload as never)})`;
       const v2 = await ver(tx, id);
-      expect(v2).toMatchObject({ version_no: 2, level_tier: 'L2', safety_note: 'Adult only.', misconception_row_id: 'C6-ZY-002', misconception_item_no: 2 });
+      expect(v2).toMatchObject({ version_no: 2, level_tier: null, science_tier_legacy: 'L2', safety_note: 'Adult only.', misconception_row_id: 'C6-ZY-002', misconception_item_no: 2 });
       expect((await tx`select row_id, role, rank from cms.cms_question_content_rows where version_id = ${v2.version_id} order by row_id`).map((r) => `${r.row_id}:${r.rank}`))
         .toEqual(['C6-ZY-001:primary', 'C6-ZY-002:secondary', 'C6-ZY-003:context']);
       expect((await tx`select count(*)::int as n from cms.cms_citations where version_id = ${v2.version_id}`)[0]!.n).toBe(1);
@@ -157,6 +157,106 @@ describe('Science review (0035)', () => {
       await fails(tx, (sp) => sp`select cms.cms_set_row_misconception_status('C6-ZY-001', 1, 'retired', '')`, /needs a reason/);
       await tx`select cms.cms_set_row_misconception_status('C6-ZY-001', 1, 'retired', 'duplicate')`;
       expect((await tx`select action from cms.cms_reviews where target_id = 'C6-ZY-001 #1'`).map((r) => r.action)).toEqual(['retire']);
+    });
+  });
+});
+
+// 0041 (Round 2, 17 Nov 2026): Q26 Science question attributes, Q27 the retired authored tier, Q28 settings by subject,
+// Q32 Science wrong-option tags. Same fixtures as above; each test rolled back.
+describe('Science attributes (0041)', () => {
+  const save = (tx: Tx, p: Record<string, unknown>) => tx`select cms.cms_apply_save(${tx.json(p as never)})`;
+  const opts = ['Wood', 'Iron nail', 'Glass', 'Paper'].map((t, i) => ({ part_label: '', position: i + 1, text: t, is_correct: t === 'Iron nail' }));
+  const draftSave = (id: string, o: { version?: Record<string, unknown>; question?: Record<string, unknown>; wrong?: Record<string, unknown>[] } = {}) => ({
+    question_id: id, mode: 'update_draft', base_version_no: 1, content_hash: 'b'.repeat(64), reason: 'test',
+    version: { topic_id: 'ST0325', text: 'Which one does a magnet pull?', format: 'MCQ-4', correct: 'Iron nail', accepted: [], reading: 2, steps: 1, inhibition: 1, visual: 0,
+      has_irrelevant_info: false, ...o.version },
+    question: { topic_id: 'ST0325', ...o.question }, options: opts, wrong_answers: o.wrong ?? [], solutions: [{ slot: 1, text: 'Iron nail.' }] });
+
+  it('saves the S1 fields and a Science setting; refuses a Math setting and S1 fields on a Math version', async () => {
+    await rolledBack(async (tx, h) => {
+      await setup(tx);
+      await tx`insert into cms.cms_settings (setting_id, name, status, subject) values ('SET9901', 'Test kitchen (science)', 'proposed', 'science'), ('SET9902', 'Test shop (math)', 'proposed', 'math')`;
+      await h.as();
+      const id = await addQ(tx, newQ());
+      await save(tx, draftSave(id, { version: { science_question_type: 3, setting_familiarity: 'Everyday', has_hidden_idea: true, has_experiment: false }, question: { setting_id: 'SET9901' } }));
+      expect(await ver(tx, id)).toMatchObject({ science_question_type: 3, setting_familiarity: 'Everyday', has_hidden_idea: true, has_experiment: false });
+      expect((await tx`select setting_id from cms.cms_questions where question_id = ${id}`)[0]!.setting_id).toBe('SET9901');
+      await fails(tx, (sp) => save(sp, { ...draftSave(id, { question: { setting_id: 'SET9902' } }) }), /not a science setting/);
+      // a save without setting_id leaves the setting alone; an explicit null clears it (bare)
+      await save(tx, draftSave(id));
+      expect((await tx`select setting_id from cms.cms_questions where question_id = ${id}`)[0]!.setting_id).toBe('SET9901');
+      await save(tx, draftSave(id, { question: { setting_id: null } }));
+      expect((await tx`select setting_id from cms.cms_questions where question_id = ${id}`)[0]!.setting_id).toBeNull();
+      await h.owner();
+      const [m] = await tx`select v.version_id from cms.cms_question_versions v join cms.cms_questions q on q.question_id = v.question_id where q.subject = 'math' limit 1`;
+      await fails(tx, (sp) => sp`update cms.cms_question_versions set science_question_type = 1 where version_id = ${m!.version_id}`, /Science-only fields/);
+      await fails(tx, (sp) => sp`update cms.cms_question_versions set setting_familiarity = 'Rare' where version_id = ${m!.version_id}`, /Science-only fields/);
+    });
+  });
+
+  it('the authored tier is frozen: no new level_tier, no change; a new version carries science_tier_legacy only', async () => {
+    await rolledBack(async (tx, h) => {
+      await setup(tx); await h.as();
+      const id = await addQ(tx, newQ());
+      const v = await ver(tx, id);
+      await h.owner();
+      await fails(tx, (sp) => sp`update cms.cms_question_versions set level_tier = 'L1' where version_id = ${v.version_id}`, /retired/);
+      await tx`update cms.cms_question_versions set science_tier_legacy = 'L3' where version_id = ${v.version_id}`;
+      await h.as();
+      await readyForApproval(tx, h, id);
+      await approve(tx, id, 1);
+      await save(tx, { ...draftSave(id), mode: 'new_version' });
+      expect(await ver(tx, id)).toMatchObject({ version_no: 2, level_tier: null, science_tier_legacy: 'L3' });
+    });
+  });
+
+  it('approval needs the type; the blockers view says so and agrees with the trigger', async () => {
+    await rolledBack(async (tx, h) => {
+      await setup(tx); await h.as();
+      const id = await addQ(tx, newQ());
+      await readyForApproval(tx, h, id);
+      const v = await ver(tx, id);
+      await h.owner(); await tx`update cms.cms_question_versions set science_question_type = null where version_id = ${v.version_id}`; await h.as();
+      expect((await tx`select reason from cms.cms_approval_blockers where question_id = ${id}`).map((r) => r.reason)).toEqual(['science_type_missing']);
+      await fails(tx, (sp) => approve(sp, id, 1), /Science question type is not set/);
+      await save(tx, draftSave(id, { version: { science_question_type: 1 } }));
+      expect((await tx`select reason from cms.cms_approval_blockers where question_id = ${id}`).length).toBe(0);
+      await approve(tx, id, 1);
+      expect((await ver(tx, id)).status).toBe('approved');
+    });
+  });
+
+  it('wrong options: the 9 tags; concept_error needs one of its rows; untagged never blocks approval; review box audited', async () => {
+    await rolledBack(async (tx, h) => {
+      await setup(tx);
+      await tx`insert into cms.cms_content_rows (row_id, topic_id, chapter_id, row_class, type, chapter_role, content, misconceptions, question_use, source, sort, content_hash)
+        values ('C6-ZY-009', 'ST0325', 'SC48', 6, 'Fact', 'Core', 'Test content C6-ZY-009: not linked.', '', 'OK', 'Claude-added', 9009, 'x')`;
+      await h.as();
+      const id = await addQ(tx, newQ());
+      await readyForApproval(tx, h, id);
+      // the save path: concept_error with a linked target row, shortcut with only a why, one option untagged
+      await save(tx, draftSave(id, { version: { science_question_type: 2 }, wrong: [
+        { part_label: '', value: 'Wood', option_position: 1, tag: 'concept_error', target_row_id: 'C6-ZY-002' },
+        { part_label: '', value: 'Glass', option_position: 3, tag: 'shortcut', why: 'picks the shiny one' }] }));
+      // concept_error without any target is refused by the CHECK; a target row goes only with concept_error
+      await fails(tx, (sp) => save(sp, draftSave(id, { wrong: [{ part_label: '', value: 'Wood', option_position: 1, tag: 'concept_error' }] })), /check1|violates check/);
+      await fails(tx, (sp) => save(sp, draftSave(id, { wrong: [{ part_label: '', value: 'Wood', option_position: 1, tag: 'misread', target_row_id: 'C6-ZY-002' }] })), /target_row_only_concept_error/);
+      // the review box: a concept error must target one of its rows; any other tag is fine; null clears
+      await fails(tx, (sp) => review(sp, { question_id: id, version_no: 1, wrong: [{ position: 4, tag: 'concept_error', target_row_id: 'C6-ZY-009' }] }), /target row from this question/);
+      await review(tx, { question_id: id, version_no: 1, wrong: [{ position: 4, tag: 'misread' }, { position: 3, tag: null }] });
+      const tags = (await tx`select option_position, tag, target_row_id from cms.cms_version_wrong_answers w join cms.cms_question_versions v on v.version_id = w.version_id
+        where v.question_id = ${id} order by option_position`).map((r) => `${r.option_position}:${r.tag ?? '-'}:${r.target_row_id ?? ''}`);
+      expect(tags).toEqual(['1:concept_error:C6-ZY-002', '3:-:', '4:misread:']);
+      const [aud] = await tx`select field_diff from cms.cms_reviews where target_id = ${`${id} v1`} and action = 'science_review' order by review_id desc limit 1`;
+      expect(aud!.field_diff).toMatchObject({ wrong_options: { after: { 1: 'concept_error → C6-ZY-002', 4: 'misread' } } });
+      // an unlinked concept-error row blocks approval (trigger + view), a linked one does not
+      const v = await ver(tx, id);
+      await h.owner(); await tx`update cms.cms_version_wrong_answers set target_row_id = 'C6-ZY-009' where version_id = ${v.version_id} and tag = 'concept_error'`; await h.as();
+      expect((await tx`select reason from cms.cms_approval_blockers where question_id = ${id}`).map((r) => r.reason)).toEqual(['science_concept_error_row_not_linked']);
+      await fails(tx, (sp) => approve(sp, id, 1), /concept error needs a target row/);
+      await h.owner(); await tx`update cms.cms_version_wrong_answers set target_row_id = 'C6-ZY-002' where version_id = ${v.version_id} and tag = 'concept_error'`; await h.as();
+      await approve(tx, id, 1);
+      expect((await ver(tx, id)).status).toBe('approved');
     });
   });
 });

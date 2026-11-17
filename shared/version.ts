@@ -30,7 +30,7 @@ const canonAnswer = (a: Answer) => ({
   correct: a.format === 'Multi-part' ? null : (a.correct ?? null),
   accepted: a.accepted ?? [],
   wrong_answers: [...(a.wrong_answers ?? [])]
-    .map((w) => ({ value: w.value, tag: w.tag, misconception_id: w.misconception_id ?? null, target_concept_id: w.target_concept_id ?? null, why: t(w.why), ...(w.mc ? { mc: `${w.mc.row_id} #${w.mc.item_no}` } : {}) }))
+    .map((w) => ({ value: w.value, tag: w.tag, misconception_id: w.misconception_id ?? null, target_concept_id: w.target_concept_id ?? null, why: t(w.why), ...(w.mc ? { mc: `${w.mc.row_id} #${w.mc.item_no}` } : {}), ...(w.target_row_id ? { target_row: w.target_row_id } : {}) }))
     .sort((x, y) => x.value.localeCompare(y.value)),
 });
 
@@ -51,7 +51,10 @@ export function structureOf(q: Question, topicId: string): unknown {
     concepts: canonConcepts(q.concepts),
     // T1: a Science question has only the Science signature (each field may be unset); the Math one is a placeholder
     signature: q.science ? { science: { reading: q.science.reading, steps: q.science.steps, inhibition: q.science.inhibition, visual: q.science.visual,
-      has_irrelevant_info: q.science.has_irrelevant_info, is_pure_fact: q.science.is_pure_fact } } : {
+      has_irrelevant_info: q.science.has_irrelevant_info, is_pure_fact: q.science.is_pure_fact,
+      // Q26 (0041): the Science question attributes and the setting are structure (a change = a new version on an approved question)
+      science_question_type: q.science.science_question_type ?? null, setting_familiarity: q.science.setting_familiarity ?? null,
+      has_hidden_idea: q.science.has_hidden_idea ?? null, has_experiment: q.science.has_experiment ?? null, setting_id: q.science.setting_id ?? null } } : {
       math_difficulty: s.math_difficulty, is_pure_fact: s.is_pure_fact, reading: Number(s.reading), has_irrelevant_info: s.has_irrelevant_info,
       steps: Number(s.steps), working_memory: Number(s.working_memory), inhibition: Number(s.inhibition), visual: Number(s.visual), strategy: Number(s.strategy),
       strategy_type: s.strategy_type ?? null, strategy_type_2: s.strategy_type_2 ?? null, strategy_other_note: t(s.strategy_other_note),

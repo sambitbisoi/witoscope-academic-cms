@@ -1,12 +1,14 @@
 // Rebuild a question (chapter-file shape) from its database rows, so the editor,
 // the importer and the tests compare like with like (see structureOf in version.ts).
-import type { Answer, Question, WrongAnswer } from './types.ts';
+import type { Answer, Question, ScienceSignature, WrongAnswer } from './types.ts';
 
 export interface DbQuestion {
   question_id: string; file_key: string | null; topic_id: string; typical_set_id: string | null; pattern_id: string | null;
   clone_batch_id: string | null; locale: string; class_override: number | null; placement_note: string | null;
   /** 'science' → the Science signature is kept as it is (nulls stay null) in Question.science */
   subject?: string;
+  /** the question's setting (0020); read into Question.science.setting_id for Science */
+  setting_id?: string | null;
 }
 export interface DbVersion {
   topic_id: string | null; typical_set_id: string | null; pattern_id: string | null;
@@ -18,12 +20,14 @@ export interface DbVersion {
   proposed_insight: Record<string, string> | null; trick_ref: string | null;
   tagging_why: Record<string, { why: string; confidence: 'high' | 'medium' | 'low' }> | null; tagged_by: string | null;
   tagging_summary: string | null; author_notes: string | null;
+  /** Science (Q26, 0041) */
+  science_question_type?: number | null; setting_familiarity?: string | null; has_hidden_idea?: boolean | null; has_experiment?: boolean | null;
 }
 export interface DbBundle {
   question: DbQuestion; version: DbVersion;
   parts: { part_label: string; text: string; format: string; correct: string; accepted: string[] | null }[];
   options: { part_label: string; position: number; text: string; is_correct: boolean }[];
-  wrong: { part_label: string; value: string; tag: string; misconception_id: string | null; target_concept_id: string | null; why: string | null; mc_row_id?: string | null; mc_item_no?: number | null }[];
+  wrong: { part_label: string; value: string; tag: string; misconception_id: string | null; target_concept_id: string | null; why: string | null; mc_row_id?: string | null; mc_item_no?: number | null; target_row_id?: string | null }[];
   concepts: { part_label: string; concept_id: string; involvement: number | string }[];
   solutions: { slot: number; text: string; type: string | null; strategy: string | null }[];
   hints: { level: number; text: string }[];
@@ -42,6 +46,7 @@ export function questionFromDb(b: DbBundle): Question {
       ...(w.target_concept_id ? { target_concept_id: w.target_concept_id } : {}),
       ...(w.why !== null ? { why: w.why } : {}),
       ...(w.mc_row_id && w.mc_item_no ? { mc: { row_id: w.mc_row_id, item_no: w.mc_item_no } } : {}),
+      ...(w.target_row_id ? { target_row_id: w.target_row_id } : {}),
     }));
     return { format: format as Answer['format'], ...(options.length ? { options } : {}), correct: correct ?? '', accepted: accepted ?? [], wrong_answers: wrong };
   };
@@ -82,6 +87,9 @@ export function questionFromDb(b: DbBundle): Question {
     ...(v.author_notes ? { author_notes: v.author_notes } : {}),
     ...(q.subject === 'science' ? { science: {
       reading: v.reading ?? null, steps: v.steps ?? null, inhibition: v.inhibition ?? null, visual: v.visual ?? null,
-      has_irrelevant_info: v.has_irrelevant_info ?? null, is_pure_fact: v.is_pure_fact ?? null } } : {}),
+      has_irrelevant_info: v.has_irrelevant_info ?? null, is_pure_fact: v.is_pure_fact ?? null,
+      science_question_type: (v.science_question_type ?? null) as ScienceSignature['science_question_type'],
+      setting_familiarity: (v.setting_familiarity ?? null) as ScienceSignature['setting_familiarity'],
+      has_hidden_idea: v.has_hidden_idea ?? null, has_experiment: v.has_experiment ?? null, setting_id: q.setting_id ?? null } } : {}),
   };
 }

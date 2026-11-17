@@ -37,8 +37,8 @@ export async function loadItems(show: Show, places: Places): Promise<CatItem[]> 
       supabase.from('cms_typical_sets').select('typical_set_id, name, class, topic_id, chapter_id, status, instruction_pattern').eq('status', show).order('typical_set_id').range(a, b)),
     all<{ pattern_id: string; name: string; typical_set_id: string; topic_id: string | null; status: string }>((a, b) =>
       supabase.from('cms_patterns').select('pattern_id, name, typical_set_id, topic_id, status').eq('status', show).order('pattern_id').range(a, b)),
-    all<{ setting_id: string; name: string; description: string | null; theme: string | null; status: string }>((a, b) =>
-      supabase.from('cms_settings').select('setting_id, name, description, theme, status').eq('status', show).order('setting_id').range(a, b)),
+    all<{ setting_id: string; name: string; description: string | null; theme: string | null; status: string; subject: Subject }>((a, b) =>
+      supabase.from('cms_settings').select('setting_id, name, description, theme, status, subject').eq('status', show).order('setting_id').range(a, b)),
     all<{ topic_id: string; class: number; source: string; evidence: string | null; suggested_role: string; status: string }>((a, b) =>
       supabase.from('cms_topic_class_proposals').select('topic_id, class, source, evidence, suggested_role, status').eq('status', show).order('topic_id').order('class').range(a, b)),
     all<{ item_kind: string; item_id: string; proposed_by: string; used_by: string[] }>((a, b) =>
@@ -90,7 +90,7 @@ export async function loadItems(show: Show, places: Places): Promise<CatItem[]> 
       status: r.status, ...place(r.topic_id), cls: r.class, via: null, proposedBy: [r.source], usedBy: [] });
   }
   for (const r of settings) out.push({ kind: 'setting', id: r.setting_id, label: r.name, detail: [r.theme, r.description].filter(Boolean).join(' · '), status: r.status,
-    topic_id: null, chapter_id: null, strand_id: null, subject: null, cls: null, via: null, ...src('setting', r.setting_id) });
+    topic_id: null, chapter_id: null, strand_id: null, subject: r.subject ?? null, cls: null, via: null, ...src('setting', r.setting_id) }); // Q28: settings have a subject
   return out;
 }
 
@@ -227,11 +227,11 @@ export async function itemDetail(kind: CatKind, id: string, places?: Places): Pr
       ...(await qByVersions(must<{ version_id: number }[]>(wa).map((x) => x.version_id))) };
   }
   if (kind === 'setting') {
-    const s = must<{ setting_id: string; name: string; description: string | null; theme: string | null; status: string } | null>(
-      await supabase.from('cms_settings').select('setting_id, name, description, theme, status').eq('setting_id', id).maybeSingle());
+    const s = must<{ setting_id: string; name: string; description: string | null; theme: string | null; status: string; subject: string } | null>(
+      await supabase.from('cms_settings').select('setting_id, name, description, theme, status, subject').eq('setting_id', id).maybeSingle());
     if (!s) return null;
     return { ...base, name: s.name, description: s.description, status: s.status, cls: null, via: null, topic: null, chapter: null,
-      facts: s.theme ? [{ k: 'Theme', v: s.theme }] : [], linked: [], ...(await qBy('setting_id', id)) };
+      facts: [{ k: 'Subject', v: s.subject === 'science' ? 'Science' : 'Math' }, ...(s.theme ? [{ k: 'Theme', v: s.theme }] : [])], linked: [], ...(await qBy('setting_id', id)) };
   }
   // topic–class link: id = "MT0261·6"
   const [topicId, c] = id.split('·');
