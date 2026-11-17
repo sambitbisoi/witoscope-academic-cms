@@ -2,6 +2,7 @@
 // (docs/phase2-plan.md §3, step 3). Read-only; connects as cms_owner.
 // Every check must pass; any failure exits non-zero and says what is wrong.
 import { tierChanges } from './lib/tier.ts';
+import { conceptClassChanges } from './lib/concept-class.ts';
 import { assertCmsOwner, connect } from './lib/db.ts';
 import { unexpectedGrants } from './lib/grants.ts';
 
@@ -145,6 +146,21 @@ try {
     .catch(() => [{ done: false }]);
   check('stored tiers follow "Tier uses Level" (Q20)', !tr!.done || tierOff.length === 0,
     `${tierOff.length} version(s) differ${tr!.done ? '' : ' (tier:recompute not run yet)'}`);
+
+  // Q24 (17 Nov 2026): concept class = "first taught in", lower only; the catalogued class is never lost
+  const [hasQ24] = await sql`select exists (select 1 from information_schema.columns where table_schema = 'cms' and table_name = 'cms_concepts' and column_name = 'class_legacy') as yes`;
+  if (hasQ24!.yes) {
+    const [cc] = await sql`select count(*) filter (where class_basis = 'first_taught' and (class_legacy is null or class >= class_legacy))::int as bad,
+                                  count(*) filter (where class_basis = 'first_taught')::int as lowered from cms.cms_concepts`;
+    const [aud] = await sql`select count(*)::int as n from cms.cms_concepts c where c.class_basis = 'first_taught'
+                             and not exists (select 1 from cms.cms_reviews r where r.target = 'catalogue' and r.target_id = c.concept_id and r.action = 'derived_update')`;
+    check('concept classes "first taught in" (Q24): lowered only, catalogued class kept, every change audited', cc!.bad === 0 && aud!.n === 0,
+      `${cc!.lowered} lowered, ${cc!.bad} wrong, ${aud!.n} without an audit row`);
+    // Drift (new imports since the last run) is information only, never a failure: re-run concept:first-taught (checklist D11)
+    const drift = await conceptClassChanges(sql);
+    check('info: concept classes in step with "first taught in" (re-run concept:first-taught after Math imports)', true,
+      drift.length ? `${drift.length} concept(s) would change: ${drift.slice(0, 5).map((d) => `${d.concept_id} ${d.before}→${d.after}`).join(', ')}` : 'in step');
+  }
 
   const [admin] = await sql`select value #>> '{}' as id from cms.cms_config where key = 'admin_user_id'`;
   check('cms_config.admin_user_id is set to a UUID', /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(admin?.id ?? ''), admin?.id ?? 'not set');

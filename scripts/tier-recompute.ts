@@ -1,6 +1,6 @@
 // tier:recompute (Q20, Sambit 17 Nov 2026): rewrite stored tiers that disagree with "Tier uses Level".
 //
-//   npm run tier:recompute -- [--preview | --dry-run] [--batch 20] [--expect <preview.json>] [--confirm-real]
+//   npm run tier:recompute -- [--preview | --dry-run] [--batch 20] [--expect <preview.json>] [--reason Q24] [--confirm-real]
 //
 // Default target: this repo's LOCAL database (or CMS_DATABASE_URL, e.g. the cms_rehearsal copy). The real project only with
 // `npx tsx --env-file=.env.real scripts/tier-recompute.ts … --confirm-real`.
@@ -14,7 +14,11 @@ import { assertCmsOwner, connect, freshConnections, targetUrl } from './lib/db.t
 import { diffFingerprints, fingerprint, maxId } from './lib/fingerprint.ts';
 import { applyTierChanges, tierChanges, type TierChange } from './lib/tier.ts';
 
-const REASON = 'Tier uses Level (Q20, Sambit 17 Nov 2026)';
+const argv = process.argv.slice(2);
+// --reason "Q24": the tier change follows concept:first-taught (concept classes changed), not a Level change.
+const reasonArg = argv.includes('--reason') ? argv[argv.indexOf('--reason') + 1] : null;
+const REASON = reasonArg === 'Q24' ? 'Tier recomputed after concept class = first taught in (Q24, Sambit 17 Nov 2026)'
+  : reasonArg ? reasonArg : 'Tier uses Level (Q20, Sambit 17 Nov 2026)';
 const BY = 'tier recompute (Sambit, CMS build session)';
 const key = (c: { question_id: string; version_no: number; before: string; after: string }) => `${c.question_id} v${c.version_no}: ${c.before} → ${c.after}`;
 
@@ -70,7 +74,7 @@ if (dryRun) {
   const fpOpts = { exclude: { cms_question_versions: ['tier'] }, upTo };
   const before = await fingerprint(sql, fpOpts);
   const [imp] = await sql`insert into cms.cms_imports (kind, file_path, file_hash, options, counts)
-    values ('tier_recompute', 'tier:recompute (Q20)', md5(${changes.map(key).join('\n')}), ${sql.json({ batch, expect: expectPath } as never)}, ${sql.json({ planned: changes.length } as never)})
+    values ('tier_recompute', ${reasonArg === 'Q24' ? 'tier:recompute (Q24)' : 'tier:recompute (Q20)'}, md5(${changes.map(key).join('\n')}), ${sql.json({ batch, expect: expectPath } as never)}, ${sql.json({ planned: changes.length } as never)})
     returning import_id`;
   const importId = Number(imp!.import_id);
   const unit = freshConnections({ url });
@@ -80,11 +84,14 @@ if (dryRun) {
     written += await unit(`batch ${i / batch + 1}`, (s) => s.begin((tx) => applyTierChanges(tx, part, { importId, reason: REASON, by: BY })) as Promise<number>);
     console.log(`  batch ${i / batch + 1}: ${Math.min(i + batch, changes.length)}/${changes.length}`);
   }
-  const left = await tierChanges(sql);
-  const after = await fingerprint(sql, fpOpts);
+  // Round 2: the final checks run on a fresh connection (the pooler dropped the long-lived one on real, 17 Nov 2026)
+  const fin = connect(url);
+  const left = await tierChanges(fin);
+  const after = await fingerprint(fin, fpOpts);
   const diff = diffFingerprints(before, after);
-  await sql`update cms.cms_imports set finished_at = now(), result = ${left.length || diff.length ? 'partial' : 'ok'},
+  await fin`update cms.cms_imports set finished_at = now(), result = ${left.length || diff.length ? 'partial' : 'ok'},
     counts = ${sql.json({ planned: changes.length, written, left: left.length, ...summary } as never)} where import_id = ${importId}`;
+  await fin.end();
   result = { ...result, import_id: importId, written, left: left.length, fingerprint_diff: diff };
   console.log(`  import #${importId}: written ${written} · left ${left.length} · fingerprint: ${diff.length ? `CHANGED: ${diff.join('; ')}` : 'unchanged'}`);
 }
