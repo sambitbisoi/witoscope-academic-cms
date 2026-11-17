@@ -7,7 +7,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { addContext, knownSourceItems, type AddContext } from './api';
 import { addQuestions } from './editApi';
-import { knownContentRows } from './scienceApi';
+import { knownContentRows, rowItems, type RowItem } from './scienceApi';
 import {
   ADD_FORMATS, contentRowLinks, DIFFICULTIES, EXAMPLE_MARK, mandatoryErrors, parseUploadRow, UPLOAD_COLUMNS, uploadColumns, type NewQuestion, type ParsedRow, type UploadLookups,
 } from './logic';
@@ -22,13 +22,14 @@ function useAddContext(topicId: string) {
 }
 
 // ---------------------------------------------------------------- the form
-export function AddQuestionForm({ topic, onDone }: { topic: TopicInfo; onDone: (questionId: string | null) => void }) {
+export function AddQuestionForm({ topic, onDone, prefill }: { topic: TopicInfo; onDone: (questionId: string | null) => void;
+  /** Q15 (16 Nov 2026): "+ Add question" on a content row: Level = row class, that row linked direct · primary */ prefill?: { level: number; row_id: string } }) {
   const { ctx, err: ctxErr } = useAddContext(topic.topic_id);
   const [text, setText] = useState('');
   const [format, setFormat] = useState('');
   const [options, setOptions] = useState(['', '', '', '']);
   const [correct, setCorrect] = useState('');
-  const [level, setLevel] = useState(topic.class);
+  const [level, setLevel] = useState(prefill?.level ?? topic.class);
   const [levelOk, setLevelOk] = useState(false);
   const [picture, setPicture] = useState<boolean | null>(null);
   const [figure, setFigure] = useState('');
@@ -46,9 +47,25 @@ export function AddQuestionForm({ topic, onDone }: { topic: TopicInfo; onDone: (
   const [busy, setBusy] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
   const science = topic.chapter_id.startsWith('SC');
-  const [rowsDirect, setRowsDirect] = useState('');
+  const [rowsDirect, setRowsDirect] = useState(prefill?.row_id ?? '');
+  // 0035: misconception items of the rows given (targeted + per wrong option); only items of its own rows can be picked
+  const [items, setItems] = useState<RowItem[]>([]);
+  const [misc, setMisc] = useState('');
+  const [optMc, setOptMc] = useState<Record<string, string>>({});
   const [rowsSupporting, setRowsSupporting] = useState('');
 
+  const linkIds = science ? contentRowLinks(rowsDirect, rowsSupporting).map((l) => l.row_id).join(',') : '';
+  useEffect(() => {
+    if (!linkIds) { setItems([]); return; }
+    const t = setTimeout(() => { rowItems(linkIds.split(',')).then(setItems).catch(() => setItems([])); }, 300);
+    return () => clearTimeout(t);
+  }, [linkIds]);
+  const parseRef = (s: string) => { const m = /^(.+) #(\d+)$/.exec(s); return m ? { row_id: m[1]!, item_no: Number(m[2]) } : undefined; };
+  const itemPick = (value: string, set: (v: string) => void, label: string) => (
+    <select aria-label={label} value={value} onChange={(e) => set(e.target.value)}>
+      <option value="">— none —</option>
+      {items.map((i) => <option key={`${i.row_id}#${i.item_no}`} value={`${i.row_id} #${i.item_no}`}>{i.row_id} #{i.item_no} · {i.text}{i.status === 'needs_review' ? ' (needs review)' : ''}</option>)}
+    </select>);
   const nOpts = format === 'MCQ-4' ? 4 : format === 'MCQ-3' ? 3 : 0;
   const opts = nOpts ? options.slice(0, nOpts) : format === 'True/False' ? ['True', 'False'] : [];
   const build = async (): Promise<NewQuestion> => {
@@ -72,7 +89,17 @@ export function AddQuestionForm({ topic, onDone }: { topic: TopicInfo; onDone: (
         const links = contentRowLinks(rowsDirect, rowsSupporting);
         const known = await knownContentRows(links.map((l) => l.row_id));
         for (const l of links) if (!known.has(l.row_id)) e.push(`content row ${l.row_id} does not exist`);
-        q.content_rows = links;
+        q.content_rows = links.map((l) => (prefill && l.row_id === prefill.row_id && l.role === 'direct' ? { ...l, rank: 'primary' as const } : l));
+        const have = new Set(items.map((i) => `${i.row_id} #${i.item_no}`));
+        if (misc && have.has(misc)) q.misconception = parseRef(misc);
+        const wa = [...(q.wrong_answers ?? [])];
+        for (const o of q.options.filter((x) => x && x !== q.correct)) {
+          const ref = optMc[o];
+          if (!ref || !have.has(ref)) continue;
+          const w = wa.find((x) => x.value === o);
+          if (w) w.mc = parseRef(ref); else wa.push({ value: o, why: '', mc: parseRef(ref) });
+        }
+        q.wrong_answers = wa;
       }
       if (e.length) { setErrors(e); return; }
       const r = await addQuestions({ topic_id: topic.topic_id, origin: 'manual', questions: [{ ...q, row: null }] });
@@ -92,7 +119,7 @@ export function AddQuestionForm({ topic, onDone }: { topic: TopicInfo; onDone: (
           </select></label>
         <label className="field"><span>Level <b>*</b></span>
           <select value={level} onChange={(e) => { setLevel(Number(e.target.value)); setLevelOk(true); }}>
-            {[1, 2, 3, 4, 5, 6].map((l) => <option key={l} value={l}>Level {l}{l === topic.class ? ' (topic’s home class)' : ''}</option>)}
+            {[1, 2, 3, 4, 5, 6].map((l) => <option key={l} value={l}>Level {l}{prefill && l === prefill.level ? ' (row class)' : l === topic.class ? ' (topic’s home class)' : ''}</option>)}
           </select></label>
         <label className="check small confirm"><input type="checkbox" checked={levelOk} onChange={(e) => setLevelOk(e.target.checked)} /> Level {level} is right</label>
         <fieldset className="field yn"><span>Picture needed <b>*</b></span>
@@ -119,11 +146,20 @@ export function AddQuestionForm({ topic, onDone }: { topic: TopicInfo; onDone: (
         <label className="field"><span>Content row IDs · direct <span className="muted">(optional; e.g. C6-04-001, C6-04-014)</span></span><input value={rowsDirect} onChange={(e) => setRowsDirect(e.target.value)} /></label>
         <label className="field"><span>Content row IDs · supporting <span className="muted">(optional)</span></span><input value={rowsSupporting} onChange={(e) => setRowsSupporting(e.target.value)} /></label>
       </div>}
+      {science && prefill && <div className="muted small">Row {prefill.row_id} is linked as <strong>direct · primary</strong>. Add more rows above (direct or supporting) if the question needs them.</div>}
+      {science && <div className="field"><span>Misconception targeted <span className="muted">(optional; an item of its content rows)</span></span>
+        {itemPick(misc, setMisc, 'Misconception targeted')}
+        {linkIds && items.length === 0 && <span className="muted small">Its content rows have no misconception items. A new item can't be added here yet (content-row editing, Q14).</span>}</div>}
+      {science && (nOpts > 0 || format === 'True/False') && items.length > 0 && <div className="field"><span>Wrong options' misconceptions <span className="muted">(optional)</span></span>
+        {opts.map((o) => o.trim()).filter((o) => o && o !== correct.trim()).map((o) => (
+          <div key={o} className="opt-row small"><span className="opt-label">{o}</span>{itemPick(optMc[o] ?? '', (v) => setOptMc({ ...optMc, [o]: v }), `Misconception of ${o}`)}</div>))}</div>}
+      {science && <label className="field"><span>Solution 1 <span className="muted">(approval needs it: the answer + short reasoning from its content rows; why the key wrong options are wrong)</span></span>
+        <textarea rows={3} value={solution} onChange={(e) => setSolution(e.target.value)} /></label>}
 
       <button className="link small" onClick={() => setMore(!more)} aria-expanded={more}>{more ? '▾' : '▸'} More (optional): solution, hints, wrong-answer notes, concepts, typical set, setting, difficulty, source, notes</button>
       {more && (
         <div className="more-fields">
-          <label className="field"><span>Solution</span><textarea rows={2} value={solution} onChange={(e) => setSolution(e.target.value)} /></label>
+          {!science && <label className="field"><span>Solution</span><textarea rows={2} value={solution} onChange={(e) => setSolution(e.target.value)} /></label>}
           <div className="row-fields">{hints.map((h, i) => <label key={i} className="field"><span>Hint {i + 1}</span><input value={h} onChange={(e) => { const n = [...hints]; n[i] = e.target.value; setHints(n); }} /></label>)}</div>
           <label className="field"><span>Wrong-answer notes <span className="muted">(one per line, as  wrong answer: why)</span></span><textarea rows={2} value={wrong} onChange={(e) => setWrong(e.target.value)} placeholder="102: compared the last digit only" /></label>
           {ctx && ctx.concepts.length > 0 && <fieldset className="field"><span>Concepts</span><div className="concept-picks">
