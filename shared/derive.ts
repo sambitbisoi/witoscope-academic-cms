@@ -15,7 +15,13 @@ export function multistepBand(steps: number, bands: DerivedConfig['multistep_ban
 }
 
 /**
- * @param questionClass the class the question is placed in (class_override ?? class)
+ * Q20 (Sambit, 17 Nov 2026): Tier is judged against the question's LEVEL; the placement class
+ * (class_override ?? class) only when it has no Level.
+ */
+export const tierBasis = (q: { level?: number | null; class_override?: number | null; class: number }) => q.level ?? q.class_override ?? q.class;
+
+/**
+ * @param questionClass the class tier is judged against: tierBasis() = Level, else the placement class
  * @param conceptClass  class of each concept, to spot beyond-grade concepts
  */
 export function derive(q: Question, questionClass: number, conceptClass: (id: string) => number | undefined, cfg: DerivedConfig): Derived {
@@ -27,6 +33,7 @@ export function derive(q: Question, questionClass: number, conceptClass: (id: st
   const load_driver = s.reading === load ? 'reading' : band === load ? 'multi_step' : 'memory';
 
   const allConcepts = [...q.concepts, ...(q.parts ?? []).flatMap((p) => p.concepts)];
+  // Super Achiever: strategy 3, or any tested concept catalogued in a class above the question's Level (Q20)
   const beyondGrade = allConcepts.some((c) => (conceptClass(c.concept_id) ?? 0) > questionClass);
   const tier = s.strategy >= 3 || beyondGrade ? 'Super Achiever' : s.strategy === 2 ? 'Achiever' : 'School';
 

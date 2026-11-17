@@ -3,6 +3,7 @@
 // cms_apply_save in one transaction. Explicit Save; the preview says what will happen.
 import { useEffect, useMemo, useState } from 'react';
 import { checkEdit, scienceAttributesMissing } from '../../shared/edit-checks.ts';
+import { tierBasis } from '../../shared/derive.ts';
 import { planSave } from '../../shared/save.ts';
 import type { Answer, Question, ScienceSignature, WrongAnswer } from '../../shared/types.ts';
 import { applySave, loadForEdit, type EditContext } from './editApi';
@@ -30,7 +31,7 @@ export function EditForm({ questionId, onDone }: { questionId: string; onDone: (
     if (!ctx || !q) return null;
     const d = ctx.detail;
     return planSave({ questionId, baseVersionNo: d.question.current_version, currentStatus: d.version.status, retired: !!d.question.retired_at,
-      before: ctx.question, after: q, cfg: ctx.cfg, questionClass: q.class_override ?? d.question.class, conceptClass: ctx.conceptClass,
+      before: ctx.question, after: q, cfg: ctx.cfg, questionClass: tierBasis({ level: d.question.level as number | null, class_override: q.class_override, class: d.question.class }), conceptClass: ctx.conceptClass,
       forceNewVersion: forceNew, reason: reason.trim() || undefined, storedHash: (d.version as { content_hash?: string }).content_hash ?? null });
   }, [ctx, q, forceNew, reason, questionId]);
   const problems = useMemo(() => {
