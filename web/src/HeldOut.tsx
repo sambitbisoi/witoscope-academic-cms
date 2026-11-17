@@ -89,7 +89,8 @@ function HeldDetail({ h, onChanged }: { h: HeldItem; onChanged: () => void }) {
 
   return (
     <div className="held-card">
-      <div className="eyebrow">{REASON_LABEL[h.reason_code] ?? h.reason_code} · held #{h.held_id}</div>
+      <div className="eyebrow">{REASON_LABEL[h.reason_code] ?? h.reason_code} · held #{h.held_id}
+        {h.status === 'held' && !done && h.subject === 'math' && <> · <a className="link" href="#held-place" onClick={(e) => { e.preventDefault(); document.getElementById('held-place')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }}>Place on a topic ↓</a></>}</div>
       <h2>{q.text}</h2>
       <div className="kv small">
         <Row k="Batch">{h.batch}</Row>
@@ -106,7 +107,7 @@ function HeldDetail({ h, onChanged }: { h: HeldItem; onChanged: () => void }) {
 
       {h.status !== 'held' ? <p className="small">{h.status === 'placed' ? <>Placed on {h.placed_topic_id} as <a href={`#/q/${h.placed_question_id}`}>{h.placed_question_id}</a></> : 'Discarded'} · {h.decided_at?.slice(0, 10)}{h.note ? ` · ${h.note}` : ''}</p>
         : done ? <p className="small ok">{done}</p> : h.subject !== 'math' ? <p className="small muted">{h.subject} items are placed by re-running import:science --from-excel once their topic exists. You can discard it here.</p> : (
-        <div className="save-preview">
+        <div className="held-place" id="held-place">
           <div className="eyebrow">Place on a topic</div>
           {achieversMissing && <p className="small warn">{achievers} does not exist yet. Link a {h.chapter_id} topic to Class {h.class} (topic screen → other classes); its Achievers row is then made automatically.</p>}
           <label className="wide">Topic (Class {h.class}, {h.chapter_id})<select value={topic} onChange={(e) => setTopic(e.target.value)}>
