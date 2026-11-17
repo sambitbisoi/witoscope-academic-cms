@@ -33,6 +33,14 @@ Each change is a `derived_update` row in `cms_reviews` (before → after, judged
 | Real | 0038 (guard unchanged), `db:verify` ✓. Backfill dry run = rehearsal. Run: **import #858**, held **#4 MC58-0051, #5 MC58-0052, #6 MC58-0053** (reason: Achievers row ACH-MC58-1 missing; Level 1; held with concept G1-LR-C7703, typical set TS-G1-UPSIDE-DOWN-DIGITS and patterns MP3853 / MP3865 / MP3866 from NCERT-C1-13.proposals.json; originality clear 0.50 / 0.38 / 0.39, run on this Mac, result only). Fingerprint unchanged, `db:verify` ✓ |
 | D18 | **Not linked, not placed** (Sambit's condition): only MC58-0051 ("Who am I? … upside down") fits MT0203 "Guess the number from clues"; MC58-0052 and -0053 are "pick 3 balls for a total / the biggest total" puzzles. The three stay in Held out; the alternative is in the Round 1 report |
 
+### Q19 + Q22: bulk override decisions, approval blockers (migration 0039)
+
+| Step | Result |
+|---|---|
+| Backup | `~/WitoScope/CMS-backups/real-cms-2026-11-17-pre-0039.dump`; restored to `cms_rehearsal` |
+| Rehearsal | 0039 with the fingerprint guard: unchanged. `db:verify` ✓. `cms_approval_blockers` = the plan's §6: near-copy without override 61 · attributes pending 134 · picture pending 38 (Math 13, Science 25) · Science primary not confirmed 19 |
+| Real | 0039 (guard unchanged), `db:verify` ✓. No data step: overrides are decided by Sambit |
+
 ## 16–17 Nov 2026: Science misconception items, primary rows, Solution 1 (migration 0035, science:rationalise)
 
 **Request (Sambit, 16 Nov 2026):** Q16 Q17 Q18 (`docs/plan-2026-11-16-q11-q18.md`, decisions §8): split content-row misconceptions into items, tie each Science question's misconception and wrong options to items, one primary row per question, Solution 1 drafts for short ones; dry run on a restored copy first, then real.
