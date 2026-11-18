@@ -71,3 +71,14 @@ describe('totals, placements, move', () => {
     expect(move(['a', 'b'], 5, 0)).toEqual(['a', 'b']);
   });
 });
+
+import { parseRoute } from '../web/src/logic.ts';
+describe('course routes', () => {
+  it('parses the list, a new course and each step', () => {
+    expect(parseRoute('#/courses')).toEqual({ name: 'courses' });
+    expect(parseRoute('#/courses/new')).toEqual({ name: 'course', id: null, step: 'details', ch: null });
+    expect(parseRoute('#/course/CRS001/topics?ch=DCH0003')).toEqual({ name: 'course', id: 'CRS001', step: 'topics', ch: 'DCH0003' });
+    expect(parseRoute('#/course/CRS001/nonsense?ch=x')).toEqual({ name: 'course', id: 'CRS001', step: 'chapters', ch: null });
+    expect(parseRoute('#/course/XYZ/review').name).toBe('notfound');
+  });
+});
