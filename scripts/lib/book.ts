@@ -4,7 +4,7 @@
 // fields (each item's `tags`: format, signature, wrong answers, pattern, why).
 // 10 Nov 2026: book material stays on the Mac. Only CITATIONS are imported (ref_id,
 // page, section, item label, placement); an item's text and numbers never leave the file.
-import { pdfStem } from './sources.ts';
+import { bookSourceId } from './sources.ts';
 
 export interface BookFile {
   file_schema: string; attribute_version?: string; subject: string; internal_only?: boolean;
@@ -24,6 +24,9 @@ export interface BookCitation { ref_id: string; source_id: string; page: number;
  */
 export function citationLabel(label: string | undefined | null): string | null {
   if (!label) return null;
+  // DAV blueprint batches (18 Nov 2026): the label starts with our own blueprint row ID (BP-C6-0001 — our note); keep the ID only
+  const bp = /^BP-C\d-\d{4}\b/.exec(label.trim());
+  if (bp) return bp[0];
   const s = label.split(/\s*(?::|—|–| - )\s*/)[0]!.replace(/,\s*/g, ' ').replace(/\s+/g, ' ').trim();
   const m = /^(?:((?:[A-Za-z][A-Za-z'’-]*)(?: [A-Za-z][A-Za-z'’-]*)*?)(?=\s*(?:Q?\d|\(|$)))?\s*(?:\b(Q?)(\d{1,2})([a-z]?)(?=$|[\s(.]))?((?:\s*\((?:[a-z]{1,2}|[ivx]{1,4})\))*)/.exec(s);
   if (!m) return null;
@@ -46,10 +49,9 @@ export function parseBook(data: unknown, topics: Map<string, string /* chapter *
   if (!SUPPORTED.includes(b?.file_schema)) { err('file', `file_schema must be ${SUPPORTED.join(' or ')}, got "${b?.file_schema}"`); return { problems }; }
   if (b.internal_only !== true) err('file', 'internal_only must be true: book text never leaves this Mac');
   if (!b.source?.file_path || !b.chapter || !Array.isArray(b.items)) { err('file', 'needs source.file_path, chapter and items'); return { problems }; }
-  const stem = pdfStem(b.source.file_path);
-  if (!stem) { err('file', `source.file_path "${b.source.file_path}" is not a .pdf`); return { problems }; }
+  const source_id = bookSourceId(b.source);
+  if (!source_id) { err('file', `source.file_path "${b.source.file_path}" is not a .pdf`); return { problems }; }
   const publisher = b.source.publisher === 'NCERT' ? 'NCERT' : b.source.publisher;
-  const source_id = `${publisher}-${stem}`;
   const offset = Number(b.source.page_offset ?? 0);
   if (!Number.isInteger(offset)) err('file', 'source.page_offset must be a whole number');
   const pdf = (printed: number) => printed + offset; // printed page = pdf page − offset

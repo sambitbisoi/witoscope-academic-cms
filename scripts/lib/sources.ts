@@ -14,6 +14,22 @@ export const ncertSourceId = (url: string) => {
 };
 export const pdfStem = (url: string) => /\/([a-z0-9]+)\.pdf$/i.exec(url.trim())?.[1]?.toLowerCase() ?? null;
 
+/** The CMS source ID of a local book file's source (18 Nov 2026, DAV Math). NCERT and any plain stem: <publisher>-<stem>, as before.
+ *  Another publisher's PDF with spaces or punctuation in its name: <publisher>-<slug of the name>, the Science master's rule
+ *  (shared/science.ts sourceIdFor: "Mathematics class 1.pdf" → DAV-mathematics-class-1). A book that is one PDF per chapter
+ *  (file_path is a folder): <publisher>-<slug of the book title>-class-<n>. null when none applies. */
+export function bookSourceId(src: { publisher?: string; file_path?: string; book_title?: string; book_class?: number } | undefined): string | null {
+  const publisher = src?.publisher ?? 'NCERT';
+  const file = (src?.file_path ?? '').trim();
+  const stem = pdfStem(file);
+  if (stem) return `${publisher}-${stem}`;
+  if (publisher === 'NCERT') return null;
+  const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  if (/\.pdf$/i.test(file)) { const s = slug(file.split('/').pop()!.replace(/\.pdf$/i, '')); return s ? `${publisher}-${s}` : null; }
+  if (src?.book_title && src.book_class) return `${publisher}-${slug(src.book_title)}-class-${src.book_class}`;
+  return null;
+}
+
 const TOPIC_RE = /\b(?:MT|ST|GT)\d{4}\b/g;
 const s = (v: unknown) => (v === null || v === undefined ? null : String(v).trim() || null);
 

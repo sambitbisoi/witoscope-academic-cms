@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { citationLabel, parseBook } from '../scripts/lib/book.ts';
-import { ncertSourceId, parseNcertSheet } from '../scripts/lib/sources.ts';
+import { bookSourceId, ncertSourceId, parseNcertSheet } from '../scripts/lib/sources.ts';
 import type { Row } from '../scripts/lib/xlsx.ts';
 
 const rows = (...r: Record<string, string | number>[]): Row[] => r.map((values, i) => ({ row: i + 2, values }));
@@ -112,5 +112,17 @@ describe('source-mapping tabs (12 Nov 2026)', () => {
     expect(r.rows[0]!.cells.map(([h]) => h)).toEqual(['S.No', 'Grade', 'NCERT Book', 'Chapter No', 'Chapter (NCERT title)', 'Topic', 'Basis', 'Source PDF', 'Master Topic ID(s)']);
     expect(JSON.stringify(r.rows)).not.toMatch(/BOOK TEXT|OCR|DAV Math|Inferred/);
     expect(r.dropped.DAV).toEqual(['Evidence (OCR text, verbatim incl. OCR errors)', 'Note', 'Source scan']);
+  });
+});
+
+describe('book file source IDs (18 Nov 2026, DAV Math)', () => {
+  it('NCERT and plain stems are unchanged; DAV PDF names are slugged as the Science master does; a one-PDF-per-chapter book uses its title', () => {
+    expect(bookSourceId({ publisher: 'NCERT', file_path: '~/x/Class6/fegp101.pdf' })).toBe('NCERT-fegp101');
+    expect(bookSourceId({ publisher: 'NCERT', file_path: '~/x/My book.pdf' })).toBeNull();
+    expect(bookSourceId({ publisher: 'DAV', file_path: '~/x/Class 1/Mathematics class 1.pdf', book_title: 'Primary Mathematics', book_class: 1 })).toBe('DAV-mathematics-class-1');
+    expect(bookSourceId({ publisher: 'DAV', file_path: '~/x/Class 4/STD- IV MATHEMATICS.pdf' })).toBe('DAV-std-iv-mathematics');
+    expect(bookSourceId({ publisher: 'DAV', file_path: '~/x/Class 6/ (one PDF per chapter)', book_title: 'Secondary Mathematics (DAV CMC)', book_class: 6 })).toBe('DAV-secondary-mathematics-dav-cmc-class-6');
+    expect(bookSourceId({ publisher: 'DAV', file_path: '~/x/folder' })).toBeNull();
+    expect(citationLabel('BP-C6-0001 — successor of a 7-digit number ending in 9')).toBe('BP-C6-0001');
   });
 });
