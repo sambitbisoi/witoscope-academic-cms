@@ -18,7 +18,7 @@ export const rememberBrowse = (hash: string) => { try { localStorage.setItem(LAS
 const lastBrowse = () => { try { return localStorage.getItem(LAST_BROWSE) ?? '#/browse/math/6'; } catch { return '#/browse/math/6'; } };
 
 export function Shell({ email, route, children }: { email?: string; route: Route; children: ReactNode }) {
-  const section = route.name === 'browse' || route.name === 'question' ? 'browse' : route.name === 'imports' || route.name === 'import' ? 'imports' : route.name === 'review' ? 'review' : route.name === 'proposed' ? 'proposed' : route.name === 'map' ? 'map' : route.name === 'held' ? 'held' : route.name === 'decisions' ? 'decisions' : route.name === 'courses' || route.name === 'course' ? 'courses' : 'home';
+  const section = route.name === 'browse' || route.name === 'question' ? 'browse' : route.name === 'imports' || route.name === 'import' ? 'imports' : route.name === 'review' ? 'review' : route.name === 'proposed' ? 'proposed' : route.name === 'map' ? 'map' : route.name === 'held' ? 'held' : route.name === 'decisions' ? 'decisions' : route.name.startsWith('course') ? 'courses' : 'home';
   return (
     <div className="page">
       <header>

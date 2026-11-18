@@ -30,6 +30,9 @@ export type Route =
   // Q13 (18 Nov 2026): the course builder
   | { name: 'courses' }
   | { name: 'course'; id: string | null; step: 'details' | 'chapters' | 'topics' | 'review'; ch: string | null }
+  | { name: 'course-upload'; replace: string | null }
+  | { name: 'course-clone'; id: string }
+  | { name: 'course-compare'; a: string | null; b: string | null }
   | { name: 'notfound' };
 
 export function parseRoute(hash: string): Route {
@@ -41,7 +44,14 @@ export function parseRoute(hash: string): Route {
   if (p[0] === 'q' && p[1]) return { name: 'question', id: p[1] };
   if (p[0] === 'review') return { name: 'review', show: qs.get('show') };
   if (p[0] === 'decisions') return { name: 'decisions' };
-  if (p[0] === 'courses') return p[1] === 'new' ? { name: 'course', id: null, step: 'details', ch: null } : { name: 'courses' };
+  if (p[0] === 'courses') {
+    const dch = (x: string | null) => (x && /^DCH[0-9]{4,5}$/.test(x) ? x : null);
+    if (p[1] === 'new') return { name: 'course', id: null, step: 'details', ch: null };
+    if (p[1] === 'upload') return { name: 'course-upload', replace: /^CRS[0-9]{3,4}$/.test(qs.get('replace') ?? '') ? qs.get('replace') : null };
+    if (p[1] === 'compare') return { name: 'course-compare', a: dch(qs.get('a')), b: dch(qs.get('b')) };
+    return { name: 'courses' };
+  }
+  if (p[0] === 'course' && p[1] && /^CRS[0-9]{3,4}$/.test(p[1]) && p[2] === 'clone') return { name: 'course-clone', id: p[1] };
   if (p[0] === 'course' && p[1] && /^CRS[0-9]{3,4}$/.test(p[1])) {
     const step = (['details', 'chapters', 'topics', 'review'] as const).find((x) => x === p[2]) ?? 'chapters';
     return { name: 'course', id: p[1], step, ch: /^DCH[0-9]{4,5}$/.test(qs.get('ch') ?? '') ? qs.get('ch') : null };

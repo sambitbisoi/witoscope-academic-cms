@@ -2,6 +2,10 @@
 
 Changes to real (non-test) data that Sambit approved, with what was done and where the audit trail is.
 
+## 18 Nov 2026: Q13 Course builder, Iteration 2 ("go 2", same plan)
+
+No migration and **no real data changed**: screens 5–7 and "Start from" use the 0045 functions. The DRAFT pilot file `ContentResearch/CMS-updates/2026-11-18-course-pilot/CBSE-NCERT-C5-Math.xlsx` was built from read-only queries on real and was **not loaded**; Sambit uploads it himself (Upload from Excel → Replace a draft). `cms_rehearsal` dropped at the end of the round.
+
 ## 18 Nov 2026: Q13 Course builder, Iteration 1 (plan `docs/plan-2026-11-18-q13-course-builder.md`)
 
 **Request (Sambit, 18 Nov 2026):** plan approved, "go". Board values are an editable, audited list.

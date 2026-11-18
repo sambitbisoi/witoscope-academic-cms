@@ -278,4 +278,26 @@ describe('Course builder (0045)', () => {
       await fails(tx, (sp) => sp`insert into cms.cms_courses (course_id, name, board_id, class, subject) values ('CRS999', 'x', 'BRD01', 5, 'math')`, /permission denied/);
     });
   });
+
+  it('upload: a new course and a replace of a draft, each recorded in cms_imports (file name and hash only) and audited as course_upload; clone audited as course_clone', async () => {
+    await rolledBack(async (tx, h) => {
+      await h.as();
+      const a = await save(tx, { source: 'upload', file: { name: 'pilot.xlsx', sha256: 'abc' }, course: { name: 'Uploaded', board_id: 'BRD01', class: 5, subject: 'math' },
+        outline: { chapters: [{ name: 'A', achievers: [], topics: [{ name: 'x', cms: [M[0]!] }] }] } }) as Res & { import_id: number };
+      const o = await load(tx, a.course_id);
+      o.chapters[0]!.name = 'A renamed'; o.chapters[0]!.topics.push({ name: 'y', cms: [M[1]!] });
+      const b = await save(tx, { course_id: a.course_id, rev: a.rev, source: 'upload', file: { name: 'pilot v2.xlsx', sha256: 'def' }, outline: o }) as Res & { import_id: number };
+      expect(strip(await load(tx, a.course_id))).toEqual([{ name: 'A renamed', achievers: [], topics: [{ name: 'x', cms: [M[0]] }, { name: 'y', cms: [M[1]] }] }]);
+      const o2 = await load(tx, a.course_id);
+      await save(tx, { course_id: a.course_id, rev: await rev(tx, a.course_id), source: 'clone', reason: 'cloned from CRS999 › DCH9999', outline: { chapters: [...o2.chapters, { name: 'C', achievers: [], topics: [{ name: 'z', cms: [M[2]!] }] }] } });
+      await h.owner();
+      const imps = await tx`select kind, file_path, file_hash, options, counts from cms.cms_imports where import_id in (${a.import_id}, ${b.import_id}) order by import_id`;
+      expect(imps.map((i) => `${i.kind} ${i.file_path} ${i.file_hash} ${i.options.new_course}`)).toEqual(['course_upload pilot.xlsx abc true', 'course_upload pilot v2.xlsx def false']);
+      expect(imps[1]!.counts).toMatchObject({ chapters_changed: 1, topics_new: 1, topic_links_changed: 1 });
+      const acts = await tx`select action, reason, import_id from cms.cms_reviews where target_id = ${a.course_id} and target_table = 'cms_courses' order by review_id`;
+      expect(acts.map((x) => x.action)).toEqual(['create', 'course_upload', 'course_upload', 'course_clone']);
+      expect(acts[3]!.reason).toBe('cloned from CRS999 › DCH9999');
+      expect(Number(acts[2]!.import_id)).toBe(Number(b.import_id));
+    });
+  });
 });
