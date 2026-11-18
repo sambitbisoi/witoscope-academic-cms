@@ -68,7 +68,7 @@ afterAll(async () => {
 
 describe('catalog: every table is locked the same way', () => {
   it('has 44 tables, all with RLS enabled', async () => {
-    expect(tables).toHaveLength(54); // 0018 added cms_catalogue_proposals; 0032 the four Science tables; 0035 cms_row_misconceptions; 0038 cms_held_out
+    expect(tables).toHaveLength(61); // 0018 added cms_catalogue_proposals; 0032 the four Science tables; 0035 cms_row_misconceptions; 0038 cms_held_out; 0045 the 7 course tables
     const off = await su`select relname from pg_class c join pg_namespace n on n.oid = c.relnamespace
                          where n.nspname = 'cms' and c.relkind = 'r' and not c.relrowsecurity`;
     expect(off).toEqual([]);
@@ -117,6 +117,11 @@ describe('catalog: every table is locked the same way', () => {
       { proname: 'cms_content_link_rank', prosecdef: false, provolatile: 'v', proconfig: ['search_path=""'], auth_exec: false, anon_exec: false, public_exec: false },
       // 0044 (Q23): linked content rows edited on a Science draft
       { proname: 'cms_content_links_state', prosecdef: false, provolatile: 's', proconfig: ['search_path=""'], auth_exec: false, anon_exec: false, public_exec: false },
+      // 0045 (Q13): course builder
+      { proname: 'cms_copy_course', prosecdef: true, provolatile: 'v', proconfig: ['search_path=""'], auth_exec: true, anon_exec: false, public_exec: false },
+      { proname: 'cms_course_achievers_state', prosecdef: false, provolatile: 's', proconfig: ['search_path=""'], auth_exec: false, anon_exec: false, public_exec: false },
+      { proname: 'cms_course_errors', prosecdef: false, provolatile: 's', proconfig: ['search_path=""'], auth_exec: true, anon_exec: false, public_exec: false },
+      { proname: 'cms_course_items_state', prosecdef: false, provolatile: 's', proconfig: ['search_path=""'], auth_exec: false, anon_exec: false, public_exec: false },
       { proname: 'cms_current_uid', prosecdef: false, provolatile: 's', proconfig: ['search_path=""'], auth_exec: true, anon_exec: false, public_exec: false },
       { proname: 'cms_decide_override', prosecdef: true, provolatile: 'v', proconfig: ['search_path=""'], auth_exec: true, anon_exec: false, public_exec: false },
       // 0039 (Q19): several overrides in one transaction
@@ -135,12 +140,15 @@ describe('catalog: every table is locked the same way', () => {
       // 0037 (Q14): content rows and their items edited in the CMS
       { proname: 'cms_save_content_links', prosecdef: true, provolatile: 'v', proconfig: ['search_path=""'], auth_exec: true, anon_exec: false, public_exec: false },
       { proname: 'cms_save_content_row', prosecdef: true, provolatile: 'v', proconfig: ['search_path=""'], auth_exec: true, anon_exec: false, public_exec: false },
+      { proname: 'cms_save_course', prosecdef: true, provolatile: 'v', proconfig: ['search_path=""'], auth_exec: true, anon_exec: false, public_exec: false },
+      { proname: 'cms_save_course_board', prosecdef: true, provolatile: 'v', proconfig: ['search_path=""'], auth_exec: true, anon_exec: false, public_exec: false },
       { proname: 'cms_save_curriculum', prosecdef: true, provolatile: 'v', proconfig: ['search_path=""'], auth_exec: true, anon_exec: false, public_exec: false },
       { proname: 'cms_save_job', prosecdef: true, provolatile: 'v', proconfig: ['search_path=""'], auth_exec: true, anon_exec: false, public_exec: false },
       { proname: 'cms_save_order', prosecdef: true, provolatile: 'v', proconfig: ['search_path=""'], auth_exec: true, anon_exec: false, public_exec: false },
       { proname: 'cms_save_science_review', prosecdef: true, provolatile: 'v', proconfig: ['search_path=""'], auth_exec: true, anon_exec: false, public_exec: false },
       { proname: 'cms_science_review_state', prosecdef: false, provolatile: 's', proconfig: ['search_path=""'], auth_exec: false, anon_exec: false, public_exec: false },
       { proname: 'cms_set_catalogue_status', prosecdef: true, provolatile: 'v', proconfig: ['search_path=""'], auth_exec: true, anon_exec: false, public_exec: false },
+      { proname: 'cms_set_course_status', prosecdef: true, provolatile: 'v', proconfig: ['search_path=""'], auth_exec: true, anon_exec: false, public_exec: false },
       { proname: 'cms_set_row_misconception_status', prosecdef: true, provolatile: 'v', proconfig: ['search_path=""'], auth_exec: true, anon_exec: false, public_exec: false },
       { proname: 'cms_set_status', prosecdef: true, provolatile: 'v', proconfig: ['search_path=""'], auth_exec: true, anon_exec: false, public_exec: false },
       { proname: 'cms_set_topic_review', prosecdef: true, provolatile: 'v', proconfig: ['search_path=""'], auth_exec: true, anon_exec: false, public_exec: false },
@@ -216,7 +224,7 @@ describe('an app user gets zero rows', () => {
       return out;
     });
     expect(Object.values(counts).every((n) => n === 0)).toBe(true);
-    expect(Object.keys(counts)).toHaveLength(53); // + the four Science tables (0032) + cms_row_misconceptions (0035) + cms_held_out (0038)
+    expect(Object.keys(counts)).toHaveLength(60); // + the four Science tables (0032) + cms_row_misconceptions (0035) + cms_held_out (0038) + 7 course tables (0045)
   });
 
   it('SQL: zero rows from every cms view (views are security_invoker)', async () => {

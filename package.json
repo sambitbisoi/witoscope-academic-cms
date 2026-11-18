@@ -34,7 +34,8 @@
     "science:rationalise": "tsx scripts/science-rationalise.ts",
     "tier:recompute": "tsx scripts/tier-recompute.ts",
     "concept:first-taught": "tsx scripts/concept-first-taught.ts",
-    "held-out:add": "tsx scripts/held-out-add.ts"
+    "held-out:add": "tsx scripts/held-out-add.ts",
+    "import:book-chapters": "tsx scripts/import-book-chapters.ts"
   },
   "devDependencies": {
     "@types/node": "22.9.0",
