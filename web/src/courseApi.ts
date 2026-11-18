@@ -70,6 +70,11 @@ export const bookChapters = async (cls: number, subject: string) =>
 
 // ---------------------------------------------------------------- saves (each one transaction, audited in the DB)
 export interface SaveResult { course_id: string; rev: number; new: boolean; chapters: { new: number; changed: number; retired: number }; topics: { new: number; changed: number; retired: number }; topic_links_changed: number; achievers_changed: number }
-export const saveCourse = (p: { course_id?: string; rev?: number; source?: string; reason?: string; course?: Partial<CourseHead>; outline?: Outline }) => rpc<SaveResult>('cms_save_course', p);
+export const saveCourse = (p: { course_id?: string; rev?: number; source?: string; reason?: string; file?: { name: string; sha256: string }; course?: Partial<CourseHead>; outline?: Outline }) => rpc<SaveResult>('cms_save_course', p);
 export const setCourseStatus = (p: { course_id: string; rev: number; status: 'draft' | 'published' | 'retired'; reason?: string }) => rpc<{ rev: number; changed: boolean }>('cms_set_course_status', p);
 export const saveBoard = (p: { action: 'create' | 'update' | 'retire' | 'restore'; id?: string; fields?: Partial<Pick<Board, 'label' | 'book' | 'sort'>> }) => rpc<{ board_id: string }>('cms_save_course_board', p);
+/** "Start from" (Iteration 2): a new draft copied from another course (same subject as the source). */
+export const copyCourse = (p: { from_course: string; course: { name: string; board_id: string; class: number }; reason?: string }) => rpc<SaveResult>('cms_copy_course', p);
+/** The course a display chapter belongs to (Compare links use display chapter IDs). */
+export const chapterCourse = async (dch: string) =>
+  must<{ course_id: string }[]>(await supabase.from('cms_course_chapters').select('course_id').eq('course_chapter_id', dch))[0]?.course_id ?? null;

@@ -4,12 +4,13 @@
 // between steps; nothing is written until you press Save (one audited transaction). Published / retired = read-only.
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Id } from './Id';
+import { downloadTemplate } from './CourseTools';
 import {
   achId, blocksPublish, chapterNo, countFor, courseChecks, courseTotals, MAX_ACHIEVERS_PER_CHAPTER, MAX_CMS_PER_TOPIC, move, placements, sameOutline, topicNo,
   type CourseCheck, type CourseHead, type Outline,
 } from '../../shared/course.ts';
 import {
-  bookChapters, boards as loadBoards, cmsSide, course as loadCourse, courses as loadCourses, minQuestions, outline as loadOutline, saveBoard, saveCourse, setCourseStatus,
+  bookChapters, boards as loadBoards, cmsSide, copyCourse, course as loadCourse, courses as loadCourses, minQuestions, outline as loadOutline, saveBoard, saveCourse, setCourseStatus,
   type Board, type BookChapter, type CmsSide, type CourseRow,
 } from './courseApi';
 
@@ -38,7 +39,8 @@ export function CoursesScreen() {
         <h1>Courses</h1>
         <span className="spacer" />
         <a className="button-link" href="#/courses/new">+ Add a course</a>
-        <span className="muted small" title="Iteration 2">Upload from Excel · Compare (coming next)</span>
+        <a className="button-link" href="#/courses/upload">Upload from Excel</a>
+        <a className="button-link" href="#/courses/compare">Compare</a>
       </div>
       <p className="muted small">A course arranges CMS topics for one board, class and subject. It shows only questions with Level ≤ the course class. Publishing is a status change only; nothing goes to the app yet.</p>
       <div className="filters">
@@ -107,7 +109,7 @@ function BoardsPanel({ onChange }: { onChange: () => void }) {
 }
 
 // ================================================================ the editor (steps 1–4)
-interface Loaded { row: CourseRow | null; boards: Board[]; side: CmsSide | null; saved: Outline; minQ: number }
+interface Loaded { row: CourseRow | null; boards: Board[]; side: CmsSide | null; saved: Outline; minQ: number; all?: CourseRow[] }
 
 export function CourseEditor({ id, step, ch }: { id: string | null; step: CourseStep; ch: string | null }) {
   const [data, setData] = useState<Loaded | null>(null);
@@ -117,6 +119,7 @@ export function CourseEditor({ id, step, ch }: { id: string | null; step: Course
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [reload, setReload] = useState(0);
+  const [from, setFrom] = useState('');
 
   useEffect(() => {
     let live = true;
@@ -124,8 +127,9 @@ export function CourseEditor({ id, step, ch }: { id: string | null; step: Course
     (async () => {
       const [bs, minQ] = await Promise.all([loadBoards(), minQuestions()]);
       if (!id) {
+        const allCourses = await loadCourses();
         if (!live) return;
-        setData({ row: null, boards: bs, side: null, saved: { chapters: [] }, minQ });
+        setData({ row: null, boards: bs, side: null, saved: { chapters: [] }, minQ, all: allCourses });
         setHead((h) => h ?? { name: '', board_id: bs.find((b) => b.status === 'active')?.board_id ?? '', class: 5, subject: 'math', status: 'draft' });
         return;
       }
@@ -153,7 +157,7 @@ export function CourseEditor({ id, step, ch }: { id: string | null; step: Course
     let reverting = false;
     const onHash = (e: HashChangeEvent) => {
       if (reverting) { reverting = false; return; }
-      const stays = idRef.current && new URL(e.newURL).hash.startsWith(`#/course/${idRef.current}/`);
+      const stays = idRef.current && new RegExp(`^#/course/${idRef.current}/(details|chapters|topics|review)(\\?|$)`).test(new URL(e.newURL).hash);
       if (dirtyRef.current && !stays && !confirm('You have unsaved course changes. Leave without saving?')) { reverting = true; history.replaceState(null, '', e.oldURL); window.dispatchEvent(new HashChangeEvent('hashchange')); }
     };
     const onUnload = (e: BeforeUnloadEvent) => { if (dirtyRef.current) { e.preventDefault(); e.returnValue = ''; } };
@@ -166,7 +170,9 @@ export function CourseEditor({ id, step, ch }: { id: string | null; step: Course
     setBusy(true); setErr(null); setMsg(null);
     try {
       if (!row) {
-        const r = await saveCourse({ course: { name: head.name.trim(), board_id: head.board_id, class: head.class, subject: head.subject } });
+        const r = from
+          ? await copyCourse({ from_course: from, course: { name: head.name.trim(), board_id: head.board_id, class: head.class } })
+          : await saveCourse({ course: { name: head.name.trim(), board_id: head.board_id, class: head.class, subject: head.subject } });
         dirtyRef.current = false;
         location.hash = courseHash(r.course_id, 'chapters');
         return;
@@ -213,7 +219,7 @@ export function CourseEditor({ id, step, ch }: { id: string | null; step: Course
           {dirty && row && <button className="secondary" disabled={busy} onClick={discard}>Discard</button>}
           {dirty && row && <button disabled={busy} onClick={save}>{busy ? 'Saving…' : 'Save'}</button>}
         </div>)}
-      {!row || step === 'details' ? <DetailsStep head={head} setHead={setHead} boards={data.boards} isNew={!row} readOnly={readOnly} busy={busy} onCreate={save} />
+      {!row || step === 'details' ? <DetailsStep head={head} setHead={setHead} boards={data.boards} isNew={!row} readOnly={readOnly} busy={busy} onCreate={save} courses={data.all ?? []} from={from} setFrom={setFrom} />
         : step === 'chapters' ? <ChaptersStep head={head} board={board} work={work} setWork={setWork} side={data.side!} readOnly={readOnly} />
         : step === 'topics' ? <TopicsStep head={head} work={work} setWork={setWork} side={data.side!} readOnly={readOnly} ch={ch} />
         : <ReviewStep head={head} row={row} work={work} side={data.side!} checks={checks} ctx={ctx!} dirty={dirty} busy={busy} onSave={save} onStatus={status} />}
@@ -222,9 +228,11 @@ export function CourseEditor({ id, step, ch }: { id: string | null; step: Course
 }
 
 // ================================================================ 1 · Details
-function DetailsStep({ head, setHead, boards, isNew, readOnly, busy, onCreate }: {
+function DetailsStep({ head, setHead, boards, isNew, readOnly, busy, onCreate, courses, from, setFrom }: {
   head: CourseHead; setHead: (h: CourseHead) => void; boards: Board[]; isNew: boolean; readOnly: boolean; busy: boolean; onCreate: () => void;
+  courses: CourseRow[]; from: string; setFrom: (s: string) => void;
 }) {
+  const src = courses.find((c) => c.course_id === from);
   const choosable = boards.filter((b) => b.status === 'active' || b.board_id === head.board_id);
   return (
     <div className="crs-panel crs-details">
@@ -239,11 +247,17 @@ function DetailsStep({ head, setHead, boards, isNew, readOnly, busy, onCreate }:
         {!isNew && <span className="muted small">Changing the class changes which questions count (Level ≤ class) and which Achievers topics are used.</span>}
       </label>
       <label>Subject
-        <select value={head.subject} disabled={!isNew} onChange={(e) => setHead({ ...head, subject: e.target.value as CourseHead['subject'] })}><option value="math">Math</option><option value="science">Science</option></select>
+        <select value={head.subject} disabled={!isNew || !!src} onChange={(e) => setHead({ ...head, subject: e.target.value as CourseHead['subject'] })}><option value="math">Math</option><option value="science">Science</option></select>
         {!isNew && <span className="muted small">The subject can't change once the course is saved.</span>}
       </label>
       {isNew && <>
-        <p className="muted small">"Start from another course" (copy all its chapters and topics) comes in Iteration 2.</p>
+        <label>Start from (optional)
+          <select value={from} onChange={(e) => { setFrom(e.target.value); const c = courses.find((x) => x.course_id === e.target.value); if (c) setHead({ ...head, subject: c.subject }); }}>
+            <option value="">Nothing: an empty course</option>
+            {courses.filter((c) => c.status !== 'retired').map((c) => <option key={c.course_id} value={c.course_id}>{c.name} ({c.course_id} · {c.board_label} · C{c.class} · {SUBJ[c.subject]} · {plural(c.n_chapters, 'chapter')})</option>)}
+          </select>
+          <span className="muted small">{src ? `Copies all ${plural(src.n_chapters, 'display chapter')}, ${plural(src.n_topics, 'display topic')}, ${plural(src.n_cms_topics, 'CMS topic link')} and its Achievers sections into the new draft. ${src.course_id} is not changed.${src.class !== head.class ? ` Counts will use Class ${head.class}.` : ''}` : 'Copy all display chapters, display topics, CMS topic links and Achievers sections of another course.'}</span>
+        </label>
         <div><button disabled={busy || !head.name.trim() || !head.board_id} onClick={onCreate}>{busy ? 'Saving…' : 'Save and continue'}</button></div>
       </>}
     </div>
@@ -302,7 +316,8 @@ function ChaptersStep({ head, board, work, setWork, side, readOnly }: {
           <form className="crs-add" onSubmit={(e) => { e.preventDefault(); if (!newName.trim()) return; setWork({ chapters: [...chapters, { name: newName.trim(), achievers: [], topics: [] }] }); setNewName(''); }}>
             <input value={newName} maxLength={120} placeholder="New display chapter name" onChange={(e) => setNewName(e.target.value)} />
             <button type="submit" disabled={!newName.trim()}>+ Add chapter</button>
-            <span className="muted small" title="Iteration 2">Clone a chapter · Compare (coming next)</span>
+            <a className="small" href={`#/course/${head.course_id}/clone`}>Clone a chapter</a>
+            <a className="small" href={`#/courses/compare?a=${chapters.find((c) => c.id)?.id ?? ''}`}>Compare</a>
           </form>)}
       </div>
       <aside className="crs-side"><ReferencePanel head={head} board={board} side={side} work={work} /></aside>
@@ -391,7 +406,7 @@ function ReferencePanel({ head, board, side, work }: { head: CourseHead; board?:
   );
 }
 
-function ClassTag({ t, cls }: { t: number; cls: number }) {
+export function ClassTag({ t, cls }: { t: number; cls: number }) {
   return <span className={`crs-cls ${t === cls ? 'core' : t < cls ? 'lower' : 'higher'}`} title={t === cls ? 'home class = course class' : t < cls ? 'from a lower class' : 'from a higher class'}>C{t}</span>;
 }
 
@@ -565,6 +580,8 @@ function ReviewStep({ head, row, work, side, checks, ctx, dirty, busy, onSave, o
           <span className="muted small">Publish only marks the course as published; nothing goes to the app yet.</span>
         </>}
         {row.status === 'published' && <button className="secondary" disabled={busy} onClick={() => onStatus('draft', 'Back to draft')}>Back to draft</button>}
+        <button className="link" disabled={busy || dirty} title={dirty ? 'Save first' : ''} onClick={() => void downloadTemplate({ course: row, outline: work, cls, subject: head.subject, side })}>Download as Excel</button>
+        {row.status === 'draft' && <a className="small" href={`#/courses/upload?replace=${row.course_id}`}>Replace from Excel</a>}
         {row.status === 'retired' ? <button className="secondary" disabled={busy} onClick={() => onStatus('draft', 'Restore')}>Restore (as draft)</button>
           : <button className="link" disabled={busy || dirty} onClick={() => onStatus('retired', 'Retire course')}>Retire course</button>}
       </div>
