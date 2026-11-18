@@ -18,7 +18,7 @@ export const rememberBrowse = (hash: string) => { try { localStorage.setItem(LAS
 const lastBrowse = () => { try { return localStorage.getItem(LAST_BROWSE) ?? '#/browse/math/6'; } catch { return '#/browse/math/6'; } };
 
 export function Shell({ email, route, children }: { email?: string; route: Route; children: ReactNode }) {
-  const section = route.name === 'browse' || route.name === 'question' ? 'browse' : route.name === 'imports' || route.name === 'import' ? 'imports' : route.name === 'review' ? 'review' : route.name === 'proposed' ? 'proposed' : route.name === 'map' ? 'map' : route.name === 'held' ? 'held' : route.name === 'decisions' ? 'decisions' : 'home';
+  const section = route.name === 'browse' || route.name === 'question' ? 'browse' : route.name === 'imports' || route.name === 'import' ? 'imports' : route.name === 'review' ? 'review' : route.name === 'proposed' ? 'proposed' : route.name === 'map' ? 'map' : route.name === 'held' ? 'held' : route.name === 'decisions' ? 'decisions' : route.name === 'courses' || route.name === 'course' ? 'courses' : 'home';
   return (
     <div className="page">
       <header>
@@ -27,6 +27,7 @@ export function Shell({ email, route, children }: { email?: string; route: Route
           <a href="#/" className={section === 'home' ? 'active' : ''}>Home</a>
           <a href={lastBrowse()} className={section === 'browse' ? 'active' : ''}>Browse</a>
           <a href="#/map" className={section === 'map' ? 'active' : ''}>Curriculum</a>
+          <a href="#/courses" className={section === 'courses' ? 'active' : ''}>Courses</a>
           <a href="#/review" className={section === 'review' ? 'active' : ''}>Review</a>
           <a href="#/proposed" className={section === 'proposed' ? 'active' : ''}>Proposed</a>
           <a href="#/decisions" className={section === 'decisions' ? 'active' : ''}>Decisions</a>

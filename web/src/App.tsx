@@ -12,6 +12,7 @@ import { GenerateScreen, RunScreen } from './Generate';
 import { ModelCheckScreen } from './ModelCheck';
 import { ProposedList } from './Proposed';
 import { CurriculumMap } from './Curriculum';
+import { CourseEditor, CoursesScreen } from './Courses';
 import { configError, isAdmin, supabase } from './supabase';
 
 type Access = 'checking' | 'admin' | 'denied' | 'error';
@@ -95,6 +96,8 @@ function Home({ email }: { email?: string }) {
         : route.name === 'run' ? <RunScreen runId={route.id} />
         : route.name === 'model-check' ? <ModelCheckScreen runId={route.id} />
         : route.name === 'decisions' ? <main className="wide"><DecisionsScreen /></main>
+        : route.name === 'courses' ? <CoursesScreen />
+        : route.name === 'course' ? <CourseEditor id={route.id} step={route.step} ch={route.ch} />
         : route.name === 'held' ? <main className="wide"><HeldOutScreen id={route.id} status={route.status} /></main>
         : route.name === 'imports' ? <main><ImportsList /></main>
         : route.name === 'import' ? <main><ImportDetail id={route.id} /></main>
