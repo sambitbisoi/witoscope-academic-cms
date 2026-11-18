@@ -2,6 +2,17 @@
 
 Changes to real (non-test) data that Sambit approved, with what was done and where the audit trail is.
 
+## 18 Nov 2026: Q13 Course builder, Iteration 1 (plan `docs/plan-2026-11-18-q13-course-builder.md`)
+
+**Request (Sambit, 18 Nov 2026):** plan approved, "go". Board values are an editable, audited list.
+
+| Step | Result |
+|---|---|
+| Backup | `~/WitoScope/CMS-backups/real-cms-2026-11-18-pre-0045.dump` (schema `cms`, 54 tables, read-only file) |
+| Rehearsal | Fresh restore into `cms_rehearsal` (5,171 questions · 5,183 versions · 3,505 content rows) · 0045 guarded: every existing table **unchanged** except `cms_config` (+1 key `course_min_questions`) and `cms_reviews` (+4 rows: the 4 seeded boards, action `create`); reviews 1–53,583 md5 equal to real · `import:book-chapters` import #862: 282 added (NCERT math 77 · science 44 · DAV math 85 · science 76); fingerprint of every other table unchanged; a second run changed 0 · db:verify ✓ |
+| Real | The same: 0045 guarded (same allowed changes, the same 4 board rows) · `import:book-chapters` import #862: 282 added, fingerprint unchanged · db:verify ✓ (fresh connection) |
+| Content | No question, topic, chapter or Level changed. The book chapter table holds only book, class, subject, chapter number and title (bare citations) |
+
 ## 17 Nov 2026: Q23 + Q35 (plan note `docs/plan-2026-11-17-q23-q35.md`)
 
 **Request (Sambit, 17 Nov 2026):** build Q35 and Q23 and make them live in one go.
