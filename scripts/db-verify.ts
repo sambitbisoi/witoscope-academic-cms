@@ -63,7 +63,8 @@ try {
   check('cms_is_admin: security definer, stable, empty search_path, authenticated only',
     !!adm && adm.prosecdef && adm.provolatile === 's' && adm.proconfig?.[0] === 'search_path=""' && adm.auth_exec && !adm.anon_exec);
 
-  const DEFINER_ALLOWED = ['cms_is_admin', 'cms_apply_save', 'cms_set_status', 'cms_retire', 'cms_record_run', 'cms_save_job', 'cms_set_catalogue_status', 'cms_save_curriculum', 'cms_decide_override', 'cms_set_topic_review', 'cms_add_questions', 'cms_save_order', 'cms_decide_topic_class', 'cms_save_science_review', 'cms_save_content_links', 'cms_set_row_misconception_status', 'cms_save_content_row', 'cms_place_held_out', 'cms_discard_held_out', 'cms_decide_overrides'];
+  const DEFINER_ALLOWED = ['cms_is_admin', 'cms_apply_save', 'cms_set_status', 'cms_retire', 'cms_record_run', 'cms_save_job', 'cms_set_catalogue_status', 'cms_save_curriculum', 'cms_decide_override', 'cms_set_topic_review', 'cms_add_questions', 'cms_save_order', 'cms_decide_topic_class', 'cms_save_science_review', 'cms_save_content_links', 'cms_set_row_misconception_status', 'cms_save_content_row', 'cms_place_held_out', 'cms_discard_held_out', 'cms_decide_overrides',
+    'cms_save_course_board', 'cms_save_course', 'cms_set_course_status', 'cms_copy_course'];
   const badFns = fns.filter((f) => f.proconfig?.[0] !== 'search_path=""' || f.anon_exec || (f.prosecdef && !DEFINER_ALLOWED.includes(f.proname)));
   check('every cms function: empty search_path, no anon access; only the listed functions run as owner', badFns.length === 0, badFns.map((f) => f.proname).join(', '));
 
@@ -190,6 +191,32 @@ try {
       where q.subject = 'science' and v.tier is distinct from case when v.science_question_type between 1 and 3 then 'School'
         when v.science_question_type = 4 then 'Achiever' when v.science_question_type = 5 then 'Super Achiever' end`;
     check('Science tiers follow the Science question type (Q29)', st!.n === 0, `${st!.n} version(s) differ`);
+  }
+
+  // 0045 (Q13, 18 Nov 2026): Course builder. Courses only arrange CMS topics; the book chapter reference holds bare citations.
+  const [has45] = await sql`select exists (select 1 from information_schema.tables where table_schema = 'cms' and table_name = 'cms_courses') as yes`;
+  if (has45!.yes) {
+    const refCols = (await sql`select column_name from information_schema.columns where table_schema = 'cms' and table_name = 'cms_ref_book_chapters' order by 1`).map((r) => r.column_name as string);
+    check('book chapter reference holds only book, class, subject, chapter number and title (bare citations)',
+      refCols.join() === ['book', 'book_title', 'ch_name', 'ch_no', 'class', 'import_id', 'ref_id', 'subject', 'updated_at'].join(), refCols.join(', '));
+    const [cx] = await sql`
+      select (select count(*) from cms.cms_course_topic_items i join cms.cms_courses c on c.course_id = i.course_id
+               join cms.cms_topics t on t.topic_id = i.topic_id join cms.cms_chapters ch on ch.chapter_id = t.chapter_id
+               where i.removed_at is null and (t.topic_kind <> 'normal' or ch.subject <> c.subject))::int as bad_topic,
+             (select count(*) from cms.cms_course_achievers a join cms.cms_courses c on c.course_id = a.course_id
+               join cms.cms_chapters ch on ch.chapter_id = a.chapter_id where a.removed_at is null and (c.subject <> 'math' or ch.subject <> c.subject))::int as bad_ach,
+             (select count(*) from cms.cms_course_topic_items i join cms.cms_course_topics t on t.course_topic_id = i.course_topic_id
+               where i.removed_at is null and t.status <> 'active')::int as on_retired,
+             (select count(*) from cms.cms_courses c where not exists (select 1 from cms.cms_reviews r where r.target = 'course'
+               and r.target_table = 'cms_courses' and r.target_id = c.course_id and r.action = 'create'))::int as unaudited`;
+    check('courses (0045): CMS topics of the course subject, Achievers only on Math, no links on retired display topics, every course audited',
+      cx!.bad_topic === 0 && cx!.bad_ach === 0 && cx!.on_retired === 0 && cx!.unaudited === 0,
+      `${cx!.bad_topic} wrong topics, ${cx!.bad_ach} wrong Achievers links, ${cx!.on_retired} links on retired topics, ${cx!.unaudited} courses without a create row`);
+    const pub = await sql`select c.course_id, count(e.kind)::int as n from cms.cms_courses c cross join lateral cms.cms_course_errors(c.course_id) e
+                           where c.status = 'published' group by c.course_id`;
+    check('info: published courses with an open ✗ check (e.g. a CMS topic retired since)', true, pub.length ? pub.map((p) => `${p.course_id} ${p.n}`).join(', ') : 'none');
+    const [rb] = await sql`select count(*)::int as n from cms.cms_ref_book_chapters`;
+    check('info: book chapter reference loaded (npm run import:book-chapters)', true, `${rb!.n} chapters`);
   }
 
   const [admin] = await sql`select value #>> '{}' as id from cms.cms_config where key = 'admin_user_id'`;
