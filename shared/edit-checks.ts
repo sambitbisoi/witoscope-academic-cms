@@ -8,6 +8,7 @@
 import { checkFile, type Catalog } from './checks.ts';
 import { SETTING_FAMILIARITY, type Answer, type ChapterFile, type Problem, type Question } from './types.ts';
 import { driverRangeMessage, SCIENCE_DRIVERS } from './science.ts';
+import { typedTimeProblems } from './typed-time.ts';
 
 export interface RowItemRef { row_id: string; item_no: number; text: string; status: string }
 export interface EditCheckContext {
@@ -19,7 +20,7 @@ export interface EditCheckContext {
 }
 
 const OPTION_COUNT: Partial<Record<Answer['format'], number>> = { 'MCQ-4': 4, 'MCQ-3': 3, 'True/False': 2 };
-const SCIENCE_FORMATS: Answer['format'][] = ['MCQ-4', 'MCQ-3', 'True/False', 'Typed-number', 'Typed-decimal', 'Typed-fraction', 'Typed-text'];
+const SCIENCE_FORMATS: Answer['format'][] = ['MCQ-4', 'MCQ-3', 'True/False', 'Typed-number', 'Typed-decimal', 'Typed-fraction', 'Typed-text', 'Typed-time'];
 
 export function checkEdit(q: Question, ctx: EditCheckContext): Problem[] {
   if (ctx.subject !== 'science') {
@@ -50,6 +51,10 @@ function checkScience(q: Question, ctx: EditCheckContext): Problem[] {
     if (opts.some((o) => !o.trim())) err('an option is empty');
     if (new Set(opts).size !== opts.length) err('options repeat a value');
     if (!opts.includes(a.correct)) err(`correct answer "${a.correct}" is not one of the options`);
+  } else if (a.format === 'Typed-time') {
+    const t = typedTimeProblems(a);
+    for (const m of t.errors) err(m);
+    for (const m of t.warnings) warn(m);
   } else if (!a.correct.trim()) err('the correct answer is empty');
   for (const w of a.wrong_answers ?? []) {
     if (w.value === a.correct) err('the correct answer is also tagged as wrong');

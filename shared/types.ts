@@ -1,6 +1,6 @@
 // Shared types (scripts, web app, tests).
 // Types for a chapter file (schema/chapter.schema.json, cms-chapter/1.0).
-export type Format = 'MCQ-4' | 'MCQ-3' | 'True/False' | 'Typed-number' | 'Typed-decimal' | 'Typed-fraction' | 'Typed-text' | 'Multi-part';
+export type Format = 'MCQ-4' | 'MCQ-3' | 'True/False' | 'Typed-number' | 'Typed-decimal' | 'Typed-fraction' | 'Typed-text' | 'Typed-time' | 'Multi-part';
 export type WrongTag = 'misconception' | 'concept_error' | 'shortcut' | 'partial' | 'lost_step' | 'used_irrelevant' | 'misread' | 'unit_slip' | 'implausible';
 
 export interface WrongAnswer { value: string; tag: WrongTag; misconception_id?: string; target_concept_id?: string; why?: string;

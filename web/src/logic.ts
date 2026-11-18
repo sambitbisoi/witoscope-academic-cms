@@ -1,4 +1,5 @@
 // Pure helpers for Browse (no React, no network): unit-tested in tests/browse-logic.test.ts.
+import { formatTime, parseTime, typedTimeProblems } from '../../shared/typed-time.ts';
 
 export type Subject = 'math' | 'science' | 'grammar';
 export const SUBJECTS: { id: Subject; label: string; prefix: string }[] = [
@@ -255,7 +256,7 @@ export function matchesFlag(f: FlagFilter, q: Flagged): boolean {
 }
 
 /** The formats a question added by hand or uploaded may have (no Multi-part). */
-export const ADD_FORMATS = ['MCQ-4', 'MCQ-3', 'True/False', 'Typed-number', 'Typed-decimal', 'Typed-fraction', 'Typed-text'] as const;
+export const ADD_FORMATS = ['MCQ-4', 'MCQ-3', 'True/False', 'Typed-number', 'Typed-decimal', 'Typed-fraction', 'Typed-text', 'Typed-time'] as const;
 export const DIFFICULTIES = ['Simple', 'Medium', 'Complex'] as const;
 /** A new question as the form or one Excel row gives it (the topic is fixed by where you are). */
 export interface NewQuestion {
@@ -279,6 +280,7 @@ export function mandatoryErrors(q: NewQuestion): string[] {
   if (n && opts.length !== n) e.push(`${q.format} needs ${n} options (has ${opts.length})`);
   if (n && opts.length === n && q.correct?.trim() && !opts.includes(q.correct.trim())) e.push('the correct answer must be one of the options');
   if (q.format === 'True/False' && q.correct?.trim() && !['True', 'False'].includes(q.correct.trim())) e.push('a True/False answer must be True or False');
+  if (q.format === 'Typed-time' && q.correct?.trim()) e.push(...typedTimeProblems({ correct: q.correct.trim() }).errors);
   if (q.level === null || !Number.isInteger(q.level) || q.level < 1 || q.level > 6) e.push('level must be 1–6');
   if (q.picture_needed === null) e.push('"Picture needed" must be Y or N');
   if (q.picture_needed && !q.figure_description?.trim()) e.push('a picture is needed, so the figure description is required');
@@ -288,7 +290,7 @@ export function mandatoryErrors(q: NewQuestion): string[] {
 /** The Excel template's columns, in order (the topic is fixed by where you upload, so there is no topic column). */
 export const UPLOAD_COLUMNS: { key: string; header: string; required: boolean; help: string }[] = [
   { key: 'text', header: 'Question text', required: true, help: 'The question as the child reads it.' },
-  { key: 'format', header: 'Format', required: true, help: `One of: ${'MCQ-4, MCQ-3, True/False, Typed-number, Typed-decimal, Typed-fraction, Typed-text'}.` },
+  { key: 'format', header: 'Format', required: true, help: `One of: ${'MCQ-4, MCQ-3, True/False, Typed-number, Typed-decimal, Typed-fraction, Typed-text, Typed-time'} (Typed-time: the answer is h:mm, e.g. 7:30; no a.m./p.m.).` },
   { key: 'a', header: 'Option A', required: false, help: 'MCQ only: MCQ-4 needs A–D, MCQ-3 needs A–C. True/False fills its options itself.' },
   { key: 'b', header: 'Option B', required: false, help: 'MCQ only.' },
   { key: 'c', header: 'Option C', required: false, help: 'MCQ only.' },
@@ -326,6 +328,14 @@ export const EXAMPLE_MARK = 'EXAMPLE';
 /** IDs the topic knows, to check an upload's optional IDs against. */
 export interface UploadLookups { concepts: Set<string>; sets: Set<string>; patterns: Map<string, string>; settings: Set<string>; sourceItems: Set<string>; contentRows?: Set<string> }
 export interface ParsedRow { row: number; q: NewQuestion | null; errors: string[]; warnings: string[]; example?: boolean }
+/** Q36: a Typed-time answer as written in a sheet (07:30, 7:30, or an Excel time fraction 0.3125) → h:mm; anything else is kept as written. */
+export function normaliseTime(s: string): string {
+  const t = parseTime(s);
+  if (t) return formatTime(t);
+  const f = Number(s);
+  if (/^0?\.\d+$/.test(s.trim()) && f > 0 && f < 1) { const mins = Math.round(f * 24 * 60); return formatTime({ h: Math.floor(mins / 60) % 24, m: mins % 60 }); }
+  return s;
+}
 const cellText = (v: unknown) => (v === null || v === undefined ? '' : String(v).trim());
 const splitList = (s: string, sep: RegExp) => s.split(sep).map((x) => x.trim()).filter(Boolean);
 
@@ -342,6 +352,7 @@ export function parseUploadRow(row: number, cells: Record<string, unknown>, look
   let correct = c('correct');
   if (fmt.startsWith('MCQ') && /^[A-D]$/i.test(correct)) { const i = correct.toUpperCase().charCodeAt(0) - 65; if (options[i]) correct = options[i]!; }
   if (fmt === 'True/False') correct = /^t(rue)?$/i.test(correct) ? 'True' : /^f(alse)?$/i.test(correct) ? 'False' : correct;
+  if (fmt === 'Typed-time') correct = normaliseTime(correct);
   const lv = c('level');
   const level = /^[1-6]$/.test(lv) ? Number(lv) : lv === '' ? null : NaN;
   const pic = c('picture').toUpperCase();

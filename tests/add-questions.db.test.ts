@@ -76,6 +76,16 @@ describe('cms_add_questions', () => {
     expect(opts.map((o) => o.text)).toEqual(['True', 'False']);
   });
 
+  it('Q36 (0046): Typed-time is stored h:mm with no options; another shape is refused; the CHECK accepts the format', async () => {
+    const r = await add({ topic_id: 'MT9970', origin: 'manual', questions: [{ row: 1, text: 'The clock shows half past seven. Write the time.', format: 'Typed-time', correct: '7:30', level: 6, picture_needed: false }] });
+    const [v] = await owner`select v.format, v.correct, (select count(*)::int from cms.cms_version_options o where o.version_id = v.version_id) n_opts from cms.cms_question_versions v where v.question_id = ${r.added[0]!.question_id}`;
+    expect(v).toEqual({ format: 'Typed-time', correct: '7:30', n_opts: 0 });
+    for (const bad of ['07:30', '7:30 am', '7.30', '24:00'])
+      await expect(add({ topic_id: 'MT9970', origin: 'manual', questions: [{ row: 1, text: 'Write the time.', format: 'Typed-time', correct: bad, level: 6, picture_needed: false }] })).rejects.toThrow(/Typed-time answer must be h:mm/);
+    const [c] = await owner`select pg_get_constraintdef(oid) d from pg_constraint where conname = 'cms_version_parts_format_check'`;
+    expect(c!.d).toContain('Typed-time');
+  });
+
   it('refuses missing mandatory fields and a non-admin', async () => {
     await expect(add({ topic_id: 'MT9970', origin: 'manual', questions: [mcq({ picture_needed: true })] })).rejects.toThrow(/figure description is required/);
     await expect(add({ topic_id: 'MT9970', origin: 'manual', questions: [mcq({ correct: '7' })] })).rejects.toThrow(/one of the options/);

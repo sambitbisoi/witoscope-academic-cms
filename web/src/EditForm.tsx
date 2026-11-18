@@ -12,8 +12,9 @@ import { scienceDerive } from '../../shared/science-derive.ts';
 import { scienceWarnings } from '../../shared/science-warnings.ts';
 import { ScienceDerivedKV } from './ScienceDerivedKV';
 import { TAG_LABEL } from './logic';
+import { TimeBoxesInput } from './TimeBoxes';
 
-const FORMATS: Answer['format'][] = ['MCQ-4', 'MCQ-3', 'True/False', 'Typed-number', 'Typed-decimal', 'Typed-fraction', 'Typed-text', 'Multi-part'];
+const FORMATS: Answer['format'][] = ['MCQ-4', 'MCQ-3', 'True/False', 'Typed-number', 'Typed-decimal', 'Typed-fraction', 'Typed-text', 'Typed-time', 'Multi-part'];
 const OPTION_COUNT: Partial<Record<Answer['format'], number>> = { 'MCQ-4': 4, 'MCQ-3': 3, 'True/False': 2 };
 const TAGS = Object.keys(TAG_LABEL) as WrongAnswer['tag'][];
 const clone = <T,>(x: T): T => structuredClone(x);
@@ -262,7 +263,9 @@ function AnswerEditor({ a, onChange, lists, science }: { a: Answer; onChange: (f
         </table>
       ) : (
         <div className="form-grid">
-          <label>Correct answer<input value={a.correct} onChange={(e) => onChange((x) => { x.correct = e.target.value; })} /></label>
+          {a.format === 'Typed-time'
+            ? <label>Correct answer (hh : mm)<TimeBoxesInput value={a.correct} onChange={(v) => onChange((x) => { x.correct = v; })} /></label>
+            : <label>Correct answer<input value={a.correct} onChange={(e) => onChange((x) => { x.correct = e.target.value; })} /></label>}
           <label className="wide">Also accepted (separate with |)<input value={(a.accepted ?? []).join(' | ')} onChange={(e) => onChange((x) => { x.accepted = e.target.value.split('|').map((s) => s.trim()).filter(Boolean); })} /></label>
         </div>
       )}

@@ -289,7 +289,7 @@ export async function runScience(sql: Sql, master: Master, report: ScienceReport
 
       const writeVersion = async (q: MasterQuestion, questionId: string, versionId: number) => {
         const choices = q.format === 'True/False' ? ['True', 'False'] : q.options;
-        await tx`insert into cms.cms_version_options ${tx(choices.map((o, i) => ({ version_id: versionId, part_label: '', position: i + 1, text: o, is_correct: o === q.correct })) as never[])}`;
+        if (choices.length) await tx`insert into cms.cms_version_options ${tx(choices.map((o, i) => ({ version_id: versionId, part_label: '', position: i + 1, text: o, is_correct: o === q.correct })) as never[])}`;
         if (q.explanation) await tx`insert into cms.cms_version_solutions (version_id, slot, text) values (${versionId}, 1, ${q.explanation})`;
         const cs = q.citations.map((c) => ({ version_id: versionId, source_id: c.source_id, page_from: c.page_from, page_to: c.page_to, raw: c.raw, for_row_id: c.for_row_id ?? null }));
         if (cs.length) await tx`insert into cms.cms_citations ${tx(cs as never[])}`;
@@ -365,7 +365,7 @@ export async function runScience(sql: Sql, master: Master, report: ScienceReport
         if (!q.option_tags) return;
         await tx`delete from cms.cms_version_wrong_answers where version_id = ${versionId}`;
         const choices = q.format === 'True/False' ? ['True', 'False'] : q.options;
-        const ws = q.option_tags.flatMap((t, i) => !t ? [] : [{ version_id: versionId, part_label: '', value: choices[i]!, option_position: i + 1, tag: t.tag,
+        const ws = q.option_tags.flatMap((t, i) => !t || choices[i] === undefined ? [] : [{ version_id: versionId, part_label: '', value: choices[i]!, option_position: i + 1, tag: t.tag,
           mc_row_id: t.tag === 'misconception' ? t.ref!.split(' #')[0]! : null, mc_item_no: t.tag === 'misconception' ? Number(t.ref!.split(' #')[1]) : null,
           target_row_id: t.tag === 'concept_error' ? t.ref : null }]);
         if (ws.length) await tx`insert into cms.cms_version_wrong_answers ${tx(ws as never[])}`;

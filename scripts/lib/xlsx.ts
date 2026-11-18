@@ -11,7 +11,8 @@ export function cellValue(v: unknown): Cell {
   if (v === null || v === undefined) return null;
   if (typeof v === 'string') return v.trim() === '' ? null : v.trim();
   if (typeof v === 'number' || typeof v === 'boolean') return v;
-  if (v instanceof Date) return v.toISOString().slice(0, 10);
+  // Q36: a time-of-day cell (Excel day 0 = 30 Dec 1899) reads back as h:mm, the Typed-time answer form
+  if (v instanceof Date) return v.toISOString().startsWith('1899-12-30') ? `${v.getUTCHours()}:${String(v.getUTCMinutes()).padStart(2, '0')}` : v.toISOString().slice(0, 10);
   if (typeof v === 'object') {
     const o = v as Record<string, unknown>;
     if (Array.isArray(o.richText)) return cellValue((o.richText as { text: string }[]).map((t) => t.text).join(''));

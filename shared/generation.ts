@@ -27,7 +27,8 @@ export const DRAFT_SCHEMA = {
       'solution_school', 'solution_second', 'solution_second_type', 'solution_second_strategy', 'hints', 'tagging_why', 'tagging_summary'],
     properties: {
       text: str, figure_description: str,
-      format: { type: 'string', enum: ['MCQ-4', 'MCQ-3', 'True/False', 'Typed-number', 'Typed-decimal', 'Typed-fraction', 'Typed-text'] },
+      format: { type: 'string', enum: ['MCQ-4', 'MCQ-3', 'True/False', 'Typed-number', 'Typed-decimal', 'Typed-fraction', 'Typed-text', 'Typed-time'],
+        description: 'Typed-time (Q36): a clock time the child types in two boxes hh : mm; correct is h:mm (7:30, 11:05; no leading zero on the hours, no a.m./p.m.); options empty.' },
       options: { type: 'array', items: str }, correct: str, accepted: { type: 'array', items: str },
       wrong_answers: { type: 'array', items: wrong }, concepts: { type: 'array', items: conceptRef },
       signature: { type: 'object', additionalProperties: false,

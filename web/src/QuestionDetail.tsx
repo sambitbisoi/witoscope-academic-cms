@@ -16,6 +16,7 @@ import { Id } from './Id';
 import { scienceDetail, type ScienceDetail } from './scienceApi';
 import { rankLabel, scienceBlockers } from './scienceLogic';
 import { ScienceReview } from './ScienceReview';
+import { TimeBoxes } from './TimeBoxes';
 
 /** A keyboard review command from Browse (D6): A approve · R reject · F needs review. */
 export interface ReviewCommand { kind: 'approve' | 'reject' | 'flag'; n: number }
@@ -99,6 +100,7 @@ export function QuestionDetail({ id, versionNo, onVersion, onEdit, reloadKey = 0
                 </div>
               ) : (
                 <div className="typed small">
+                  {a.format === 'Typed-time' && <div className="time-preview"><TimeBoxes value={a.correct ?? ''} /> <span className="muted">two boxes, hh : mm (checked per box: 3 = 03; no a.m./p.m.)</span></div>}
                   {a.text ? '' : labelOf(a.part)}Answer: <strong>{a.correct}</strong> <span className="muted">({a.format}{a.accepted?.length ? `; also accepted: ${a.accepted.join(', ')}` : ''})</span>
                   {wrong.length > 0 && (
                     <ul className="wrong-list">{wrong.map((w, i) => <li key={i}><strong>{w.value}</strong> — <Tag w={w} d={d} /></li>)}</ul>
@@ -546,6 +548,7 @@ function ScienceBody({ d, x, err, isCurrent, onVersion, onSaved, actions }: { d:
         <div className="stem">{v.text}</div>
         {v.image_path && <FigureImage path={v.image_path} alt={v.figure_description ?? 'Figure'} />}
         {v.figure_description && <div className="figure small prewrap"><span className="tag">{v.image_status === 'has_image' ? 'Image' : 'Image needed'}</span> {v.figure_description}</div>}
+        {v.format === 'Typed-time' && <div className="typed small"><TimeBoxes value={v.correct ?? ''} /> <span className="muted">Typed-time · answer {v.correct}{v.accepted?.length ? `; also accepted: ${v.accepted.join(', ')}` : ''}</span></div>}
         <div className="options">
           {d.options.filter((o) => o.part_label === '').map((o) => (
             <div key={o.position} className={`option ${o.is_correct ? 'correct' : ''}`}><span className="opt-label">{String.fromCharCode(64 + o.position)} · {o.text}{o.is_correct ? ' ✓' : ''}</span>
