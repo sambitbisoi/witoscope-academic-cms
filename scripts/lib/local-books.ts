@@ -6,7 +6,7 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { BookItem, BookPage } from '../../shared/originality.ts';
-import { pdfStem } from './sources.ts';
+import { bookSourceId } from './sources.ts';
 
 export const CONTENT_ROOT = process.env.CMS_CONTENT_ROOT ?? join(homedir(), 'WitoScope', 'ContentResearch');
 
@@ -41,10 +41,9 @@ export function localBookItems(root = CONTENT_ROOT): Map<string, { file: string;
   const m = new Map<string, { file: string; items: BookItem[] }[]>();
   for (const file of walk(join(root, 'QuestionBank'), (n) => n.endsWith('.book.json'))) {
     try {
-      const b = JSON.parse(readFileSync(file, 'utf8')) as { source?: { publisher?: string; file_path?: string }; items?: { ref_id?: string; text?: string }[] };
-      const stem = pdfStem(b.source?.file_path ?? '');
-      if (!stem) continue;
-      const id = `${b.source?.publisher ?? 'NCERT'}-${stem}`;
+      const b = JSON.parse(readFileSync(file, 'utf8')) as { source?: { publisher?: string; file_path?: string; book_title?: string; book_class?: number }; items?: { ref_id?: string; text?: string }[] };
+      const id = bookSourceId(b.source);
+      if (!id) continue;
       const items = (b.items ?? []).filter((i) => i.ref_id && i.text).map((i) => ({ ref_id: i.ref_id!, text: i.text! }));
       m.set(id, [...(m.get(id) ?? []), { file, items }]);
     } catch { /* not a book file; skipped */ }

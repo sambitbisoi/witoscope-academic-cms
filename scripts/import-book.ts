@@ -2,7 +2,8 @@
 //
 // Imports one cms-book-chapter file (D3): updates the source's page offset, sets
 // the page range on its chapter links, adds jump links per section, and loads the
-// item CITATIONS (ref_id, page, section, item label, topic). The item text and
+// item CITATIONS (ref_id, page, section, item label, topic). A non-NCERT source not yet in the CMS is registered
+// from the file (ID, kind, title, publisher, class; 18 Nov 2026). The item text and
 // numbers stay in the file on this Mac and are never sent to the database. NCERT sources must already be
 // registered (npm run import:sources). Audited; never deletes.
 import { createHash } from 'node:crypto';
@@ -47,7 +48,10 @@ try {
     }
     const opts = { byLabel: 'book importer', importId, reason: `book file ${file}` };
     // the source: only page_offset is this importer's (the registry owns title/url)
-    const rs = await upsertCatalogue(tx, 'cms_sources', ['source_id'], [{ source_id: p.source.source_id, page_offset: p.source.page_offset }], { ...opts, scope: { col: 'source_id', value: p.source.source_id } });
+    // a non-NCERT book (e.g. DAV Math, 18 Nov 2026) not registered yet is registered here: ID, kind, title, publisher, class (no URL)
+    const row = existing ? { source_id: p.source.source_id, page_offset: p.source.page_offset }
+      : { source_id: p.source.source_id, kind: p.source.kind, title: p.source.title, publisher: p.source.publisher, class: p.source.class, page_offset: p.source.page_offset };
+    const rs = await upsertCatalogue(tx, 'cms_sources', ['source_id'], [row], { ...opts, scope: { col: 'source_id', value: p.source.source_id } });
     counts.cms_sources = rs.counts;
     const rl = await upsertCatalogue(tx, 'cms_source_chapters', ['source_id', 'chapter_id'], p.links, { ...opts, scope: { col: 'source_id', value: p.source.source_id } });
     counts.cms_source_chapters = rl.counts;
