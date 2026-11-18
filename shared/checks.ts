@@ -1,6 +1,7 @@
 // Importer checks beyond the JSON schema (design §8), in plain words, per key.
 // Pure: the database is passed in as a Catalog snapshot.
 import type { Answer, ChapterFile, ConceptRef, PlacementCode, Problem, Question } from './types.ts';
+import { typedTimeProblems } from './typed-time.ts';
 
 export interface TopicInfo { chapter_id: string; class: number; topic_kind: 'normal' | 'achievers'; taught_in_school: boolean; status: string }
 export interface Catalog {
@@ -111,6 +112,11 @@ export function checkFile(file: ChapterFile, cat: Catalog, opts: { gold?: boolea
         // valid and never blocks an import or approval (it was an error under v11).
         for (const w of a.wrong_answers ?? []) if (!opts.includes(w.value)) warn(k, `${where}wrong answer "${w.value}" is not one of the options`);
         if ((a.wrong_answers ?? []).some((w) => w.value === a.correct)) err(k, `${where}the correct answer is also tagged as wrong`);
+      } else if (a.format === 'Typed-time') {
+        // Q36: answer h:mm; the child types two boxes hh : mm, checked numerically per box
+        const t = typedTimeProblems(a);
+        for (const m of t.errors) err(k, `${where}${m}`);
+        for (const m of t.warnings) warn(k, `${where}${m}`);
       } else if (a.options?.length) {
         warn(k, `${where}${a.format} has options; they are ignored for typed answers`);
       }

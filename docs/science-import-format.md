@@ -10,6 +10,8 @@ The Science file is the workbook `import:science -- <file.xlsx> --from-excel` re
 
 `File` · `Class` · `Q ID` · `Content row ID(s)` · `Direct row ID(s)` · `Topic ID` · `Row class` · `Row type` · `Level` · `Format` · `Question` · `Option A` · `B` · `C` · `D` · `Answer` · `Explanation` · `Misconception targeted` · `Picture needed (Y/N)` · `Image brief (question)` · `Image briefs (options)` · `Safety note` · `Taught in` · `Confidence` · `Notes`
 
+Format **Typed-time** (Q36, 18 Nov 2026): leave Option A–D blank and put the time itself in `Answer` as h:mm (e.g. 7:30; 07:30 is stored 7:30; no a.m./p.m.). The child types two boxes hh : mm; each box is checked as a number (3 = 03).
+
 - **Level** is the retired authored tier (L1–L3). It may now be **blank**. When given, it is kept read-only as the legacy tier (Q27). New files should leave it blank and set the Science question type.
 - **Explanation** becomes Solution 1. Approval needs it.
 

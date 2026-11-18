@@ -46,7 +46,7 @@
       "enum": ["Pattern", "Work backwards", "Table / list", "Cases", "Guess and check", "Draw / bar model", "Eliminate", "Logic / clues", "Simplify", "Smart calculation", "Unitary method", "Odd / even (parity)", "Act it out / model", "Other"]
     },
     "format": {
-      "enum": ["MCQ-4", "MCQ-3", "True/False", "Typed-number", "Typed-decimal", "Typed-fraction", "Typed-text", "Multi-part"]
+      "enum": ["MCQ-4", "MCQ-3", "True/False", "Typed-number", "Typed-decimal", "Typed-fraction", "Typed-text", "Typed-time", "Multi-part"]
     },
     "why": {
       "type": "object",

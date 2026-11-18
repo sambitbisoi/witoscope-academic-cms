@@ -245,10 +245,14 @@ export function resolveCitation(c: CellCitation, rowClass: number, books: Legend
 const clip = (s: string) => (s.length <= 80 ? s : `${s.slice(0, 79)}…`);
 
 // ---------------------------------------------------------------- question mapping
-/** The stored format: four options → MCQ-4; True/False (options A–B) → True/False. */
-export function storedFormat(sheetFormat: string, options: (string | null)[]): 'MCQ-4' | 'True/False' {
+/** The stored format: four options → MCQ-4; True/False (options A–B) → True/False; Typed-time (Q36, no options) → Typed-time. */
+export function storedFormat(sheetFormat: string, options: (string | null)[]): 'MCQ-4' | 'True/False' | 'Typed-time' {
   const n = options.filter((o) => o !== null).length;
   if (/^true\s*\/\s*false$/i.test(sheetFormat.trim())) return 'True/False';
+  if (/^typed[\s-]*time$/i.test(sheetFormat.trim())) {
+    if (n) throw new Error(`format "${sheetFormat}" takes no options (the child types hh : mm); found ${n}`);
+    return 'Typed-time';
+  }
   if (n === 4) return 'MCQ-4';
   throw new Error(`format "${sheetFormat}" with ${n} options is not MCQ-4 or True/False`);
 }

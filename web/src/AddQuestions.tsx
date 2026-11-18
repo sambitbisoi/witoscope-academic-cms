@@ -195,7 +195,8 @@ async function excel(): Promise<ExcelMod> {
 function cellValue(v: unknown): string {
   if (v === null || v === undefined) return '';
   if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') return String(v).trim();
-  if (v instanceof Date) return v.toISOString().slice(0, 10);
+  // Q36: Excel stores a typed "7:30" as a time of day on 30 Dec 1899; read it back as h:mm (the Typed-time answer)
+  if (v instanceof Date) return v.toISOString().startsWith('1899-12-30') ? `${v.getUTCHours()}:${String(v.getUTCMinutes()).padStart(2, '0')}` : v.toISOString().slice(0, 10);
   if (typeof v === 'object') {
     const o = v as Record<string, unknown>;
     if (Array.isArray(o.richText)) return (o.richText as { text: string }[]).map((t) => t.text).join('').trim();

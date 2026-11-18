@@ -7,6 +7,7 @@ import {
   questionLinks, resolveCitation, sheetStatus, sourcesFromLegend, storedFormat, str, taughtIn, TIERS, yn, familiarity, FAMILIARITY, goldUse, optionTag, scienceType, scienceDrivers, WRONG_TAGS, type LegendBook, type RowStatus, type ScienceSource,
 } from '../../shared/science.ts';
 import { stableJson } from '../../shared/json.ts';
+import { formatTime, parseTime, typedTimeProblems } from '../../shared/typed-time.ts';
 import { readWorkbook } from './xlsx.ts';
 
 export interface Citation { source_id: string; page_from: number; page_to: number; raw: string; for_row_id?: string }
@@ -21,7 +22,7 @@ export interface MasterRow {
   citations: Citation[]; sheet_status: RowStatus | null; sheet: number;
 }
 export interface MasterQuestion {
-  qid: string; topic_id: string; row_class: number; tier: string; sheet_format: string; format: 'MCQ-4' | 'True/False'; text: string; options: string[]; correct: string;
+  qid: string; topic_id: string; row_class: number; tier: string; sheet_format: string; format: 'MCQ-4' | 'True/False' | 'Typed-time'; text: string; options: string[]; correct: string;
   explanation: string | null; misconception_targeted: string | null; picture_needed: boolean; figure_description: string | null; safety_note: string | null;
   confidence: string | null; notes: string | null; links: { row_id: string; role: 'direct' | 'supporting' }[]; citations: Citation[]; sheet: number; hash: string;
   /** Q34 (Round 2): optional columns. Each is null when blank; option_tags is null when the file has no Tag columns
@@ -114,13 +115,16 @@ export async function readMaster(path: string): Promise<Master> {
     const letter = str(v.Answer)?.toUpperCase() ?? '';
     const tier = str(v.Level) ?? '';
     const sheetFormat = str(v.Format) ?? '';
-    let format: 'MCQ-4' | 'True/False' = 'MCQ-4';
+    let format: 'MCQ-4' | 'True/False' | 'Typed-time' = 'MCQ-4';
     try { format = storedFormat(sheetFormat, options); } catch (e) { err(where, (e as Error).message); }
     const opts = options.filter((o): o is string => o !== null);
     const idx = 'ABCD'.indexOf(letter);
     // Q27/Q34: the authored tier is retired; a new file may leave Level blank (kept as science_tier_legacy when given)
     if (tier && !(TIERS as readonly string[]).includes(tier)) err(where, `Level "${tier}" is not L1, L2 or L3 (or blank)`);
-    if (idx < 0 || idx >= opts.length) err(where, `Answer "${letter}" is not one of the options`);
+    // Q36: a Typed-time row gives the time itself in Answer (h:mm; 07:30 is stored 7:30), not an option letter
+    const timeAnswer = format === 'Typed-time' ? (parseTime(str(v.Answer)) ? formatTime(parseTime(str(v.Answer))!) : (str(v.Answer) ?? '')) : null;
+    if (timeAnswer !== null) for (const m of typedTimeProblems({ correct: timeAnswer }).errors) err(where, m);
+    else if (idx < 0 || idx >= opts.length) err(where, `Answer "${letter}" is not one of the options`);
     const text = str(v.Question);
     if (!text) err(where, 'Question is empty');
     const pic = yn(v['Picture needed (Y/N)']);
@@ -134,7 +138,7 @@ export async function readMaster(path: string): Promise<Master> {
     let citations: Citation[] = [];
     try { citations = cite(taughtIn(v['Taught in']), rowClass, where); } catch (e) { err(where, (e as Error).message); }
     // True/False: options A–B are "True"/"False" in the sheet; the CMS stores the same two
-    const correct = format === 'True/False' ? (opts[idx] ?? '') : (opts[idx] ?? '');
+    const correct = timeAnswer ?? (opts[idx] ?? '');
     if (format === 'True/False' && !['True', 'False'].includes(correct)) err(where, `a True/False answer must be "True" or "False" (it is "${correct}")`);
     const q: Omit<MasterQuestion, 'hash'> = {
       qid, topic_id: str(v['Topic ID']) ?? '', row_class: rowClass, tier, sheet_format: sheetFormat, format, text: text ?? '', options: opts, correct,
