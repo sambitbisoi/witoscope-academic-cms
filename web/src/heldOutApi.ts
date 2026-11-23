@@ -15,6 +15,7 @@ export interface HeldItem {
   reason_code: string; reason: string; recommended_topic_id: string | null; question: Question;
   catalogue: { concepts: Record<string, unknown>[]; misconceptions: Record<string, unknown>[]; typical_sets: Record<string, unknown>[]; patterns: Record<string, unknown>[] };
   proposed_by: string | null; originality: { result: string; similarity: number | null; same_numbers: boolean; closest_ref: string | null; field: string | null } | null;
+  run_id: number | null;   // Q38: from a generation run (question = the pack item)
   status: 'held' | 'placed' | 'discarded'; placed_question_id: string | null; placed_topic_id: string | null; decided_at: string | null; note: string | null; created_at: string;
 }
 const must = <T>(r: { data: unknown; error: { message: string } | null }): T => { if (r.error) throw new Error(r.error.message); return r.data as T; };
@@ -23,6 +24,7 @@ export const REASON_LABEL: Record<string, string> = {
   topic_missing: 'Topic not in the CMS', achievers_missing: 'Achievers row missing', topic_retired: 'Topic retired', topic_class: 'Topic in another class',
   topic_chapter: 'Topic in another chapter', typical_set_missing: 'Typical set missing', typical_set_class: 'Typical set in another class',
   pattern_missing: 'Pattern missing', concept_missing: 'Concept missing', misconception_missing: 'Misconception missing', row_missing: 'Content row missing', other_placement: 'Other placement',
+  setting_missing: 'Setting missing', class_not_linked: 'Topic not linked to the class',
 };
 
 export const heldItems = () => all<HeldItem>((a, b) => supabase.from('cms_held_out').select('*').order('created_at', { ascending: false }).order('held_id').range(a, b));
@@ -91,4 +93,10 @@ export async function placeHeld(payload: Record<string, unknown>, note: string |
 export async function discardHeld(heldId: number, reason: string) {
   const { error } = await supabase.rpc('cms_discard_held_out', { p_held_id: heldId, p_reason: reason });
   if (error) throw new Error(error.message);
+}
+/** Q38: a held item from a generation run is placed with the same writer as the pack import (same checks, audit). */
+export async function placeGenerated(heldId: number, topicId: string | null, note: string | null) {
+  const { data, error } = await supabase.rpc('cms_gen_place_held', { p: { held_id: heldId, ...(topicId ? { topic_id: topicId } : {}), note } });
+  if (error) throw new Error(error.message);
+  return data as { question_id: string; import_id: number };
 }

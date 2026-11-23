@@ -3,7 +3,7 @@
 // import) or Discard (kept, audited). Near-copies are never here (they stay on the Mac).
 import { useEffect, useMemo, useState } from 'react';
 import { Id } from './Id';
-import { discardHeld, heldItems, placeHeld, placeTopics, preparePlace, REASON_LABEL, type HeldItem } from './heldOutApi';
+import { discardHeld, heldItems, placeGenerated, placeHeld, placeTopics, preparePlace, REASON_LABEL, type HeldItem } from './heldOutApi';
 import type { Problem } from '../../shared/types.ts';
 
 const go = (id: number | null, status: string) => { location.hash = `#/held-out?${new URLSearchParams({ ...(id ? { id: String(id) } : {}), ...(status !== 'held' ? { status } : {}) })}`; };
@@ -45,7 +45,8 @@ export function HeldOutScreen({ id, status }: { id: number | null; status: strin
                 <Id>{h.file_key}</Id></span>
             </button></li>))}
         </ul>
-        <div className="held-detail">{open ? <HeldDetail key={open.held_id} h={open} onChanged={() => setTick((t) => t + 1)} /> : <p className="muted small">Open an item to see it and place or discard it.</p>}</div>
+        <div className="held-detail">{open ? (open.run_id ? <GeneratedDetail key={open.held_id} h={open} onChanged={() => setTick((t) => t + 1)} />
+          : <HeldDetail key={open.held_id} h={open} onChanged={() => setTick((t) => t + 1)} />) : <p className="muted small">Open an item to see it and place or discard it.</p>}</div>
       </div>
     </div>
   );
@@ -122,6 +123,61 @@ function HeldDetail({ h, onChanged }: { h: HeldItem; onChanged: () => void }) {
             <button onClick={place} disabled={busy || !check?.payload}>{busy ? 'Working…' : 'Place'}</button>
             {!discarding ? <button className="link small" onClick={() => setDiscarding(true)}>Discard…</button>
               : <button className="secondary" onClick={discard} disabled={busy || !note.trim()}>Discard {h.file_key}</button>}
+          </div>
+        </div>)}
+    </div>
+  );
+}
+
+/** Q38: a question from a generation run, held because its topic, a content row, its setting or its class link is missing.
+ *  Fix that in the CMS first (add the row, link the class, …), then Place: the same writer and checks as the pack import. */
+interface PackItem { local_id: string; topic_id: string; class: number; level?: number | null; text: string; options: string[]; answer: string; solution_1: string;
+  linked_rows: { row_id: string; role: string }[]; science_question_type?: number | null; warning_reason?: string | null }
+function GeneratedDetail({ h, onChanged }: { h: HeldItem; onChanged: () => void }) {
+  const q = h.question as unknown as PackItem;
+  const [topic, setTopic] = useState('');
+  const [note, setNote] = useState('');
+  const [discarding, setDiscarding] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [done, setDone] = useState<string | null>(null);
+  async function place() {
+    setBusy(true); setError(null);
+    try { const r = await placeGenerated(h.held_id, topic.trim() || null, note.trim() || null); setDone(`Placed as ${r.question_id} (Needs review, import #${r.import_id}).`); onChanged(); }
+    catch (e) { setError((e as Error).message); } finally { setBusy(false); }
+  }
+  async function discard() {
+    setBusy(true); setError(null);
+    try { await discardHeld(h.held_id, note.trim()); setDone('Discarded (kept in the list, audited).'); onChanged(); }
+    catch (e) { setError((e as Error).message); } finally { setBusy(false); }
+  }
+  return (
+    <div className="held-card">
+      <div className="eyebrow">{REASON_LABEL[h.reason_code] ?? h.reason_code} · held #{h.held_id} · generated</div>
+      <h2>{q.text}</h2>
+      <div className="kv small">
+        <Row k="Run">{h.batch}</Row>
+        <Row k="Topic · Class · Level">{q.topic_id} · {q.class} · {q.level ?? q.class}</Row>
+        <Row k="Reason">{h.reason}</Row>
+        <Row k="Options">{q.options.map((o, i) => <span key={i}>{'ABCD'[i]}. {o}{'ABCD'[i] === q.answer ? ' ✓' : ''}{i < q.options.length - 1 ? ' · ' : ''}</span>)}</Row>
+        <Row k="Linked rows">{q.linked_rows.map((l) => `${l.row_id} (${l.role})`).join(' · ')}</Row>
+        <Row k="Solution 1">{q.solution_1}</Row>
+        {q.warning_reason && <Row k="Warning reason">{q.warning_reason}</Row>}
+        <Row k="Originality (on the Mac)">{h.originality ? `${h.originality.result}${h.originality.similarity !== null ? ` ${h.originality.similarity}` : ''}${h.originality.closest_ref ? ` · ${h.originality.closest_ref}` : ''}` : 'not checked: it will be pending after placing'}</Row>
+        <Row k="Local ID"><span className="mono">{h.file_key}</span></Row>
+      </div>
+      {h.status !== 'held' ? <p className="small">{h.status === 'placed' ? <>Placed on {h.placed_topic_id} as <a href={`#/q/${h.placed_question_id}`}>{h.placed_question_id}</a></> : 'Discarded'} · {h.decided_at?.slice(0, 10)}{h.note ? ` · ${h.note}` : ''}</p>
+        : done ? <p className="small ok">{done}</p> : (
+        <div className="held-place" id="held-place">
+          <div className="eyebrow">Place</div>
+          <p className="small muted">Fix the reason in the CMS first (add the content row, link the topic to Class {q.class}, …). Place then writes it exactly as the import would, as Needs review.</p>
+          <label className="wide small">Topic (blank = its own, {q.topic_id})<input value={topic} onChange={(e) => setTopic(e.target.value)} placeholder={q.topic_id} /></label>
+          <label className="wide small">Note (optional for Place; required to Discard)<input value={note} onChange={(e) => setNote(e.target.value)} /></label>
+          {error && <p className="error small">{error}</p>}
+          <div className="editor-actions">
+            <button onClick={place} disabled={busy}>{busy ? 'Working…' : 'Place'}</button>
+            {!discarding ? <button className="link small" onClick={() => setDiscarding(true)}>Discard…</button>
+              : <button className="secondary" onClick={discard} disabled={busy || !note.trim()}>Discard</button>}
           </div>
         </div>)}
     </div>

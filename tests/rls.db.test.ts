@@ -68,7 +68,7 @@ afterAll(async () => {
 
 describe('catalog: every table is locked the same way', () => {
   it('has 44 tables, all with RLS enabled', async () => {
-    expect(tables).toHaveLength(61); // 0018 added cms_catalogue_proposals; 0032 the four Science tables; 0035 cms_row_misconceptions; 0038 cms_held_out; 0045 the 7 course tables
+    expect(tables).toHaveLength(62); // 0018 added cms_catalogue_proposals; 0032 the four Science tables; 0035 cms_row_misconceptions; 0038 cms_held_out; 0045 the 7 course tables; 0047 cms_generation_items
     const off = await su`select relname from pg_class c join pg_namespace n on n.oid = c.relnamespace
                          where n.nspname = 'cms' and c.relkind = 'r' and not c.relrowsecurity`;
     expect(off).toEqual([]);
@@ -132,6 +132,14 @@ describe('catalog: every table is locked the same way', () => {
       { proname: 'cms_discard_held_out', prosecdef: true, provolatile: 'v', proconfig: ['search_path=""'], auth_exec: true, anon_exec: false, public_exec: false },
       { proname: 'cms_ensure_achievers', prosecdef: false, provolatile: 'v', proconfig: ['search_path=""'], auth_exec: false, anon_exec: false, public_exec: false },
       // 0035 helpers of the Science review (invoker, not callable by the app user)
+      // 0047 (Q38): generation pack import (admin, or a Mac import session: cms_owner / cms_gen_writer); caller + writer are helpers
+      { proname: 'cms_gen_caller', prosecdef: false, provolatile: 's', proconfig: ['search_path=""'], auth_exec: false, anon_exec: false, public_exec: false },
+      { proname: 'cms_gen_close_run', prosecdef: true, provolatile: 'v', proconfig: ['search_path=""'], auth_exec: true, anon_exec: false, public_exec: false },
+      { proname: 'cms_gen_import_batch', prosecdef: true, provolatile: 'v', proconfig: ['search_path=""'], auth_exec: true, anon_exec: false, public_exec: false },
+      { proname: 'cms_gen_open_run', prosecdef: true, provolatile: 'v', proconfig: ['search_path=""'], auth_exec: true, anon_exec: false, public_exec: false },
+      { proname: 'cms_gen_place_held', prosecdef: true, provolatile: 'v', proconfig: ['search_path=""'], auth_exec: true, anon_exec: false, public_exec: false },
+      { proname: 'cms_gen_rollback', prosecdef: true, provolatile: 'v', proconfig: ['search_path=""'], auth_exec: true, anon_exec: false, public_exec: false },
+      { proname: 'cms_gen_write_item', prosecdef: false, provolatile: 'v', proconfig: ['search_path=""'], auth_exec: false, anon_exec: false, public_exec: false },
       { proname: 'cms_is_admin', prosecdef: true, provolatile: 's', proconfig: ['search_path=""'], auth_exec: true, anon_exec: false, public_exec: false },
       { proname: 'cms_linked_item', prosecdef: false, provolatile: 's', proconfig: ['search_path=""'], auth_exec: false, anon_exec: false, public_exec: false },
       { proname: 'cms_place_held_out', prosecdef: true, provolatile: 'v', proconfig: ['search_path=""'], auth_exec: true, anon_exec: false, public_exec: false },
@@ -224,7 +232,7 @@ describe('an app user gets zero rows', () => {
       return out;
     });
     expect(Object.values(counts).every((n) => n === 0)).toBe(true);
-    expect(Object.keys(counts)).toHaveLength(60); // + the four Science tables (0032) + cms_row_misconceptions (0035) + cms_held_out (0038) + 7 course tables (0045)
+    expect(Object.keys(counts)).toHaveLength(61); // + the four Science tables (0032) + cms_row_misconceptions (0035) + cms_held_out (0038) + 7 course tables (0045) + cms_generation_items (0047)
   });
 
   it('SQL: zero rows from every cms view (views are security_invoker)', async () => {
