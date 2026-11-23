@@ -70,14 +70,14 @@ describe('gen:import (local, rolled back)', () => {
         q('T-03'),
         q('T-04', { originality: { result: 'near_copy', similarity: 0.91, closest_ref: 'TEST-BOOK p9', field: 'text' } }),
         q('T-05', { passed: false }),
-        q('T-06', { class: 5 }),
+        q('T-06', { class: 5, level: 5 }),   // ST0003 is not linked to class 5: imported, link proposed; level = its primary row's class (2), not 5
       ]);
       const figs = new MemFigures();
       const r = await run(tx, p, 'pilot', review({ 'T-01': 'approve', 'T-02': 'approve', 'T-03': 'fix', 'T-04': 'approve', 'T-06': 'approve' }), figs);
       expect(r.created).toBe(true);
       expect(r.run_code).toMatch(/^GR\d{4}$/);
       expect(Object.fromEntries(r.items.map((i) => [i.local_id, i.status]))).toEqual({
-        'T-01': 'imported', 'T-02': 'held', 'T-03': 'dropped_review', 'T-04': 'dropped_near_copy', 'T-05': 'dropped_checks', 'T-06': 'held' });
+        'T-01': 'imported', 'T-02': 'held', 'T-03': 'dropped_review', 'T-04': 'dropped_near_copy', 'T-05': 'dropped_checks', 'T-06': 'imported' });
       expect([...figs.keys.keys()]).toEqual([`figures/${r.run_code}-T-01.png`]);   // uploaded before its batch
       expect(r.closed!.status).toBe('imported');
 
@@ -105,15 +105,20 @@ describe('gen:import (local, rolled back)', () => {
       const [gi] = await tx`select * from cms.cms_generation_items where run_id = ${r.run_id} and local_id = 'T-01'`;
       expect(gi).toMatchObject({ status: 'imported', question_id: qid, warning_reason: 'type 3 -> 2', review: { decision: 'approve', comment: null } });
       expect(gi!.warnings).toEqual([{ kind: 'type', reason: 'type 3 -> 2' }]);
-      // held: missing row (and class 5 not linked), kept with the pack item
+      // held: missing row, kept with the pack item
       const held = await tx`select file_key, reason_code, run_id, question ->> 'local_id' as lid from cms.cms_held_out where run_id = ${r.run_id} order by file_key`;
-      expect(held.map((h) => [h.file_key, h.reason_code])).toEqual([[`${r.run_code}/T-02`, 'row_missing'], [`${r.run_code}/T-06`, 'class_not_linked']]);
+      expect(held.map((h) => [h.file_key, h.reason_code])).toEqual([[`${r.run_code}/T-02`, 'row_missing']]);
+      // not linked to class 5: imported with level = the primary row's class (DL-011), and the link PROPOSED (lower: home class 2 < 5)
+      const q6 = r.items.find((i) => i.local_id === 'T-06')!;
+      expect((await tx`select class, level from cms.cms_questions where question_id = ${q6.question_id!}`)[0]).toEqual({ class: 2, level: 2 });
+      const [prop] = await tx`select status, suggested_role, source, import_id from cms.cms_topic_class_proposals where topic_id = ${TOPIC} and class = 5`;
+      expect(prop).toEqual({ status: 'proposed', suggested_role: 'lower', source: `generation ${r.run_code}`, import_id: String(r.import_id) });
       // the audit names the run
       expect((await tx`select count(*)::int as n from cms.cms_reviews where by_label = ${`gen:${r.run_code}`}`)[0]!.n).toBeGreaterThanOrEqual(5);
       // nothing outside the run: content rows and topic–class links untouched
       const [after] = await tx`select count(*)::int as n, md5(string_agg(row_id || coalesce(updated_at::text, ''), ',' order by row_id)) as h from cms.cms_content_rows`;
       expect(after).toEqual(before);
-      expect((await tx`select (select count(*)::int from cms.cms_topic_classes) + (select count(*)::int from cms.cms_topic_class_proposals) as n`)[0]).toEqual(tc);
+      expect((await tx`select (select count(*)::int from cms.cms_topic_classes) + (select count(*)::int from cms.cms_topic_class_proposals) as n`)[0]).toEqual({ n: tc!.n + 1 });   // + the one proposed link
     });
   });
 
@@ -204,6 +209,81 @@ describe('gen:import (local, rolled back)', () => {
       expect(again.settings['garden-pond']).toBe(r.settings['garden-pond']);
       expect((await tx`select status from cms.cms_settings where setting_id = ${r.settings['garden-pond']!}`)[0]!.status).toBe('proposed');
     });
+  });
+
+  it('settings: a Math SET a Science run maps to becomes shared (audited); the scene stays as the setting note; rollback keeps it shared while a question uses it', async () => {
+    await inRollback(async (tx) => {
+      await fixtures(tx);
+      const [m] = await tx`insert into cms.cms_settings (setting_id, name, status, subject) values ('SET9992', 'Test gardens and trees', 'proposed', 'math') returning setting_id`;
+      const r = await run(tx, { ...pack([q('S-01', { setting: { setting_id: m!.setting_id }, setting_note: 'Potted plant near a window' }), q('S-02', { setting_note: 'Garden pond with frogs' })]) },
+        'pilot', review({ 'S-01': 'approve', 'S-02': 'approve' }));
+      expect(r.shared).toEqual({ SET9992: 'math' });
+      expect(r.setting_use).toEqual({ existing: 1, new: 1, bare: 0, new_settings: 1, existing_settings: 1 });
+      expect((await tx`select subject from cms.cms_settings where setting_id = 'SET9992'`)[0]!.subject).toBe('both');
+      const notes = await tx`select q.setting_id, q.setting_note from cms.cms_questions q where q.question_id in ${tx(r.items.map((i) => i.question_id!))} order by q.setting_note`;
+      expect(notes.map((x) => x.setting_note)).toEqual(['Garden pond with frogs', 'Potted plant near a window']);
+      expect(notes[1]!.setting_id).toBe('SET9992');
+      const [a] = await tx`select field_diff from cms.cms_reviews where target_table = 'cms_settings' and target_id = 'SET9992' and action = 'edit_catalogue' order by review_id desc limit 1`;
+      expect(a!.field_diff).toEqual({ subject: { before: 'math', after: 'both' } });
+      // a Science question may now be saved with it in the editor too (cms_apply_save accepts shared settings) — covered by db:verify's subject check
+      const [rb] = await tx`select cms.cms_gen_rollback(${tx.json({ run_code: r.run_code, reason: 'test' } as never)}) as r`;
+      // its retired question still uses it, so it stays shared (db:verify: every question's setting fits its subject)
+      expect(rb!.r.settings_unshared).toBe(0);
+      expect((await tx`select subject from cms.cms_settings where setting_id = 'SET9992'`)[0]!.subject).toBe('both');
+    });
+  });
+
+  it('parity: the generation writer stores the same fields as cms_apply_save (create) for the same question', async () => {
+    const [{ value: adminId }] = await sql`select value #>> '{}' as value from cms.cms_config where key = 'admin_user_id'` as unknown as [{ value: string }];
+    await inRollback(async (tx) => {
+      await tx.unsafe('set local role authenticated');
+      await tx`select set_config('request.jwt.claims', ${JSON.stringify({ sub: adminId, role: 'authenticated' })}, true)`;
+      await tx.unsafe('reset role');
+      await fixtures(tx);
+      const [st] = await tx`insert into cms.cms_settings (setting_id, name, status, subject) values ('SET9991', 'Parity test pond', 'proposed', 'science') returning setting_id`;
+      await tx.unsafe('set local role authenticated');
+      const item = q('P-01', { setting: { setting_id: st!.setting_id }, solution_2: 'Another way.', figure_needed: true, figure_description: 'A pond.' });
+      // 1) the CMS save path (as the editor sends a new Science question)
+      const opts = item.options.map((t, i) => ({ part_label: '', position: i + 1, text: t, is_correct: 'ABCD'[i] === item.answer }));
+      const [saved] = await tx`select cms.cms_apply_save(${tx.json({
+        mode: 'create', content_hash: 'c'.repeat(64), run_id: null,
+        question: { subject: 'science', chapter_id: 'SC01', topic_id: TOPIC, class: 2, setting_id: st!.setting_id, typical_set_id: null, pattern_id: null },
+        version: { topic_id: TOPIC, text: item.text, format: item.format, correct: 'right', figure_description: item.figure_description, image_status: 'needs_image', image_path: null,
+          reading: 2, steps: 1, inhibition: 1, visual: 0, has_irrelevant_info: false, science_question_type: 2, setting_familiarity: 'Everyday', has_hidden_idea: false, has_experiment: false },
+        options: opts, parts: [], concepts: [], hints: [], source_refs: [],
+        solutions: [{ slot: 1, text: item.solution_1 }, { slot: 2, text: item.solution_2, type: 'Another way' }],
+        wrong_answers: [{ part_label: '', value: 'wa', option_position: 1, tag: 'misconception', mc_row_id: R1, mc_item_no: 1 },
+                        { part_label: '', value: 'wb', option_position: 2, tag: 'concept_error', target_row_id: R3 },
+                        { part_label: '', value: 'wd', option_position: 4, tag: 'partial' }],
+      } as never)}) as r`;
+      // 2) the generation writer (same question, via a pack batch, as the admin from the browser would — Route A)
+      const r = await run(tx, pack([item]), 'pilot', review({ 'P-01': 'approve' }));
+      expect(r.items[0]!.status).toBe('imported');
+      const pick = async (qid: string) => {
+        const [qq] = await tx`select bank, subject, chapter_id, topic_id, class, setting_id, locale, current_version, typical_set_id, pattern_id, class_override,
+          substring(file_key from '-([0-9]+)$')::int > 5000 as cms_key_range from cms.cms_questions where question_id = ${qid}`;
+        const [v] = await tx`select version_id, topic_id, text, figure_description, image_status, image_path, format, correct, accepted, reading, steps, inhibition, visual,
+          has_irrelevant_info, science_question_type, setting_familiarity, has_hidden_idea, has_experiment, attributes_pending, typical_set_id, pattern_id, math_difficulty,
+          working_memory, strategy, tagging_why, tagged_by from cms.cms_question_versions where question_id = ${qid}`;
+        const vid = v!.version_id; delete v!.version_id;
+        return {
+          question: { ...qq }, version: { ...v },
+          options: (await tx`select part_label, position, text, is_correct from cms.cms_version_options where version_id = ${vid} order by position`).map((x) => ({ ...x })),
+          solutions: (await tx`select slot, text, type, strategy from cms.cms_version_solutions where version_id = ${vid} order by slot`).map((x) => ({ ...x })),
+          wrong: (await tx`select part_label, value, option_position, tag, misconception_id, target_concept_id, mc_row_id, mc_item_no, target_row_id from cms.cms_version_wrong_answers where version_id = ${vid} order by option_position`).map((x) => ({ ...x })),
+          parts: (await tx`select count(*)::int as n from cms.cms_version_parts where version_id = ${vid}`)[0]!.n,
+        };
+      };
+      const a = await pick(saved!.r.question_id), b = await pick(r.items[0]!.question_id!);
+      expect(b).toEqual(a);
+      // what only the generation writer adds (documented in docs/generation-pack-format.md): Needs review + run, the level
+      // (primary row's class), the content-row links with roles, the misconception item, the sheet format and the originality result
+      const [x] = await tx`select v.status, v.created_from, v.run_id is not null as has_run, v.misconception_row_id, v.display_format, q.level,
+        (select count(*)::int from cms.cms_question_content_rows l where l.version_id = v.version_id) as links,
+        (select count(*)::int from cms.cms_originality_checks o where o.version_id = v.version_id) as orig
+        from cms.cms_question_versions v join cms.cms_questions q using (question_id) where v.question_id = ${r.items[0]!.question_id!}`;
+      expect(x).toEqual({ status: 'in_review', created_from: 'generation', has_run: true, misconception_row_id: R1, display_format: 'Scenario MCQ', level: 2, links: 3, orig: 1 });
+    }, su);
   });
 
   it('only the CMS admin or a Mac import session may call the generation functions', async () => {

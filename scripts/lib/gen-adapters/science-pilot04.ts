@@ -113,13 +113,15 @@ export function pilotToPack(runDir: string): AdapterResult {
     const warnList = Array.isArray(r._warn_list) ? (r._warn_list as unknown[][]).map((w) => ({ kind: String(w[0]), reason: String(w[1] ?? w[0]) })) : [];
     const keep = (k: string) => s(r[k]);
     questions.push({
-      local_id: lid, subject: 'science', topic_id: String(r.Topic), class: Number(r.Grade ?? r.Level), level: n(r.Level),
+      // class = the class the question is for (Grade); level = its primary row's class (DL-011; the CMS takes it from the row itself)
+      local_id: lid, subject: 'science', topic_id: String(r.Topic), class: Number(r.Grade ?? r.Level), level: n(r['Primary row class']),
       format, display_format: s(r.Format), text: String(r.Question ?? '').trim(), options: opts, answer: String(r.Answer ?? '').trim() as PackQuestion['answer'],
       solution_1: String(r['Solution 1'] ?? '').trim(), solution_2: null,
       figure_needed: s(r._figure_kind) !== null && s(r._figure_kind) !== 'none', figure_description: s(r._figure_description), figure,
       linked_rows: linkedRows(r), misconception: mis ?? null, wrong_option_tags: wt.tags,
       science_question_type: n(r['Science question type']),
       setting: bare ? null : { new: settingFor(settingText!) },
+      setting_note: bare ? null : settingText,   // the scene stays on the question (DL-007); --settings-map maps it to a SET
       setting_familiarity: s(r['Setting familiarity']), hidden_idea: yn(r['Hidden idea']), experiment: yn(r.Experiment),
       drivers: { reading: n(r['Reading (1-5)']), steps: n(r.Steps), inhibition: n(r['Inhibition (0-3)']), visual: n(r['Visual (0-3)']), irrelevant_info: yn(r['Irrelevant info']) },
       safety_note: null, author_notes: null,

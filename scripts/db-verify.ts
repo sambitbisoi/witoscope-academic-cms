@@ -189,7 +189,7 @@ try {
                where q.subject <> 'science' and (v.science_question_type is not null or v.setting_familiarity is not null or v.has_hidden_idea is not null
                      or v.has_experiment is not null or v.science_tier_legacy is not null))::int as on_math,
              (select count(*) from cms.cms_question_versions v where v.level_tier is not null and v.science_tier_legacy is distinct from v.level_tier)::int as legacy_lost,
-             (select count(*) from cms.cms_questions q join cms.cms_settings s on s.setting_id = q.setting_id where s.subject <> q.subject)::int as setting_subject,
+             (select count(*) from cms.cms_questions q join cms.cms_settings s on s.setting_id = q.setting_id where s.subject not in (q.subject, 'both'))::int as setting_subject,
              (select count(*) from cms.cms_question_versions v join cms.cms_questions q on q.question_id = v.question_id
                join cms.cms_version_wrong_answers w on w.version_id = v.version_id
                where q.subject = 'science' and v.status = 'approved' and w.tag = 'concept_error'

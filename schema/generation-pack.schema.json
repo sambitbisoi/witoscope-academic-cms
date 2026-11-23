@@ -5,46 +5,166 @@
   "description": "One run of the question-generation engine (Route A: the CMS Generate button; Route B: Claude Code on the Mac), imported with `npm run gen:import`. Our own wording only: no book text, extracts or numbers; citations and originality scores only. IDs are run-local; the CMS mints every key and catalogue ID. Plan: docs/plan-2026-11-23-q38-direct-generation.md §2.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["file_schema", "run", "questions"],
+  "required": [
+    "file_schema",
+    "run",
+    "questions"
+  ],
   "properties": {
-    "file_schema": { "const": "generation-pack/1" },
+    "file_schema": {
+      "const": "generation-pack/1"
+    },
     "run": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["source_run", "subject", "route"],
+      "required": [
+        "source_run",
+        "subject",
+        "route"
+      ],
       "properties": {
-        "source_run": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,39}$", "description": "The engine's own run label, e.g. PILOT04. One live CMS run per label." },
-        "subject": { "enum": ["science", "math"] },
-        "route": { "enum": ["A", "B"] },
-        "engine": { "type": "string", "description": "e.g. science-pilot04 (Python) or engine/ 0.1.0" },
-        "engine_version": { "type": "string" },
-        "prompt_hashes": { "type": "object", "additionalProperties": { "type": "string" } },
-        "models": { "type": "object", "additionalProperties": { "type": "string" } },
-        "cms_commit": { "type": ["string", "null"] },
-        "snapshot_id": { "type": ["string", "null"] },
-        "rule_version": { "type": ["string", "null"] },
-        "topics": { "type": "array", "items": { "type": "string", "pattern": "^(MT|ST|GT)[0-9]{4}$" } },
-        "cost_usd": { "type": ["number", "null"] },
-        "cost_detail": { "type": "object" },
-        "tokens_in": { "type": ["integer", "null"] },
-        "tokens_out": { "type": ["integer", "null"] },
-        "created_at": { "type": ["string", "null"] }
+        "source_run": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,39}$",
+          "description": "The engine's own run label, e.g. PILOT04. One live CMS run per label."
+        },
+        "subject": {
+          "enum": [
+            "science",
+            "math"
+          ]
+        },
+        "route": {
+          "enum": [
+            "A",
+            "B"
+          ]
+        },
+        "engine": {
+          "type": "string",
+          "description": "e.g. science-pilot04 (Python) or engine/ 0.1.0"
+        },
+        "engine_version": {
+          "type": "string"
+        },
+        "prompt_hashes": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "models": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "cms_commit": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "snapshot_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "rule_version": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "topics": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^(MT|ST|GT)[0-9]{4}$"
+          }
+        },
+        "cost_usd": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "cost_detail": {
+          "type": "object"
+        },
+        "tokens_in": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "tokens_out": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "created_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
       }
     },
     "originality": {
       "description": "The Mac originality check of the run (Route B; null for Route A). Citations and scores only.",
-      "type": ["object", "null"],
+      "type": [
+        "object",
+        "null"
+      ],
       "additionalProperties": false,
-      "required": ["tool", "checked_at", "threshold", "near_copy_threshold"],
+      "required": [
+        "tool",
+        "checked_at",
+        "threshold",
+        "near_copy_threshold"
+      ],
       "properties": {
-        "tool": { "type": "string" },
-        "checked_at": { "type": "string" },
-        "threshold": { "type": "number" },
-        "near_copy_threshold": { "type": "number" },
-        "read": { "type": "array", "items": { "type": "string" } },
-        "missing": { "type": "array", "items": { "type": "string" } },
-        "report_file": { "type": ["string", "null"], "description": "Path of the report, relative to the pack" },
-        "report_sha256": { "type": ["string", "null"], "pattern": "^[0-9a-f]{64}$" }
+        "tool": {
+          "type": "string"
+        },
+        "checked_at": {
+          "type": "string"
+        },
+        "threshold": {
+          "type": "number"
+        },
+        "near_copy_threshold": {
+          "type": "number"
+        },
+        "read": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "missing": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "report_file": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Path of the report, relative to the pack"
+        },
+        "report_sha256": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[0-9a-f]{64}$"
+        }
       }
     },
     "catalogue_new": {
@@ -54,90 +174,502 @@
         "settings": {
           "type": "array",
           "items": {
-            "type": "object", "additionalProperties": false, "required": ["local_id", "name"],
-            "properties": { "local_id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,79}$" }, "name": { "type": "string", "minLength": 1, "maxLength": 200 }, "description": { "type": ["string", "null"] } }
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "local_id",
+              "name"
+            ],
+            "properties": {
+              "local_id": {
+                "type": "string",
+                "pattern": "^[a-z0-9][a-z0-9-]{0,79}$"
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "description": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
           }
         }
       }
     },
-    "questions": { "type": "array", "items": { "$ref": "#/$defs/question" } }
+    "questions": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/question"
+      }
+    }
   },
   "$defs": {
     "question": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["local_id", "subject", "topic_id", "class", "format", "text", "options", "answer", "solution_1", "linked_rows", "passed", "originality"],
+      "required": [
+        "local_id",
+        "subject",
+        "topic_id",
+        "class",
+        "format",
+        "text",
+        "options",
+        "answer",
+        "solution_1",
+        "linked_rows",
+        "passed",
+        "originality"
+      ],
       "properties": {
-        "local_id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$" },
-        "subject": { "enum": ["science", "math"] },
-        "topic_id": { "type": "string", "pattern": "^(MT|ST|GT)[0-9]{4}$" },
-        "class": { "type": "integer", "minimum": 1, "maximum": 6, "description": "The class the question is for (never derived from an ID)" },
-        "level": { "type": ["integer", "null"], "minimum": 1, "maximum": 6 },
-        "format": { "enum": ["MCQ-4", "MCQ-3", "True/False"] },
-        "display_format": { "type": ["string", "null"] },
-        "text": { "type": "string", "minLength": 1 },
-        "options": { "type": "array", "minItems": 2, "maxItems": 4, "items": { "type": "string", "minLength": 1 } },
-        "answer": { "enum": ["A", "B", "C", "D"] },
-        "solution_1": { "type": "string", "minLength": 1 },
-        "solution_2": { "type": ["string", "null"] },
-        "figure_needed": { "type": "boolean" },
-        "figure_description": { "type": ["string", "null"] },
+        "local_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$"
+        },
+        "subject": {
+          "enum": [
+            "science",
+            "math"
+          ]
+        },
+        "topic_id": {
+          "type": "string",
+          "pattern": "^(MT|ST|GT)[0-9]{4}$"
+        },
+        "class": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 6,
+          "description": "The class the question is for (never derived from an ID)"
+        },
+        "level": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1,
+          "maximum": 6
+        },
+        "format": {
+          "enum": [
+            "MCQ-4",
+            "MCQ-3",
+            "True/False"
+          ]
+        },
+        "display_format": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1
+        },
+        "options": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 4,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "answer": {
+          "enum": [
+            "A",
+            "B",
+            "C",
+            "D"
+          ]
+        },
+        "solution_1": {
+          "type": "string",
+          "minLength": 1
+        },
+        "solution_2": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "figure_needed": {
+          "type": "boolean"
+        },
+        "figure_description": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "figure": {
-          "type": ["object", "null"], "additionalProperties": false, "required": ["file", "sha256"],
-          "properties": { "file": { "type": "string", "description": "PNG, relative to the pack" }, "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
-                          "width": { "type": "integer" }, "height": { "type": "integer" }, "svg": { "type": ["string", "null"] }, "alt": { "type": ["string", "null"] } }
+          "type": [
+            "object",
+            "null"
+          ],
+          "additionalProperties": false,
+          "required": [
+            "file",
+            "sha256"
+          ],
+          "properties": {
+            "file": {
+              "type": "string",
+              "description": "PNG, relative to the pack"
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "width": {
+              "type": "integer"
+            },
+            "height": {
+              "type": "integer"
+            },
+            "svg": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "alt": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
         },
         "linked_rows": {
-          "type": "array", "minItems": 1,
-          "items": { "type": "object", "additionalProperties": false, "required": ["row_id", "role"],
-                     "properties": { "row_id": { "type": "string" }, "role": { "enum": ["primary", "secondary", "supporting"] } } }
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "row_id",
+              "role"
+            ],
+            "properties": {
+              "row_id": {
+                "type": "string"
+              },
+              "role": {
+                "enum": [
+                  "primary",
+                  "secondary",
+                  "supporting"
+                ]
+              }
+            }
+          }
         },
         "misconception": {
-          "type": ["object", "null"], "additionalProperties": false, "required": ["row_id", "item_no"],
-          "properties": { "row_id": { "type": "string" }, "item_no": { "type": "integer", "minimum": 1, "maximum": 99 } }
+          "type": [
+            "object",
+            "null"
+          ],
+          "additionalProperties": false,
+          "required": [
+            "row_id",
+            "item_no"
+          ],
+          "properties": {
+            "row_id": {
+              "type": "string"
+            },
+            "item_no": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 99
+            }
+          }
         },
         "wrong_option_tags": {
           "type": "array",
-          "items": { "type": "object", "additionalProperties": false, "required": ["option", "tag"],
-                     "properties": { "option": { "enum": ["A", "B", "C", "D"] },
-                                     "tag": { "enum": ["misconception", "concept_error", "shortcut", "partial", "lost_step", "used_irrelevant", "misread", "unit_slip", "implausible"] },
-                                     "row_id": { "type": ["string", "null"] }, "item_no": { "type": ["integer", "null"] }, "why": { "type": ["string", "null"] } } }
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "option",
+              "tag"
+            ],
+            "properties": {
+              "option": {
+                "enum": [
+                  "A",
+                  "B",
+                  "C",
+                  "D"
+                ]
+              },
+              "tag": {
+                "enum": [
+                  "misconception",
+                  "concept_error",
+                  "shortcut",
+                  "partial",
+                  "lost_step",
+                  "used_irrelevant",
+                  "misread",
+                  "unit_slip",
+                  "implausible"
+                ]
+              },
+              "row_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "item_no": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "why": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          }
         },
-        "science_question_type": { "type": ["integer", "null"], "minimum": 1, "maximum": 5 },
+        "science_question_type": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1,
+          "maximum": 5
+        },
         "setting": {
           "description": "An existing Science setting, a new one of this run (catalogue_new.settings), or null (bare)",
           "oneOf": [
-            { "type": "null" },
-            { "type": "object", "additionalProperties": false, "required": ["setting_id"], "properties": { "setting_id": { "type": "string", "pattern": "^SET[0-9]{3,4}$" } } },
-            { "type": "object", "additionalProperties": false, "required": ["new"], "properties": { "new": { "type": "string" } } }
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "setting_id"
+              ],
+              "properties": {
+                "setting_id": {
+                  "type": "string",
+                  "pattern": "^SET[0-9]{3,4}$"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "new"
+              ],
+              "properties": {
+                "new": {
+                  "type": "string"
+                }
+              }
+            }
           ]
         },
-        "setting_familiarity": { "enum": ["Bare", "Everyday", "Less familiar", "Rare", null] },
-        "hidden_idea": { "type": ["boolean", "null"] },
-        "experiment": { "type": ["boolean", "null"] },
-        "drivers": {
-          "type": "object", "additionalProperties": false,
-          "properties": { "reading": { "type": ["integer", "null"], "minimum": 1, "maximum": 5 }, "steps": { "type": ["integer", "null"], "minimum": 1 },
-                          "inhibition": { "type": ["integer", "null"], "minimum": 0, "maximum": 3 }, "visual": { "type": ["integer", "null"], "minimum": 0, "maximum": 3 },
-                          "irrelevant_info": { "type": ["boolean", "null"] } }
+        "setting_note": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "The specific scene in our own words (kept on the question as its setting note, DL-007), e.g. \"Potted plant near a window\""
         },
-        "safety_note": { "type": ["string", "null"] },
-        "author_notes": { "type": ["string", "null"] },
-        "passed": { "type": "boolean", "description": "Passed the engine's checks (after repair)" },
-        "warnings": { "type": "array", "items": { "type": "object", "additionalProperties": false, "required": ["kind", "reason"], "properties": { "kind": { "type": "string" }, "reason": { "type": "string" } } } },
-        "warning_reason": { "type": ["string", "null"] },
-        "checks": { "type": "object", "description": "Check summary shown in review (blind solve, quality, rule checks, derived values the CMS recomputes)" },
+        "setting_familiarity": {
+          "enum": [
+            "Bare",
+            "Everyday",
+            "Less familiar",
+            "Rare",
+            null
+          ]
+        },
+        "hidden_idea": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "experiment": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "drivers": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "reading": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 1,
+              "maximum": 5
+            },
+            "steps": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 1
+            },
+            "inhibition": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0,
+              "maximum": 3
+            },
+            "visual": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0,
+              "maximum": 3
+            },
+            "irrelevant_info": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            }
+          }
+        },
+        "safety_note": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "author_notes": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "passed": {
+          "type": "boolean",
+          "description": "Passed the engine's checks (after repair)"
+        },
+        "warnings": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "reason"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string"
+              },
+              "reason": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "warning_reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "checks": {
+          "type": "object",
+          "description": "Check summary shown in review (blind solve, quality, rule checks, derived values the CMS recomputes)"
+        },
         "originality": {
           "oneOf": [
-            { "const": "not_checked" },
-            { "type": "object", "additionalProperties": false, "required": ["result", "similarity"],
-              "properties": { "result": { "enum": ["clear", "flagged", "near_copy", "no_sources"] }, "similarity": { "type": "number" }, "same_numbers": { "type": ["boolean", "null"] },
-                              "closest_ref": { "type": ["string", "null"] }, "field": { "type": ["string", "null"] } } }
+            {
+              "const": "not_checked"
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "result",
+                "similarity"
+              ],
+              "properties": {
+                "result": {
+                  "enum": [
+                    "clear",
+                    "flagged",
+                    "near_copy",
+                    "no_sources"
+                  ]
+                },
+                "similarity": {
+                  "type": "number"
+                },
+                "same_numbers": {
+                  "type": [
+                    "boolean",
+                    "null"
+                  ]
+                },
+                "closest_ref": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "field": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              }
+            }
           ]
         },
         "review": {
-          "type": ["object", "null"], "additionalProperties": false,
-          "properties": { "decision": { "enum": ["approve", "fix", "drop", "rescue", null] }, "comment": { "type": ["string", "null"] } }
+          "type": [
+            "object",
+            "null"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "decision": {
+              "enum": [
+                "approve",
+                "fix",
+                "drop",
+                "rescue",
+                null
+              ]
+            },
+            "comment": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
         }
       }
     }

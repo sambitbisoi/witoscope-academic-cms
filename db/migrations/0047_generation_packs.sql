@@ -16,7 +16,12 @@
 --    Proposed with a CMS SET id), linked rows with roles (primary / secondary / supporting; primary confirmed in pilot
 --    runs, proposed in steady state), the misconception item, Solution 1 (+ optional 2), S7 wrong-option tags as row
 --    items (never on the correct option), the local originality result (citations and scores only).
---  * The import never adds, edits or flags content rows, topics, topic–class links or catalogue items outside the run.
+--  * The import never adds, edits or flags content rows, topics or catalogue items outside the run. A question whose topic is not
+--    linked to its class is imported and the link is PROPOSED (Sambit decides it in Proposed; rollback retires it if still proposed).
+--  * Level = the class of the question's primary row (DL-011), never the pack's or the run's class.
+--  * Settings are one shared SET list (Q28). A Science run maps each free-text scene to the closest existing SET (or a new one,
+--    Proposed); the scene text stays on the question as its setting note. A Math SET a Science run uses becomes subject 'both'
+--    (audited; a rollback gives it back only when no question of that subject, retired ones included, uses it). cms_apply_save accepts a shared setting (one line changed).
 --  * Unplaceable items go to the Held-out area with the pack item, and are placed from there (cms_gen_place_held).
 --  * Rollback by run retires (never deletes) the run's questions that were never approved or edited.
 --
@@ -96,6 +101,222 @@ alter table cms.cms_held_out add constraint cms_held_out_reason_code_check check
   'typical_set_missing', 'typical_set_class', 'pattern_missing', 'concept_missing',
   'misconception_missing', 'row_missing', 'other_placement', 'setting_missing', 'class_not_linked'));
 
+-- ---------------------------------------------------------------- settings: one shared list (a setting may serve both subjects)
+alter table cms.cms_settings drop constraint cms_settings_subject_check;
+alter table cms.cms_settings add constraint cms_settings_subject_check check (subject in ('math', 'science', 'both'));
+
+-- cms_apply_save as in 0041, with one change: a question may use a setting of its own subject OR a shared one ('both')
+create or replace function cms.cms_apply_save(payload jsonb)
+  returns jsonb
+  language plpgsql
+  security definer
+  set search_path = ''
+as $$
+declare
+  uid uuid := cms.cms_current_uid();
+  qid text := payload ->> 'question_id';
+  mode text := payload ->> 'mode';
+  v jsonb := payload -> 'version';
+  pq jsonb := payload -> 'question';
+  r cms.cms_question_versions;
+  q cms.cms_questions;
+  cur cms.cms_question_versions;
+  vid bigint;
+  vno int;
+  open_no int;
+  act text;
+  subj text;
+  ch text;
+  keyno int;
+begin
+  if not cms.cms_is_admin(uid) then
+    raise exception 'Only the CMS admin can save questions.' using errcode = '42501';
+  end if;
+  if coalesce(payload ->> 'content_hash', '') !~ '^[0-9a-f]{64}$' then raise exception 'The save has no valid structure fingerprint.'; end if;
+  r := jsonb_populate_record(null::cms.cms_question_versions, v);
+
+  if mode = 'create' then
+    -- A new PRODUCTION question from generation (Phase 6). Never gold. File keys
+    -- <chapter>-5001…9999 are reserved for CMS-generated drafts, so they never collide
+    -- with keys that chapter files assign.
+    subj := pq ->> 'subject'; ch := pq ->> 'chapter_id';
+    if subj is null or subj not in ('math', 'science', 'grammar') then raise exception 'A new question needs a subject.'; end if;
+    select coalesce(max(substring(file_key from '-([0-9]+)$')::int), 5000) + 1 into keyno
+      from cms.cms_questions where chapter_id = ch and substring(file_key from '-([0-9]+)$')::int between 5001 and 9999;
+    if keyno > 9999 then raise exception 'Chapter % has used all generated-draft keys.', ch; end if;
+    qid := case subj when 'math' then 'MQ' || lpad(nextval('cms.cms_mq_seq')::text, 6, '0')
+                     when 'science' then 'SQ' || lpad(nextval('cms.cms_sq_seq')::text, 6, '0')
+                     else 'GQ' || lpad(nextval('cms.cms_gq_seq')::text, 6, '0') end;
+    insert into cms.cms_questions (question_id, bank, subject, file_key, chapter_id, topic_id, class, class_override, placement_note,
+                                   typical_set_id, pattern_id, clone_batch_id, locale, current_version)
+      values (qid, 'production', subj, ch || '-' || keyno, ch, pq ->> 'topic_id', (pq ->> 'class')::int, (pq ->> 'class_override')::int,
+              pq ->> 'placement_note', pq ->> 'typical_set_id', pq ->> 'pattern_id', pq ->> 'clone_batch_id', 'IN', 1);
+    vno := 1; act := 'create';
+    insert into cms.cms_question_versions (
+      question_id, version_no, status, topic_id, typical_set_id, pattern_id, text, figure_description, image_status, image_path,
+      format, correct, accepted, duration_s, math_difficulty, is_pure_fact, reading, has_irrelevant_info, steps, working_memory,
+      inhibition, visual, strategy, strategy_type, strategy_type_2, strategy_other_note, insight_id, proposed_insight, trick_ref,
+      multistep_band, load, load_driver, style, tier, trap_level, is_isolating, difficulty_points,
+      tagging_why, tagged_by, tagging_summary, author_notes, content_hash, created_from, run_id,
+      science_question_type, setting_familiarity, has_hidden_idea, has_experiment)
+    values (
+      qid, 1, 'draft', r.topic_id, r.typical_set_id, r.pattern_id, r.text, r.figure_description, r.image_status, r.image_path,
+      r.format, r.correct, coalesce(r.accepted, '{}'), r.duration_s, r.math_difficulty, r.is_pure_fact, r.reading, r.has_irrelevant_info,
+      r.steps, r.working_memory, r.inhibition, r.visual, r.strategy, r.strategy_type, r.strategy_type_2, r.strategy_other_note,
+      r.insight_id, r.proposed_insight, r.trick_ref, r.multistep_band, r.load, r.load_driver, r.style, r.tier, r.trap_level,
+      r.is_isolating, r.difficulty_points, r.tagging_why, r.tagged_by, r.tagging_summary, r.author_notes,
+      payload ->> 'content_hash', 'generation', (payload ->> 'run_id')::bigint,
+      r.science_question_type, r.setting_familiarity, r.has_hidden_idea, r.has_experiment)
+    returning version_id into vid;
+  else
+  select * into q from cms.cms_questions where question_id = qid for update;
+  if not found then raise exception 'Question % does not exist.', qid; end if;
+  if q.retired_at is not null then raise exception 'Question % is retired; restore it before editing.', qid; end if;
+  if (payload ->> 'base_version_no')::int is distinct from q.current_version then
+    raise exception 'Question % changed since you opened it (it is now at v%). Reload and edit again.', qid, q.current_version;
+  end if;
+  select * into cur from cms.cms_question_versions where question_id = qid and version_no = q.current_version for update;
+
+  if mode = 'typo_fix' then
+    -- Hard rule 1: wording only. Structure must be unchanged, and only text columns are written.
+    if payload ->> 'content_hash' is distinct from cur.content_hash then
+      raise exception 'A typo fix cannot change numbers, options, answers, format, parts, concepts, tags, signature, placement or image. Save it as a new version.';
+    end if;
+    update cms.cms_question_versions
+      set text = r.text, figure_description = case when figure_description is null then null else r.figure_description end,
+          strategy_other_note = case when strategy_other_note is null then null else r.strategy_other_note end,
+          tagging_why = case when tagging_why is null or r.tagging_why is null then tagging_why
+                             else (select jsonb_object_agg(k, jsonb_set(tagging_why -> k, '{why}', coalesce(r.tagging_why -> k -> 'why', tagging_why -> k -> 'why')))
+                                   from jsonb_object_keys(tagging_why) as k) end,
+          tagging_summary = r.tagging_summary, author_notes = r.author_notes, edited_at = now()
+      where version_id = cur.version_id;
+    update cms.cms_version_solutions s set text = x.text
+      from jsonb_to_recordset(payload -> 'solutions') as x(slot int, text text)
+      where s.version_id = cur.version_id and s.slot = x.slot and x.text is not null and x.text <> '';
+    update cms.cms_version_hints h set text = x.text
+      from jsonb_to_recordset(payload -> 'hints') as x(level int, text text)
+      where h.version_id = cur.version_id and h.level = x.level and x.text is not null and x.text <> '';
+    update cms.cms_version_wrong_answers w set why = x.why
+      from jsonb_to_recordset(payload -> 'wrong_answers') as x(part_label text, value text, why text)
+      where w.version_id = cur.version_id and w.part_label = x.part_label and w.value = x.value;
+    update cms.cms_version_parts p set text = x.text
+      from jsonb_to_recordset(payload -> 'parts') as x(part_label text, text text)
+      where p.version_id = cur.version_id and p.part_label = x.part_label and x.text is not null and x.text <> '';
+    update cms.cms_questions set placement_note = pq ->> 'placement_note' where question_id = qid;
+    vid := cur.version_id; vno := cur.version_no; act := 'typo_fix';
+
+  elsif mode = 'update_draft' then
+    if cur.status not in ('draft', 'in_review') then
+      raise exception 'Only an open draft can be edited in place; v% is %.', cur.version_no, cur.status;
+    end if;
+    vid := cur.version_id; vno := cur.version_no; act := 'edit_draft';
+    delete from cms.cms_version_parts where version_id = vid;
+    delete from cms.cms_version_options where version_id = vid;
+    delete from cms.cms_version_wrong_answers where version_id = vid;
+    delete from cms.cms_version_concepts where version_id = vid;
+    delete from cms.cms_version_solutions where version_id = vid;
+    delete from cms.cms_version_hints where version_id = vid;
+    delete from cms.cms_version_source_refs where version_id = vid;
+    update cms.cms_question_versions set
+      topic_id = r.topic_id, typical_set_id = r.typical_set_id, pattern_id = r.pattern_id, text = r.text,
+      figure_description = r.figure_description, image_status = r.image_status, image_path = r.image_path, format = r.format,
+      correct = r.correct, accepted = coalesce(r.accepted, '{}'), duration_s = r.duration_s, math_difficulty = r.math_difficulty,
+      is_pure_fact = r.is_pure_fact, reading = r.reading, has_irrelevant_info = r.has_irrelevant_info, steps = r.steps,
+      working_memory = r.working_memory, inhibition = r.inhibition, visual = r.visual, strategy = r.strategy,
+      strategy_type = r.strategy_type, strategy_type_2 = r.strategy_type_2, strategy_other_note = r.strategy_other_note,
+      insight_id = r.insight_id, proposed_insight = r.proposed_insight, trick_ref = r.trick_ref,
+      multistep_band = r.multistep_band, load = r.load, load_driver = r.load_driver, style = r.style, tier = r.tier,
+      trap_level = r.trap_level, is_isolating = r.is_isolating, difficulty_points = r.difficulty_points,
+      tagging_why = r.tagging_why, tagged_by = r.tagged_by, tagging_summary = r.tagging_summary, author_notes = r.author_notes,
+      science_question_type = r.science_question_type, setting_familiarity = r.setting_familiarity,
+      has_hidden_idea = r.has_hidden_idea, has_experiment = r.has_experiment,
+      content_hash = payload ->> 'content_hash', edited_at = now()
+      where version_id = vid;
+
+  elsif mode = 'new_version' then
+    -- Hard rule 2: one open version per question (the unique index backs this up).
+    select version_no into open_no from cms.cms_question_versions where question_id = qid and status in ('draft', 'in_review');
+    if found then
+      raise exception 'Question % already has an open version (v%). Finish, withdraw or reject it first.', qid, open_no;
+    end if;
+    vno := q.current_version + 1; act := 'new_version';
+    insert into cms.cms_question_versions (
+      question_id, version_no, status, topic_id, typical_set_id, pattern_id, text, figure_description, image_status, image_path,
+      format, correct, accepted, duration_s, math_difficulty, is_pure_fact, reading, has_irrelevant_info, steps, working_memory,
+      inhibition, visual, strategy, strategy_type, strategy_type_2, strategy_other_note, insight_id, proposed_insight, trick_ref,
+      multistep_band, load, load_driver, style, tier, trap_level, is_isolating, difficulty_points,
+      tagging_why, tagged_by, tagging_summary, author_notes, content_hash, created_from,
+      science_question_type, setting_familiarity, has_hidden_idea, has_experiment)
+    values (
+      qid, vno, 'draft', r.topic_id, r.typical_set_id, r.pattern_id, r.text, r.figure_description, r.image_status, r.image_path,
+      r.format, r.correct, coalesce(r.accepted, '{}'), r.duration_s, r.math_difficulty, r.is_pure_fact, r.reading, r.has_irrelevant_info,
+      r.steps, r.working_memory, r.inhibition, r.visual, r.strategy, r.strategy_type, r.strategy_type_2, r.strategy_other_note,
+      r.insight_id, r.proposed_insight, r.trick_ref, r.multistep_band, r.load, r.load_driver, r.style, r.tier, r.trap_level,
+      r.is_isolating, r.difficulty_points, r.tagging_why, r.tagged_by, r.tagging_summary, r.author_notes,
+      payload ->> 'content_hash', 'edit',
+      r.science_question_type, r.setting_familiarity, r.has_hidden_idea, r.has_experiment)
+    returning version_id into vid;
+    if q.subject = 'science' then
+      -- 0035: a new Science version keeps its content-row links (with rank), citations and Science fields
+      -- 0041 (Q27): the retired authored tier travels only as science_tier_legacy (level_tier stays on the old versions, frozen)
+      update cms.cms_question_versions set science_tier_legacy = coalesce(cur.science_tier_legacy, cur.level_tier), display_format = cur.display_format, safety_note = cur.safety_note,
+             confidence = cur.confidence, misconception_row_id = cur.misconception_row_id, misconception_item_no = cur.misconception_item_no,
+             misconception_targeted_legacy = coalesce(cur.misconception_targeted_legacy, cur.misconception_targeted)
+       where version_id = vid;
+      insert into cms.cms_question_content_rows (version_id, row_id, role, rank, rank_proposed)
+        select vid, l.row_id, l.role, l.rank, l.rank_proposed from cms.cms_question_content_rows l where l.version_id = cur.version_id;
+      insert into cms.cms_citations (version_id, for_row_id, source_id, page_from, page_to, raw)
+        select vid, c.for_row_id, c.source_id, c.page_from, c.page_to, c.raw from cms.cms_citations c where c.version_id = cur.version_id order by c.citation_id;
+    end if;
+  else
+    raise exception 'Unknown save mode "%".', mode;
+  end if;
+  end if;
+
+  if mode in ('update_draft', 'new_version', 'create') then
+    insert into cms.cms_version_parts (version_id, part_label, text, format, correct, accepted)
+      select vid, x.part_label, x.text, x.format, x.correct, coalesce(x.accepted, '{}')
+      from jsonb_populate_recordset(null::cms.cms_version_parts, coalesce(payload -> 'parts', '[]')) as x;
+    insert into cms.cms_version_options (version_id, part_label, position, text, is_correct)
+      select vid, x.part_label, x.position, x.text, x.is_correct
+      from jsonb_populate_recordset(null::cms.cms_version_options, coalesce(payload -> 'options', '[]')) as x;
+    insert into cms.cms_version_wrong_answers (version_id, part_label, value, option_position, tag, misconception_id, target_concept_id, why, mc_row_id, mc_item_no, target_row_id)
+      select vid, x.part_label, x.value, x.option_position, x.tag, x.misconception_id, x.target_concept_id, x.why, x.mc_row_id, x.mc_item_no, x.target_row_id
+      from jsonb_populate_recordset(null::cms.cms_version_wrong_answers, coalesce(payload -> 'wrong_answers', '[]')) as x;
+    insert into cms.cms_version_concepts (version_id, part_label, concept_id, involvement)
+      select vid, x.part_label, x.concept_id, x.involvement
+      from jsonb_populate_recordset(null::cms.cms_version_concepts, coalesce(payload -> 'concepts', '[]')) as x;
+    insert into cms.cms_version_solutions (version_id, slot, text, type, strategy)
+      select vid, x.slot, x.text, x.type, x.strategy
+      from jsonb_populate_recordset(null::cms.cms_version_solutions, coalesce(payload -> 'solutions', '[]')) as x;
+    insert into cms.cms_version_hints (version_id, level, text)
+      select vid, x.level, x.text
+      from jsonb_populate_recordset(null::cms.cms_version_hints, coalesce(payload -> 'hints', '[]')) as x;
+    insert into cms.cms_version_source_refs (version_id, ref_id, relation)
+      select vid, x.ref_id, x.relation
+      from jsonb_populate_recordset(null::cms.cms_version_source_refs, coalesce(payload -> 'source_refs', '[]')) as x;
+    -- 0041 (Q26/Q28): a question's setting (SET catalogue; blank = bare) is saved when the payload names it, and must
+    -- be a setting of the question's own subject.
+    if pq ? 'setting_id' and nullif(pq ->> 'setting_id', '') is not null and not exists (
+         select 1 from cms.cms_settings s where s.setting_id = pq ->> 'setting_id' and s.status <> 'retired'
+            and s.subject in (coalesce(q.subject, subj), 'both')) then
+      raise exception 'Setting % is not a % setting (or it is retired).', pq ->> 'setting_id', coalesce(q.subject, subj);
+    end if;
+    -- Hard rule 3: bank and question_id are never written; only the current placement pointers.
+    update cms.cms_questions set
+      setting_id = case when pq ? 'setting_id' then nullif(pq ->> 'setting_id', '') else setting_id end,
+      topic_id = pq ->> 'topic_id', typical_set_id = pq ->> 'typical_set_id', pattern_id = pq ->> 'pattern_id',
+      clone_batch_id = pq ->> 'clone_batch_id', class_override = (pq ->> 'class_override')::int,
+      placement_note = pq ->> 'placement_note', current_version = vno
+      where question_id = qid;
+  end if;
+
+  insert into cms.cms_reviews (target, target_table, target_id, action, reason, field_diff, by_user, by_label)
+    values ('question_version', 'cms_question_versions', qid || ' v' || vno, act, payload ->> 'reason', payload -> 'diff', uid, 'Sambit');
+  return jsonb_build_object('question_id', qid, 'version_no', vno, 'mode', mode);
+end;
+$$;
+
 -- ---------------------------------------------------------------- imports + audit
 alter table cms.cms_imports drop constraint cms_imports_kind_check;
 alter table cms.cms_imports add constraint cms_imports_kind_check check (kind in (
@@ -151,6 +372,8 @@ declare
   smap jsonb;
   created boolean := false;
   steady boolean;
+  shared jsonb;
+  prev text;
 begin
   if who is null then raise exception 'Only the CMS admin or the generation import can open a generation run.' using errcode = '42501'; end if;
   if coalesce(p ->> 'subject', '') not in ('math', 'science') then raise exception 'A generation run needs subject math or science.'; end if;
@@ -229,13 +452,27 @@ begin
     sid := null;
   end loop;
   update cms.cms_generation_runs set catalogue_map = catalogue_map || jsonb_build_object('settings', smap) where run_id = run.run_id;
+  -- existing SETs the run maps its scenes to: a setting of the other subject becomes shared ('both'), audited
+  shared := coalesce(run.catalogue_map -> 'shared', '{}');
+  for sid in select jsonb_array_elements_text(coalesce(p -> 'share_settings', '[]')) loop
+    select subject into prev from cms.cms_settings where setting_id = sid and status <> 'retired';
+    if prev is null then raise exception 'Setting % is not in the CMS (or retired).', sid; end if;
+    if prev in (run.subject, 'both') then continue; end if;
+    update cms.cms_settings set subject = 'both', updated_at = now() where setting_id = sid;
+    insert into cms.cms_reviews (target, target_table, target_id, action, reason, field_diff, by_user, by_label, import_id)
+      values ('catalogue', 'cms_settings', sid, 'edit_catalogue', 'shared with ' || run.subject || ': generation run ' || run.run_code || ' maps scenes to it',
+              jsonb_build_object('subject', jsonb_build_object('before', prev, 'after', 'both')), uid, 'gen:' || run.run_code, imp);
+    shared := shared || jsonb_build_object(sid, prev);
+  end loop;
+  sid := null;
+  update cms.cms_generation_runs set catalogue_map = catalogue_map || jsonb_build_object('shared', shared) where run_id = run.run_id;
 
   insert into cms.cms_reviews (target, target_table, target_id, action, reason, field_diff, by_user, by_label, import_id)
     values ('catalogue', 'cms_generation_runs', run.run_code, 'gen_run_open',
             case when created then 'generation run opened' else 'generation run continued' end || ' (' || run.source_run || ', route ' || run.route || ', ' || run.mode || ')',
             jsonb_build_object('status', jsonb_build_object('before', case when created then null else 'continued' end, 'after', 'importing'),
                                'pack_sha256', p ->> 'pack_sha256', 'review_sha256', p ->> 'review_sha256'), uid, 'gen:' || run.run_code, imp);
-  return jsonb_build_object('run_id', run.run_id, 'run_code', run.run_code, 'import_id', imp, 'created', created, 'settings', smap);
+  return jsonb_build_object('run_id', run.run_id, 'run_code', run.run_code, 'import_id', imp, 'created', created, 'settings', smap, 'shared', shared);
 end;
 $$;
 revoke execute on function cms.cms_gen_open_run(jsonb) from public;
@@ -255,7 +492,8 @@ declare
   t cms.cms_topics;
   tid text := coalesce(topic_override, it ->> 'topic_id');
   cls int := (it ->> 'class')::int;
-  lvl int := coalesce((it ->> 'level')::int, (it ->> 'class')::int);
+  lvl int;                -- DL-011: the level is the class of the question's primary row (set below), never a run-level class
+  link_proposed boolean := false;
   hold_code text;
   hold_why text;
   ch text;
@@ -281,15 +519,14 @@ begin
   if it ->> 'subject' is distinct from run.subject then raise exception 'Item % is %, but run % is %.', lid, it ->> 'subject', run.run_code, run.subject; end if;
   if run.subject <> 'science' then raise exception 'Only Science packs can be imported yet (Math pack import is PR 5 of Q38).'; end if;
   if cls is null or cls not between 1 and 6 then raise exception 'Item % needs a class 1–6.', lid; end if;
-  if lvl not between 1 and 6 then raise exception 'Item % has level %, not 1–6.', lid, lvl; end if;
+  select r.row_class into lvl from cms.cms_content_rows r
+   where r.row_id = (select x ->> 'row_id' from jsonb_array_elements(lr) x where x ->> 'role' = 'primary' limit 1);
 
   -- ------------------------------------------------ placement (held out, never a failure)
   select * into t from cms.cms_topics where topic_id = tid;
   if not found then hold_code := 'topic_missing'; hold_why := format('topic %s is not in the CMS', tid);
   elsif left(t.topic_id, 2) <> 'ST' then raise exception 'Item %: topic % is not a Science topic.', lid, tid;
   elsif t.status <> 'active' then hold_code := 'topic_retired'; hold_why := format('topic %s is retired', tid);
-  elsif not exists (select 1 from cms.cms_topic_all_classes a where a.topic_id = t.topic_id and a.class = cls) then
-    hold_code := 'class_not_linked'; hold_why := format('topic %s is not linked to class %s', tid, cls);
   end if;
   if hold_code is null then
     select format('content row %s is not in the CMS (or retired)', x ->> 'row_id') into hold_why
@@ -299,7 +536,7 @@ begin
   end if;
   if hold_code is null and it -> 'setting' is not null and jsonb_typeof(it -> 'setting') = 'object' then
     sid := coalesce(it -> 'setting' ->> 'setting_id', run.catalogue_map -> 'settings' ->> (it -> 'setting' ->> 'new'));
-    if sid is null or not exists (select 1 from cms.cms_settings s where s.setting_id = sid and s.subject = 'science' and s.status <> 'retired') then
+    if sid is null or not exists (select 1 from cms.cms_settings s where s.setting_id = sid and s.subject in ('science', 'both') and s.status <> 'retired') then
       hold_code := 'setting_missing';
       hold_why := format('setting %s is not a Science setting in the CMS', coalesce(it -> 'setting' ->> 'setting_id', 'new ' || (it -> 'setting' ->> 'new')));
     end if;
@@ -324,6 +561,21 @@ begin
         question_id = null, version_id = null, warnings = excluded.warnings, warning_reason = excluded.warning_reason, checks = excluded.checks,
         review = excluded.review, error = excluded.error, import_id = excluded.import_id, updated_at = now();
     return jsonb_build_object('status', 'held', 'held_id', hid, 'reason', hold_why);
+  end if;
+
+  -- ------------------------------------------------ the topic is not linked to the question's class: import it and PROPOSE the link
+  -- (Sambit decides it in Proposed, as for the links the Math and Science imports propose). An existing proposal of any status is left alone.
+  if not exists (select 1 from cms.cms_topic_all_classes a where a.topic_id = t.topic_id and a.class = cls)
+     and not exists (select 1 from cms.cms_topic_class_proposals pr where pr.topic_id = t.topic_id and pr.class = cls) then
+    insert into cms.cms_topic_class_proposals (topic_id, class, source, evidence, suggested_role, import_id)
+      values (t.topic_id, cls, 'generation ' || run.run_code, format('generated question %s (%s) is for class %s', lid, run.source_run, cls),
+              case when t.class < cls then 'lower' else 'higher' end, imp);
+    insert into cms.cms_reviews (target, target_table, target_id, action, reason, field_diff, by_user, by_label, import_id)
+      values ('catalogue', 'cms_topic_class_proposals', t.topic_id || ' · class ' || cls, 'create',
+              'proposed by generation run ' || run.run_code || ': its questions are for this class, no link yet',
+              jsonb_build_object('status', jsonb_build_object('before', null, 'after', 'proposed'), 'role', case when t.class < cls then 'lower' else 'higher' end,
+                                 'home_class', t.class), uid, 'gen:' || run.run_code, imp);
+    link_proposed := true;
   end if;
 
   -- ------------------------------------------------ values (a bad value fails this item only)
@@ -384,8 +636,8 @@ begin
     from cms.cms_questions where chapter_id = ch and substring(file_key from '-([0-9]+)$')::int between 5001 and 9999;
   if keyno > 9999 then raise exception 'Chapter % has used all generated keys (5001–9999).', ch; end if;
   qid := 'SQ' || lpad(nextval('cms.cms_sq_seq')::text, 6, '0');
-  insert into cms.cms_questions (question_id, bank, subject, file_key, chapter_id, topic_id, class, level, locale, current_version, setting_id)
-    values (qid, 'production', 'science', ch || '-' || keyno, ch, t.topic_id, t.class, lvl, 'IN', 1, sid);
+  insert into cms.cms_questions (question_id, bank, subject, file_key, chapter_id, topic_id, class, level, locale, current_version, setting_id, setting_note)
+    values (qid, 'production', 'science', ch || '-' || keyno, ch, t.topic_id, t.class, lvl, 'IN', 1, sid, nullif(btrim(coalesce(it ->> 'setting_note', '')), ''));
   insert into cms.cms_question_versions (
     question_id, version_no, status, topic_id, text, figure_description, image_status, image_path, format, correct, accepted, display_format,
     reading, steps, inhibition, visual, has_irrelevant_info, science_question_type, setting_familiarity, has_hidden_idea, has_experiment,
@@ -404,7 +656,7 @@ begin
   insert into cms.cms_version_options (version_id, part_label, position, text, is_correct)
     select vid, '', o.n, btrim(o.v), o.n = ans from jsonb_array_elements_text(opts) with ordinality as o(v, n);
   insert into cms.cms_version_solutions (version_id, slot, text) values (vid, 1, btrim(it ->> 'solution_1'));
-  if coalesce(btrim(it ->> 'solution_2'), '') <> '' then insert into cms.cms_version_solutions (version_id, slot, text) values (vid, 2, btrim(it ->> 'solution_2')); end if;
+  if coalesce(btrim(it ->> 'solution_2'), '') <> '' then insert into cms.cms_version_solutions (version_id, slot, text, type) values (vid, 2, btrim(it ->> 'solution_2'), 'Another way'); end if;
   for l in select * from jsonb_array_elements(lr) loop
     insert into cms.cms_question_content_rows (version_id, row_id, role, rank, rank_proposed)
       values (vid, l ->> 'row_id', case l ->> 'role' when 'supporting' then 'supporting' else 'direct' end,
@@ -436,7 +688,8 @@ begin
     on conflict (run_id, local_id) do update set status = 'imported', content_hash = excluded.content_hash, batch_no = coalesce(cms_generation_items.batch_no, excluded.batch_no),
       question_id = excluded.question_id, version_id = excluded.version_id, warnings = excluded.warnings, warning_reason = excluded.warning_reason,
       checks = excluded.checks, review = excluded.review, error = null, import_id = excluded.import_id, updated_at = now();
-  return jsonb_build_object('status', 'imported', 'question_id', qid, 'version_id', vid, 'file_key', ch || '-' || keyno);
+  return jsonb_build_object('status', 'imported', 'question_id', qid, 'version_id', vid, 'file_key', ch || '-' || keyno, 'level', lvl,
+                            'link_proposed', case when link_proposed then t.topic_id || ' · class ' || cls end);
 end;
 $$;
 revoke execute on function cms.cms_gen_write_item(cms.cms_generation_runs, bigint, int, text, text, jsonb, text, boolean) from public;
@@ -560,6 +813,8 @@ declare
   kept jsonb := '[]';
   discarded int := 0;
   sets text[] := '{}';
+  links int := 0;
+  unshared int := 0;
 begin
   if who is null then raise exception 'Only the CMS admin or the generation import can roll back a generation run.' using errcode = '42501'; end if;
   if why is null then raise exception 'A rollback needs a reason.'; end if;
@@ -599,12 +854,30 @@ begin
               jsonb_build_object('status', jsonb_build_object('before', 'proposed', 'after', 'retired')), uid, 'gen:' || run.run_code);
     sets := sets || x.setting_id;
   end loop;
+  for x in select pr.topic_id, pr.class from cms.cms_topic_class_proposals pr
+            where pr.status = 'proposed' and pr.source = 'generation ' || run.run_code loop
+    update cms.cms_topic_class_proposals set status = 'retired', decided_at = now() where topic_id = x.topic_id and class = x.class;
+    insert into cms.cms_reviews (target, target_table, target_id, action, reason, field_diff, by_user, by_label)
+      values ('catalogue', 'cms_topic_class_proposals', x.topic_id || ' · class ' || x.class, 'gen_rollback', 'rollback of ' || run.run_code || ': ' || why,
+              jsonb_build_object('status', jsonb_build_object('before', 'proposed', 'after', 'retired')), uid, 'gen:' || run.run_code);
+    links := links + 1;
+  end loop;
+  for x in select e.key as setting_id, e.value as prev from jsonb_each_text(coalesce(run.catalogue_map -> 'shared', '{}')) e loop
+    -- given back only when no question of this subject uses it at all (retired ones keep their setting too)
+    if exists (select 1 from cms.cms_questions q where q.setting_id = x.setting_id and q.subject = run.subject) then continue; end if;
+    update cms.cms_settings set subject = x.prev, updated_at = now() where setting_id = x.setting_id and subject = 'both';
+    insert into cms.cms_reviews (target, target_table, target_id, action, reason, field_diff, by_user, by_label)
+      values ('catalogue', 'cms_settings', x.setting_id, 'gen_rollback', 'rollback of ' || run.run_code || ': no ' || run.subject || ' question uses it any more',
+              jsonb_build_object('subject', jsonb_build_object('before', 'both', 'after', x.prev)), uid, 'gen:' || run.run_code);
+    unshared := unshared + 1;
+  end loop;
   update cms.cms_generation_runs set status = 'rolled_back', rolled_back_at = now(), note = coalesce(note || ' · ', '') || 'rolled back: ' || why where run_id = run.run_id;
   insert into cms.cms_reviews (target, target_table, target_id, action, reason, field_diff, by_user, by_label)
     values ('catalogue', 'cms_generation_runs', run.run_code, 'gen_rollback', why,
             jsonb_build_object('status', jsonb_build_object('before', run.status, 'after', 'rolled_back'), 'retired', to_jsonb(retired), 'kept', kept,
-                               'held_discarded', discarded, 'settings_retired', to_jsonb(sets)), uid, 'gen:' || run.run_code);
-  return jsonb_build_object('run_code', run.run_code, 'retired', to_jsonb(retired), 'kept', kept, 'held_discarded', discarded, 'settings_retired', to_jsonb(sets));
+                               'held_discarded', discarded, 'settings_retired', to_jsonb(sets), 'links_retired', links, 'settings_unshared', unshared), uid, 'gen:' || run.run_code);
+  return jsonb_build_object('run_code', run.run_code, 'retired', to_jsonb(retired), 'kept', kept, 'held_discarded', discarded, 'settings_retired', to_jsonb(sets),
+                            'links_retired', links, 'settings_unshared', unshared);
 end;
 $$;
 revoke execute on function cms.cms_gen_rollback(jsonb) from public;

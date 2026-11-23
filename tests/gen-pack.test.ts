@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { linkedRows, parseItemRef, parseWrongTags, pilotToPack, settingSlug } from '../scripts/lib/gen-adapters/science-pilot04.ts';
+import { applySettingsMap, draftMap, similarity, words } from '../scripts/lib/gen-settings.ts';
 import { contentHash, dbItem, figureKey, packProblems, planItems, pngSize, sha256, type Pack, type PackQuestion, type ReviewDecisions } from '../scripts/lib/gen-pack.ts';
 
 const q = (lid: string, extra: Partial<PackQuestion> = {}): PackQuestion => ({
@@ -106,7 +107,7 @@ describe('PILOT04 adapter', () => {
   it('turns a run folder into a pack (settings as new catalogue items, Grade as class)', () => {
     const dir = mkdtempSync(join(tmpdir(), 'pilot-'));
     const rec = { Slot: 'PX-ST0003-01', Topic: 'ST0003', Grade: 6, Level: 6, Question: 'Which?', Format: 'Scenario MCQ', 'Option A': 'w', 'Option B': 'x', 'Option C': 'y', 'Option D': 'z',
-      Answer: 'B', 'Solution 1': 'Because x.', 'Primary row': 'C2-DLV-003', 'Secondary rows': '', 'Supporting rows': 'C1-DPL-010', 'Science question type': 3,
+      Answer: 'B', 'Solution 1': 'Because x.', 'Primary row': 'C2-DLV-003', 'Secondary rows': '', 'Supporting rows': 'C1-DPL-010', 'Science question type': 3, 'Primary row class': 2,
       Setting: 'Potted plant near a window', 'Setting familiarity': 'Everyday', 'Hidden idea': 'N', Experiment: 'Y', 'Reading (1-5)': 2, Steps: 1, 'Inhibition (0-3)': 2,
       'Irrelevant info': 'N', 'Visual (0-3)': 0, 'Misconception targeted': 'C2-DLV-003 #1', 'Wrong-option tags': 'A: misconception:C2-DLV-003 #1; C: untagged; D: concept_error:C1-DPL-010',
       _passed: true, _figure_file: '', _figure_kind: 'none', 'Warning reason': 'type 3 -> 4 (tier change)', _warn_list: [['type', 'type 3 -> 4 (tier change)']], 'Blind solve': 'B = key' };
@@ -120,12 +121,39 @@ describe('PILOT04 adapter', () => {
     expect(p.run).toMatchObject({ source_run: 'PX', route: 'B', subject: 'science', cms_commit: 'abc', models: { writer: 'claude-sonnet-5-5', solver: 'claude-haiku-5-5' }, cost_usd: 0.51 });
     expect(p.catalogue_new!.settings).toEqual([{ local_id: 'potted-plant-near-a-window', name: 'Potted plant near a window', description: null }]);
     const [a, b] = p.questions;
-    expect(a).toMatchObject({ class: 6, level: 6, format: 'MCQ-4', display_format: 'Scenario MCQ', answer: 'B', setting: { new: 'potted-plant-near-a-window' }, experiment: true,
+    expect(a).toMatchObject({ class: 6, level: 2, setting_note: 'Potted plant near a window', format: 'MCQ-4', display_format: 'Scenario MCQ', answer: 'B', setting: { new: 'potted-plant-near-a-window' }, experiment: true,
       linked_rows: [{ row_id: 'C2-DLV-003', role: 'primary' }, { row_id: 'C1-DPL-010', role: 'supporting' }], misconception: { row_id: 'C2-DLV-003', item_no: 1 },
       drivers: { reading: 2, steps: 1, inhibition: 2, visual: 0, irrelevant_info: false }, warnings: [{ kind: 'type', reason: 'type 3 -> 4 (tier change)' }],
       originality: { result: 'clear', similarity: 0.3 } });
     expect(b!.setting).toBeNull();
     expect(b!.originality).toBe('not_checked');
     expect(packProblems(p, dir)).toEqual(['route B checks originality on the Mac before writing; not checked: PX-ST0003-02']);
+  });
+});
+
+describe('settings map (closest existing SET first; scenes kept as setting notes)', () => {
+  const sets = [{ setting_id: 'SET021', name: 'Farm, garden and trees', theme: 'Daily life', description: null, subject: 'math', status: 'proposed' },
+                { setting_id: 'SET022', name: 'Food and cooking', theme: 'Daily life', description: null, subject: 'math', status: 'proposed' },
+                { setting_id: 'SET001', name: 'Bare', theme: 'No story', description: null, subject: 'math', status: 'proposed' }];
+  it('words and similarity', () => {
+    expect(words("Cutting leaves off a garden plant")).toEqual(['cutting', 'leaf', 'garden', 'plant']);
+    expect(similarity('Spoiled food in a kitchen', sets[1]!)).toBe(0.33);
+  });
+  it('drafts: best existing SET above the bar, otherwise a new setting (never Bare)', () => {
+    const m = draftMap(['Trees in a farm garden', 'Health camp check-up'], sets, 'science');
+    expect(m.entries.map((e) => [e.scene, e.setting_id ?? `new ${e.new!.name}`])).toEqual([['Health camp check-up', 'new Health camp check-up'], ['Trees in a farm garden', 'SET021']]); // sorted by scene
+  });
+  it('applies a reviewed map: mapped → SET, new → one setting per name; every question keeps its scene', () => {
+    const p = pack([q('M-1', { setting: { new: 'x' }, setting_note: 'Potted plant near a window' }), q('M-2', { setting: { new: 'y' }, setting_note: 'Health camp check-up' }),
+                    q('M-3', { setting: { new: 'z' }, setting_note: 'Heart beating after a hill climb' }), q('M-4', { setting: null, setting_note: null })]);
+    const problems = applySettingsMap(p, { file_schema: 'settings-map/1', subject: 'science', entries: [
+      { scene: 'Potted plant near a window', setting_id: 'SET021' }, { scene: 'Health camp check-up', new: { name: 'Body and health' } },
+      { scene: 'heart beating after a hill climb', new: { name: 'Body and health' } }] });
+    expect(problems).toEqual([]);
+    expect(p.questions.map((x) => x.setting)).toEqual([{ setting_id: 'SET021' }, { new: 'body-and-health' }, { new: 'body-and-health' }, null]);
+    expect(p.questions.map((x) => x.setting_note)).toEqual(['Potted plant near a window', 'Health camp check-up', 'Heart beating after a hill climb', null]);
+    expect(p.catalogue_new!.settings).toEqual([{ local_id: 'body-and-health', name: 'Body and health', description: null }]);
+    expect(applySettingsMap(pack([q('M-9', { setting: { new: 'x' }, setting_note: 'Unmapped scene' })]), { file_schema: 'settings-map/1', subject: 'science', entries: [] }))
+      .toEqual(['M-9: scene "Unmapped scene" is not in the settings map']);
   });
 });

@@ -32,7 +32,7 @@ const pack = JSON.parse(readFileSync(packPath, 'utf8')) as Pack;
 const problems = packProblems(pack, dirname(packPath));
 console.log(`gen:import ${packPath.replace(homedir(), '~')} → ${target === 'local' ? 'the LOCAL database' : `the database at ${host}`} · mode ${mode}${dryRun ? ' (dry run)' : ''}`);
 if (problems.length) { for (const p of problems) console.log(`  ✗ ${p}`); console.error(`Refused: ${problems.length} problem(s) in the pack.`); process.exit(1); }
-const reviewPath = opt('--review');
+const reviewPath = opt('--review') ?? opt('--approved-only');   // --approved-only <review pack.xlsx> = the same
 if (mode === 'pilot' && !reviewPath && !pack.questions.some((q) => q.review?.decision)) {
   console.error('Refused: a pilot import takes only questions Sambit approved in the Mac review pack. Pass --review <review pack.xlsx>.'); process.exit(1);
 }
@@ -56,6 +56,10 @@ try {
   const r = await runPackImport({ packPath, pack, mode, review, dryRun, batchSize, gitCommit, log: (s) => console.log(s),
     runUnit: freshConnections({ log: (s) => console.log(s) }), figures: target === 'local' ? new LocalFigures() : new RealFigures(), dryRunSql: sql });
   console.log(`\n${r.run_code}${dryRun ? ' (dry run, rolled back)' : ''}: ${Object.entries(r.counts).map(([k, v]) => `${v} ${k}`).join(' · ')} · figures ${r.figures.uploaded} uploaded, ${r.figures.present} already there`);
+  const u = r.setting_use;
+  console.log(`settings (imported questions): ${u.existing} on ${u.existing_settings} existing SETs · ${u.new} on ${u.new_settings} new settings (Proposed) · ${u.bare} bare`
+    + `${Object.keys(r.shared).length ? ` · shared with ${pack.run.subject}: ${Object.entries(r.shared).map(([k, v]) => `${k} (was ${v})`).join(', ')}` : ''}`);
+  console.log(`topic–class links proposed: ${r.links_proposed.length ? r.links_proposed.join(', ') : 'none'}`);
   if (r.closed) console.log(`run status ${r.closed.status} · all passes: ${Object.entries(r.closed.items).map(([k, v]) => `${v} ${k}`).join(' · ')}`);
   for (const x of r.items.filter((i) => i.status === 'failed')) console.log(`  ✗ ${x.local_id}: ${x.error}`);
   for (const x of r.items.filter((i) => i.status === 'held')) console.log(`  held ${x.local_id}: ${x.reason}`);

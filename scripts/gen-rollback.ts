@@ -14,10 +14,10 @@ if (real && !args.includes('--confirm-real')) { console.error(`Refused: rolling 
 const sql = connect();
 try {
   await assertCmsOwner(sql);
-  const [r] = await sql<{ r: { retired: string[]; kept: { question_id: string; why: string }[]; held_discarded: number; settings_retired: string[] } }[]>`
+  const [r] = await sql<{ r: { retired: string[]; kept: { question_id: string; why: string }[]; held_discarded: number; settings_retired: string[]; settings_unshared: number; links_retired: number } }[]>`
     select cms.cms_gen_rollback(${sql.json({ run_code: run, reason } as never)}) as r`;
   console.log(`${run} rolled back on ${real ? host : 'the LOCAL database'}: ${r!.r.retired.length} questions retired · ${r!.r.held_discarded} held-out items discarded · `
-    + `${r!.r.settings_retired.length} new settings retired · ${r!.r.kept.length} kept (approved or edited)`);
+    + `${r!.r.settings_retired.length} new settings retired · ${r!.r.settings_unshared} shared settings given back · ${r!.r.links_retired} proposed links retired · ${r!.r.kept.length} kept (approved or edited)`);
   for (const k of r!.r.kept) console.log(`  kept ${k.question_id} (${k.why})`);
 } catch (e) {
   console.error(`gen:rollback failed: ${(e as Error).message}`); process.exitCode = 1;

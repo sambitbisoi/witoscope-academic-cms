@@ -351,7 +351,7 @@ export async function runScience(sql: Sql, master: Master, report: ScienceReport
         reading: q.reading ?? null, steps: q.steps ?? null, inhibition: q.inhibition ?? null, visual: q.visual ?? null, has_irrelevant_info: q.has_irrelevant_info ?? null,
       });
       // Q34: Science settings, misconception items and the wrong-option tags (S7) of the file
-      const sciSettings = new Set((await tx`select setting_id from cms.cms_settings where subject = 'science' and status <> 'retired'`).map((r) => r.setting_id as string));
+      const sciSettings = new Set((await tx`select setting_id from cms.cms_settings where subject in ('science', 'both') and status <> 'retired'`).map((r) => r.setting_id as string));
       const itemOk = async (ref: string) => {
         const [row, no] = ref.split(' #');
         return (await tx`select 1 from cms.cms_row_misconceptions where row_id = ${row!} and item_no = ${Number(no)} and status <> 'retired'`).length > 0;

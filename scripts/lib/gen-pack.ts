@@ -25,7 +25,7 @@ export interface PackQuestion {
   figure?: { file: string; sha256: string; width?: number; height?: number; svg?: string | null; alt?: string | null } | null;
   linked_rows: { row_id: string; role: Role }[]; misconception?: { row_id: string; item_no: number } | null;
   wrong_option_tags?: { option: 'A' | 'B' | 'C' | 'D'; tag: string; row_id?: string | null; item_no?: number | null; why?: string | null }[];
-  science_question_type?: number | null; setting?: { setting_id: string } | { new: string } | null; setting_familiarity?: string | null;
+  science_question_type?: number | null; setting?: { setting_id: string } | { new: string } | null; setting_note?: string | null; setting_familiarity?: string | null;
   hidden_idea?: boolean | null; experiment?: boolean | null;
   drivers?: { reading?: number | null; steps?: number | null; inhibition?: number | null; visual?: number | null; irrelevant_info?: boolean | null };
   safety_note?: string | null; author_notes?: string | null;
@@ -195,9 +195,10 @@ export interface ImportOptions {
   /** dry run: one transaction for everything, always rolled back */
   dryRunSql?: Sql;
 }
-export interface ItemResult { local_id: string; status: string; question_id?: string; held_id?: string; file_key?: string; reason?: string; error?: string; was?: string }
+export interface ItemResult { local_id: string; status: string; question_id?: string; held_id?: string; file_key?: string; level?: number; link_proposed?: string | null; reason?: string; error?: string; was?: string }
 export interface ImportResult {
-  run_code: string; run_id: number; import_id: number; created: boolean; mode: Mode; settings: Record<string, string>;
+  run_code: string; run_id: number; import_id: number; created: boolean; mode: Mode; settings: Record<string, string>; shared: Record<string, string>;
+  links_proposed: string[]; setting_use: { existing: number; new: number; bare: number; new_settings: number; existing_settings: number };
   items: ItemResult[]; counts: Record<string, number>; figures: { uploaded: number; present: number }; closed: { status: string; items: Record<string, number> } | null;
   changed: string[]; dry_run: boolean;
 }
@@ -216,15 +217,21 @@ export async function runPackImport(o: ImportOptions): Promise<ImportResult> {
     pack_sha256: sha256(readFileSync(o.packPath)), review_sha256: o.review?.sha256 ?? null, cost: pack.run.cost_usd ?? null, cost_detail: pack.run.cost_detail ?? {},
     tokens_in: pack.run.tokens_in ?? null, tokens_out: pack.run.tokens_out ?? null,
     settings: pack.catalogue_new?.settings ?? [],
+    share_settings: [...new Set(pack.questions.flatMap((q) => (q.setting && 'setting_id' in q.setting ? [q.setting.setting_id] : [])))].sort(),
     import: { file_path: o.packPath.replace(process.env.HOME ?? '~', '~'), git_commit: o.gitCommit ?? null, file_hash: sha256(readFileSync(o.packPath)),
               options: { mode: o.mode, dry_run: o.dryRun, review_sha256: o.review?.sha256 ?? null, batch_size: o.batchSize } },
   };
   const body = async (unit: UnitRunner) => {
-    const [opened] = await unit('open run', (sql) => sql<{ r: { run_id: number; run_code: string; import_id: number; created: boolean; settings: Record<string, string> } }[]>`
+    const [opened] = await unit('open run', (sql) => sql<{ r: { run_id: number; run_code: string; import_id: number; created: boolean; settings: Record<string, string>; shared: Record<string, string> } }[]>`
       select cms.cms_gen_open_run(${sql.json(openPayload as never)}) as r`);
     const run = opened!.r;
     log(`${run.created ? 'Opened' : 'Continuing'} run ${run.run_code} (${pack.run.source_run}, ${o.mode}) · import #${run.import_id}`);
+    const imported = planned.filter((p) => !p.drop).map((p) => p.q);
+    const setting_use = { existing: imported.filter((q) => q.setting && 'setting_id' in q.setting).length, new: imported.filter((q) => q.setting && 'new' in q.setting).length,
+      bare: imported.filter((q) => !q.setting).length, new_settings: new Set(imported.flatMap((q) => (q.setting && 'new' in q.setting ? [q.setting.new] : []))).size,
+      existing_settings: new Set(imported.flatMap((q) => (q.setting && 'setting_id' in q.setting ? [q.setting.setting_id] : []))).size };
     const res: ImportResult = { run_code: run.run_code, run_id: Number(run.run_id), import_id: Number(run.import_id), created: run.created, mode: o.mode, settings: run.settings,
+      shared: run.shared ?? {}, links_proposed: [], setting_use,
       items: [], counts: {}, figures: { uploaded: 0, present: 0 }, closed: null, changed: [], dry_run: o.dryRun };
     const dir = dirname(o.packPath);
     for (let i = 0; i < planned.length; i += o.batchSize) {
@@ -241,7 +248,11 @@ export async function runPackImport(o: ImportOptions): Promise<ImportResult> {
         : { local_id: p.q.local_id, content_hash: p.hash, item: dbItem(pack, p.q, run.run_code) });
       const [b] = await unit(`batch ${batchNo}`, (sql) => sql<{ r: { items: ItemResult[] } }[]>`
         select cms.cms_gen_import_batch(${sql.json({ run_code: run.run_code, import_id: run.import_id, batch_no: batchNo, items } as never)}) as r`);
-      for (const it of b!.r.items) { res.items.push(it); res.counts[it.status] = (res.counts[it.status] ?? 0) + 1; if (it.status === 'changed') res.changed.push(it.local_id); }
+      for (const it of b!.r.items) {
+        res.items.push(it); res.counts[it.status] = (res.counts[it.status] ?? 0) + 1;
+        if (it.status === 'changed') res.changed.push(it.local_id);
+        if (it.link_proposed && !res.links_proposed.includes(it.link_proposed)) res.links_proposed.push(it.link_proposed);
+      }
       log(`  batch ${batchNo}: ${fmtCounts(b!.r.items.reduce((m: Record<string, number>, x) => (m[x.status] = (m[x.status] ?? 0) + 1, m), {}))}`);
     }
     const [c] = await unit('close run', (sql) => sql<{ r: { status: string; items: Record<string, number> } }[]>`
