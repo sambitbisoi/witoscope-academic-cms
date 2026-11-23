@@ -7,7 +7,7 @@ This is for whoever builds generation runs (the Science and Math engines, Route 
 - **Run-local IDs only.** `local_id` must be unique in the run, e.g. `PILOT04-ST0127-09`. The CMS mints the question ID (SQ…), the file key (`<chapter>-5001…`) and the setting IDs (SET…). A pack never carries CMS keys.
 - **One live CMS run per engine run** (`run.source_run`). Re-importing the same pack continues that run. An item imported before with the same content is "unchanged". An item imported before with different content is "changed" and never touched.
 - **Linked rows, topics and settings must already be in the CMS** (or be new settings of the run). If one is missing, the question is held out, and you place it from the Held-out area once the CMS has it. New settings go in `catalogue_new.settings` and arrive as Proposed.
-- **The import never adds, edits or flags** content rows, topics, topic–class links or catalogue items outside the run.
+- **The import never adds, edits or flags** content rows, topics or catalogue items outside the run. A missing topic–class link is only **proposed** (you decide it in Proposed).
 
 ## Route B (Mac) checklist
 1. Run the originality check on the Mac. Every question needs a result, and a near-copy is never imported.
