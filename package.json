@@ -35,7 +35,10 @@
     "tier:recompute": "tsx scripts/tier-recompute.ts",
     "concept:first-taught": "tsx scripts/concept-first-taught.ts",
     "held-out:add": "tsx scripts/held-out-add.ts",
-    "import:book-chapters": "tsx scripts/import-book-chapters.ts"
+    "import:book-chapters": "tsx scripts/import-book-chapters.ts",
+    "gen:import": "tsx scripts/gen-import.ts",
+    "gen:rollback": "tsx scripts/gen-rollback.ts",
+    "gen:pack-pilot": "tsx scripts/gen-pack-pilot.ts"
   },
   "devDependencies": {
     "@types/node": "22.9.0",

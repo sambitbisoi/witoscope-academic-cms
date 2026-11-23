@@ -64,7 +64,8 @@ try {
     !!adm && adm.prosecdef && adm.provolatile === 's' && adm.proconfig?.[0] === 'search_path=""' && adm.auth_exec && !adm.anon_exec);
 
   const DEFINER_ALLOWED = ['cms_is_admin', 'cms_apply_save', 'cms_set_status', 'cms_retire', 'cms_record_run', 'cms_save_job', 'cms_set_catalogue_status', 'cms_save_curriculum', 'cms_decide_override', 'cms_set_topic_review', 'cms_add_questions', 'cms_save_order', 'cms_decide_topic_class', 'cms_save_science_review', 'cms_save_content_links', 'cms_set_row_misconception_status', 'cms_save_content_row', 'cms_place_held_out', 'cms_discard_held_out', 'cms_decide_overrides',
-    'cms_save_course_board', 'cms_save_course', 'cms_set_course_status', 'cms_copy_course'];
+    'cms_save_course_board', 'cms_save_course', 'cms_set_course_status', 'cms_copy_course',
+    'cms_gen_open_run', 'cms_gen_import_batch', 'cms_gen_close_run', 'cms_gen_rollback', 'cms_gen_place_held'];
   const badFns = fns.filter((f) => f.proconfig?.[0] !== 'search_path=""' || f.anon_exec || (f.prosecdef && !DEFINER_ALLOWED.includes(f.proname)));
   check('every cms function: empty search_path, no anon access; only the listed functions run as owner', badFns.length === 0, badFns.map((f) => f.proname).join(', '));
 
@@ -136,9 +137,25 @@ try {
       (select count(*)::int from cms.cms_held_out where originality is not null and exists (select 1 from jsonb_object_keys(originality) k
          where k not in ('checked_at', 'result', 'similarity', 'same_numbers', 'closest_ref', 'field', 'checked', 'missing', 'threshold', 'near_copy_threshold', 'tool'))) as odd_orig,
       (select count(*)::int from cms.cms_held_out where question ?| array['book_text', 'item_text', 'source_text', 'page_text']) as book_text,
-      (select count(*)::int from cms.cms_held_out h where h.status = 'placed' and not exists (select 1 from cms.cms_questions q where q.question_id = h.placed_question_id and q.file_key = h.file_key)) as bad_place`;
+      (select count(*)::int from cms.cms_held_out h where h.status = 'placed' and not exists (select 1 from cms.cms_questions q where q.question_id = h.placed_question_id
+         and (q.file_key = h.file_key or (h.run_id is not null and exists (select 1 from cms.cms_question_versions v where v.question_id = q.question_id and v.run_id = h.run_id))))) as bad_place`;
     check('held-out items: no near-copy, citation-only originality, no book text, placed ones exist with their key',
       h!.near === 0 && h!.odd_orig === 0 && h!.book_text === 0 && h!.bad_place === 0, `${h!.near} near-copy, ${h!.odd_orig} odd originality, ${h!.book_text} book text, ${h!.bad_place} bad placements`);
+  }
+
+  // Q38 (23 Nov 2026): generated questions come from a run, are production, never a near-copy, keep their run's ledger
+  if ((await sql`select to_regclass('cms.cms_generation_items') as t`)[0]!.t !== null) {
+    const [g] = await sql`select
+      (select count(*)::int from cms.cms_generation_items i where i.status = 'imported' and not exists (
+         select 1 from cms.cms_question_versions v join cms.cms_questions q using (question_id)
+          where v.version_id = i.version_id and q.question_id = i.question_id and v.run_id = i.run_id and v.created_from = 'generation' and q.bank = 'production')) as bad_item,
+      (select count(*)::int from cms.cms_question_versions v join cms.cms_generation_runs r using (run_id) where r.kind = 'pack' and v.version_no = 1
+         and not exists (select 1 from cms.cms_generation_items i where i.version_id = v.version_id or (i.question_id = v.question_id and i.run_id = r.run_id))) as no_item,
+      (select count(*)::int from cms.cms_originality_checks o join cms.cms_question_versions v using (version_id) join cms.cms_generation_runs r on r.run_id = v.run_id
+         where r.kind = 'pack' and o.import_id in (select i.import_id from cms.cms_imports i where i.kind = 'generation_pack') and o.result = 'near_copy') as near,
+      (select count(*)::int from cms.cms_generation_items where checks ?| array['book_text', 'item_text', 'source_text', 'page_text']) as book_text`;
+    check('generated questions: each imported item is a production version of its run, no near-copy, no book text in the ledger',
+      g!.bad_item === 0 && g!.no_item === 0 && g!.near === 0 && g!.book_text === 0, `${g!.bad_item} bad items, ${g!.no_item} versions without an item, ${g!.near} near-copy, ${g!.book_text} book text`);
   }
 
   // Q20 (17 Nov 2026): every stored tier follows "Tier uses Level" (enforced once tier:recompute has run)
@@ -172,7 +189,7 @@ try {
                where q.subject <> 'science' and (v.science_question_type is not null or v.setting_familiarity is not null or v.has_hidden_idea is not null
                      or v.has_experiment is not null or v.science_tier_legacy is not null))::int as on_math,
              (select count(*) from cms.cms_question_versions v where v.level_tier is not null and v.science_tier_legacy is distinct from v.level_tier)::int as legacy_lost,
-             (select count(*) from cms.cms_questions q join cms.cms_settings s on s.setting_id = q.setting_id where s.subject <> q.subject)::int as setting_subject,
+             (select count(*) from cms.cms_questions q join cms.cms_settings s on s.setting_id = q.setting_id where s.subject not in (q.subject, 'both'))::int as setting_subject,
              (select count(*) from cms.cms_question_versions v join cms.cms_questions q on q.question_id = v.question_id
                join cms.cms_version_wrong_answers w on w.version_id = v.version_id
                where q.subject = 'science' and v.status = 'approved' and w.tag = 'concept_error'

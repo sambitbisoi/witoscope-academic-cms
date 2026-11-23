@@ -92,7 +92,7 @@ export async function loadForEdit(questionId: string): Promise<EditContext> {
   let sciSettings: EditContext['sciSettings'] = [];
   let sciRows: WarningRow[] = [];
   if (subject === 'science') {
-    sciSettings = must<EditContext['sciSettings']>(await supabase.from('cms_settings').select('setting_id, name, status').eq('subject', 'science').neq('status', 'retired').order('setting_id'));
+    sciSettings = must<EditContext['sciSettings']>(await supabase.from('cms_settings').select('setting_id, name, status').in('subject', ['science', 'both']).neq('status', 'retired').order('setting_id'));
     ({ linkedRows, rowItems, sciRows } = await scienceLinkContext(detail.version.version_id));
   }
   return {
