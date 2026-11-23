@@ -302,7 +302,7 @@ It reuses the Science validation and writer rules that already hold.
 ## 9. Small related items
 | Item | Proposal |
 |---|---|
-| Setting group (OL-016) | **Needs a definition first** (23 Nov answer: nothing exists). Proposed shape for PR 10 once Sambit defines what a group is: `cms_setting_groups` (SG01…, name, status) + `cms_settings.setting_group_id`, edited on the Settings screen through the curriculum save pattern; the engine rotates settings by group. Until then, the writer prompt keeps its rotation text |
+| Setting group (OL-016) | **Defined 23 Nov (§14).** PR 10: `cms_setting_groups` (SG01…, name, status) + `cms_settings.setting_group_id`, edited on the Settings screen through the curriculum save pattern; the engine rotates settings by group. Until then, the writer prompt keeps its rotation text |
 | Coverage flag (OL-017) | **Include (PR 10):** read-only query "topic linked to class N with no content rows of class N". Badge on the topic screen + Coverage; the engine blueprint skips such topic×class pairs with a warning |
 | Held-out generated (OL-030) | **Include (PR 1):** held items keep `pack_item`. Place works in the CMS (Held-out screen → `cms_place_held_out` calls the same internal writer with the pack item), so there is no Excel-only path for generated Science. The old master-sourced Science held-out keeps its current path |
 
@@ -377,6 +377,9 @@ Total ≈ 25 working days. PR 1 alone lets Science production import PILOT04-sty
 - **Clone check:** the engine snapshot includes, per topic, the existing CMS questions (current version text, options, answer, primary row, type, setting) **and the gold questions**, for the duplicate/clone check as in PILOT04 (`checks.py` similarity vs existing + gold; an in-run clone is an error). It is our own wording only, read via `cms_reader`.
 - **Build order:** 1→10. **Checkpoint after PR 4**: report to Sambit and wait for his review before PR 7 and before PR 9.
 - One CMS session at a time. PR 1 starts on "go".
+- **Primary row (23 Nov, later):** keep it as planned. Pilot runs (`--approved-only`) write a confirmed primary; steady state writes it as `rank_proposed`, confirmed in CMS review.
+- **Setting group definition (23 Nov, for PR 10):** a broad family of everyday settings, used to spread settings across a topic's questions. Each setting belongs to exactly one group. Start with about 10–15 groups, e.g. Food & cooking, Home & chores, Play & sport, Garden & plants, Travel & transport, Weather & seasons, Body & health habits, School & classroom, Nature walk & animals, Market & shopping, Festivals & gatherings, Science activity. Claude proposes a group for each existing setting; Sambit approves in the CMS (groups and assignments start Proposed).
+- **"go" for PR 1** given 23 Nov.
 - Hand-off item 8 (QB/Science side): update the step3 bar to DL-028 (±1 ≥ 90% at n = 19).
 
 ## Verification (when built)
