@@ -18,7 +18,7 @@ export interface Signature {
 export interface Question {
   key: string; question_id?: string; topic_id: string; class_override?: number; placement_note?: string;
   typical_set_id: string; pattern_id?: string; clone_batch_id: string; locale: 'IN'; text: string;
-  figure?: { description: string; image_status: 'needs_image' | 'has_image'; image_file?: string };
+  figure?: { description: string; /** Images PR (0049): Image needed → Image to check → OK */ image_status: 'needs_image' | 'to_check' | 'has_image'; image_file?: string };
   answer: Answer; parts?: Part[]; concepts: ConceptRef[]; signature: Signature; duration_s: 30 | 60 | 90 | 120;
   solutions: { school: string; second?: { text: string; type: 'Smarter way' | 'Another way'; strategy?: string } };
   hints: string[]; source_refs?: { ref_id: string; relation: 'modelled_on' | 'same_idea' | 'checked_against' }[];

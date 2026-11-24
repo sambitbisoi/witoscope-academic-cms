@@ -149,7 +149,7 @@
           "required": ["description", "image_status"],
           "properties": {
             "description": { "type": "string", "description": "What to draw, to scale" },
-            "image_status": { "enum": ["needs_image", "has_image"] },
+            "image_status": { "enum": ["needs_image", "to_check", "has_image"] },
             "image_file": { "type": "string" }
           }
         },

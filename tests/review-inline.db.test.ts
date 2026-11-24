@@ -87,20 +87,22 @@ describe('bulk approve + OL-044 (0048)', () => {
     });
   });
 
-  it('(g) a generated Science question with a drawn figure: "Image to redo (DL-040)"; bulk approve skips it and rolls back its primary', async () => {
+  // 0049 replaced 0048's "Image to redo (DL-040)" with the image status: a picture still "to check" blocks approval
+  it('(g → 0049) a generated question whose picture is still to check: bulk approve skips it and rolls back its primary', async () => {
     await rolledBack(async (tx, h) => {
       await setup(tx);
       const pic = await q(tx, h, { image: true }), manualPic = await q(tx, h, { image: true, generated: false, proposed: false });
-      expect(await blockers(tx, pic)).toEqual(['image_to_redo (DL-040)']);
+      await h.owner(); await tx`update cms.cms_question_versions set image_status = 'to_check' where question_id = ${pic}`; await h.as();
+      expect(await blockers(tx, pic)).toEqual(['image_to_check']);
       expect(await blockers(tx, manualPic)).toEqual([]);
       const r = await approveMany(tx, [pic, manualPic]);
-      expect(r.blocked).toEqual([{ question_id: pic, reason: expect.stringMatching(/Image to redo \(DL-040\)/) }]);
+      expect(r.blocked).toEqual([{ question_id: pic, reason: expect.stringMatching(/image is to check/) }]);
       expect(r.approved.map((x) => x.question_id)).toEqual([manualPic]);
       expect(await links(tx, pic)).toEqual(['C6-ZY-001:primary?', 'C6-ZY-002:secondary']);   // its confirmation was rolled back with it
       expect((await tx`select count(*)::int as n from cms.cms_reviews where target_id = ${`${pic} v1`} and action in ('approve', 'science_review')`)[0]!.n).toBe(0);
       // the trigger blocks every approval path, also a direct one with the primary confirmed
       await tx`select cms.cms_decide_primary(${tx.json({ question_id: pic, version_no: 1, decision: 'confirm', row_id: 'C6-ZY-001' } as never)})`;
-      await fails(tx, (sp) => sp`select cms.cms_set_status(${pic}, 1, 'approve', null)`, /Image to redo/);
+      await fails(tx, (sp) => sp`select cms.cms_set_status(${pic}, 1, 'approve', null)`, /image is to check/);
     });
   });
 

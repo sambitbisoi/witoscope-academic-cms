@@ -78,7 +78,7 @@ export function EditForm({ questionId, onDone }: { questionId: string; onDone: (
         <label className="check"><input type="checkbox" checked={!!q.figure} onChange={(e) => set((x) => { if (e.target.checked) x.figure = { description: '', image_status: 'needs_image' }; else delete x.figure; })} /> Has a figure or table</label>
         {q.figure && <>
           <label className="wide">Figure (describe it, to scale)<textarea rows={2} value={q.figure.description} onChange={(e) => set((x) => { x.figure!.description = e.target.value; })} /></label>
-          <label>Image<select value={q.figure.image_status} onChange={(e) => set((x) => { x.figure!.image_status = e.target.value as 'needs_image'; })}><option value="needs_image">Image needed</option><option value="has_image">Has image</option></select></label>
+          <label title="Images PR: a picture is marked OK in the question's Image box, after checking it">Image<select value={q.figure.image_status} onChange={(e) => set((x) => { x.figure!.image_status = e.target.value as 'needs_image'; })}><option value="needs_image">Image needed</option><option value="to_check">Image to check</option><option value="has_image" disabled={q.figure.image_status !== 'has_image'}>Image OK</option></select></label>
         </>}
       </Sec>
 

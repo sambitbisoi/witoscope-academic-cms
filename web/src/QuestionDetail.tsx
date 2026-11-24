@@ -14,11 +14,21 @@ import { supabase } from './supabase';
 import { OriginFlags } from './AddQuestions';
 import { Id } from './Id';
 import { scienceDetail, type ScienceDetail } from './scienceApi';
-import { imageToRedo, primaryConfirmedOnApproval, rankLabel, scienceBlockers } from './scienceLogic';
+import { primaryConfirmedOnApproval, rankLabel, scienceBlockers } from './scienceLogic';
+import { IMAGE_STATUS_LABEL, ImagePanel } from './ImagePanel';
+import type { ImageBrief } from '../../shared/image-brief.ts';
 import { approveQuestions, shortReason } from './reviewApi';
 import { ItemDecide, PrimaryDecide, SettingDecide } from './Proposals';
 import { ScienceReview } from './ScienceReview';
 import { TimeBoxes } from './TimeBoxes';
+
+/** Images PR (DL-040): the image panel of the version shown (current versions only). */
+function imagePanelOf(d: QuestionDetailData, onChanged: () => void) {
+  const q = d.question as unknown as { question_id: string; subject: string; bank: string }, v = d.version as unknown as {
+    version_id: number; version_no: number; status: string; image_status: string | null; image_path: string | null; figure_description: string | null; image_brief: ImageBrief | null };
+  return <ImagePanel key={`image-${v.version_id}`} q={{ question_id: q.question_id, subject: q.subject, bank: q.bank, version_id: v.version_id, version_no: v.version_no, status: v.status,
+    image_status: v.image_status, image_path: v.image_path, figure_description: v.figure_description, image_brief: v.image_brief ?? null }} onChanged={onChanged} />;
+}
 
 /** A keyboard review command from Browse (D6): A approve · R reject · F needs review. */
 export interface ReviewCommand { kind: 'approve' | 'reject' | 'flag'; n: number }
@@ -73,6 +83,7 @@ export function QuestionDetail({ id, versionNo, onVersion, onEdit, reloadKey = 0
           fixes={sx ? <PendingFixes d={d} x={sx} onDone={() => { setTick((t) => t + 1); onChanged?.(); }} /> : null} /> : null} /> : <>
       {!isCurrent && <div className="notice small">You're looking at an older version. <button className="link" onClick={() => onVersion(null)}>Show current (v{q.current_version})</button></div>}
       {isCurrent && <Actions key={v.version_id} d={d} onEdit={onEdit} onChanged={() => { setTick((t) => t + 1); onChanged?.(); }} command={command} onAdvance={onAdvance} />}
+      {isCurrent && imagePanelOf(d, () => { setTick((t) => t + 1); onChanged?.(); })}
 
       <div className="preview">
         <div className="eyebrow">Preview (as the child sees it)</div>
@@ -80,7 +91,7 @@ export function QuestionDetail({ id, versionNo, onVersion, onEdit, reloadKey = 0
         {v.image_path && <FigureImage path={v.image_path} alt={v.figure_description ?? 'Figure'} />}
         {v.figure_description && (
           <div className="figure small">
-            <span className="tag">{v.image_status === 'has_image' ? 'Image' : 'Image needed'}</span> {v.figure_description}
+            <span className="tag">{IMAGE_STATUS_LABEL[v.image_status ?? 'needs_image'] ?? 'Image'}</span> {v.figure_description}
           </div>
         )}
         {answerBlocks.map((a) => {
@@ -356,7 +367,8 @@ function Actions({ d, onEdit, onChanged, command, onAdvance, extra, fixes }: { d
   };
   // 13 Nov 2026: "Approved" means ready for the app: no approval while the book check, the picture
   // (production only) or the attributes are pending. The SQL trigger enforces the same rules.
-  const blockers = [...approvalBlockers(d.flags, q.bank), ...(extra ?? [])];
+  // Images PR (0049): a production picture still to check blocks approval (Science adds it through `extra`)
+  const blockers = [...approvalBlockers(d.flags, q.bank), ...(q.subject !== 'science' && q.bank === 'production' && v.image_status === 'to_check' ? ['image to check'] : []), ...(extra ?? [])];
   // OL-044 (Q38 PR 4): a generated question is approved through cms_approve_questions, which also confirms its proposed primary
   const approveOne = async () => {
     if (d.flags?.created_from !== 'generation') return setStatus(q.question_id, v.version_no, 'approve', null);
@@ -515,9 +527,9 @@ function scienceBlockersOf(d: QuestionDetailData, x: ScienceDetail): string[] {
   const item = (rowId: string | null, no: number | null) => (rowId ? x.items.find((i) => i.row_id === rowId && i.item_no === no) ?? { status: 'missing' } : null);
   // OL-044: a generated question's single proposed primary is confirmed by Approve itself, so it doesn't block it
   const confirmsPrimary = primaryConfirmedOnApproval(d.flags?.created_from, x.links);
-  // (g) until the Images PR (DL-040); the SQL trigger enforces the same
-  const redo = imageToRedo(d.question.subject, d.flags?.created_from, d.version.image_status) ? ['Image to redo (DL-040)'] : [];
-  return [...redo, ...scienceBlockers({
+  // Images PR (0049): a picture still to check blocks approval (Image needed is in the general blockers)
+  const toCheck = d.question.bank === 'production' && d.version.image_status === 'to_check' ? ['image to check (mark it OK in Image)'] : [];
+  return [...toCheck, ...scienceBlockers({
     solution1: d.solutions.find((s) => s.slot === 1)?.text ?? null, links: x.links, misconceptionText: x.version.misconception_targeted,
     misconception: item(x.version.misconception_row_id, x.version.misconception_item_no),
     wrongItems: [...x.wrongItems.values()].map((r) => { const [rowId, no] = r.split(' #'); return item(rowId!, Number(no))!; }),
@@ -536,9 +548,8 @@ function PendingFixes({ d, x, onDone }: { d: QuestionDetailData; x: ScienceDetai
   const refs = [...new Set([...(x.version.misconception_row_id ? [`${x.version.misconception_row_id} #${x.version.misconception_item_no}`] : []), ...x.wrongItems.values()])];
   const items = refs.map((r) => { const [rowId, no] = r.split(' #'); return itemOf(rowId!, Number(no)); }).filter((i): i is NonNullable<typeof i> => !!i && i.status === 'needs_review');
   const setting = d.setting && d.setting.status !== 'active' ? d.setting : null;
-  const redo = imageToRedo(q.subject, d.flags?.created_from, v.image_status);
   const toLinks = () => document.querySelector('.tint-box.linked')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  if (!proposed && !(noPrimary && rejected.length) && !items.length && !setting && !redo) return null;
+  if (!proposed && !(noPrimary && rejected.length) && !items.length && !setting) return null;
   return (
     <div className="pending-fixes small" aria-label="Pending proposals">
       <span className="muted">Pending:</span>
@@ -549,7 +560,6 @@ function PendingFixes({ d, x, onDone }: { d: QuestionDetailData; x: ScienceDetai
       {items.map((i) => <span key={`${i.row_id}#${i.item_no}`} className="fix"><span className="pstate proposed"><span className="pstate-label">Item {i.row_id} #{i.item_no} · needs review</span>
         <ItemDecide rowId={i.row_id} itemNo={i.item_no} status={i.status} onDone={onDone} /></span></span>)}
       {setting && <span className="fix"><span className="muted">Setting </span><SettingDecide setting={setting} onDone={onDone} /></span>}
-      {redo && <span className="fix"><span className="tag image-redo" title="A drawn figure: replaced in the Images PR (Image needed → Image to check → OK)">Image to redo (DL-040)</span></span>}
     </div>
   );
 }
@@ -584,12 +594,13 @@ function ScienceBody({ d, x, err, isCurrent, onVersion, onSaved, actions }: { d:
       {!isCurrent && <div className="notice small">You're looking at an older version. <button className="link" onClick={() => onVersion(null)}>Show current (v{q.current_version})</button></div>}
       {actions}
       {err && <p className="error small">Couldn't load the linked content: {err}</p>}
+      {isCurrent && imagePanelOf(d, onSaved)}
 
       <div className="preview">
         <div className="eyebrow">Preview (as the child sees it){x?.version.display_format ? ` · ${x.version.display_format}` : ''}</div>
         <div className="stem">{v.text}</div>
         {v.image_path && <FigureImage path={v.image_path} alt={v.figure_description ?? 'Figure'} />}
-        {v.figure_description && <div className="figure small prewrap"><span className="tag">{v.image_status === 'has_image' ? 'Image' : 'Image needed'}</span> {v.figure_description}</div>}
+        {v.figure_description && !isCurrent && <div className="figure small prewrap"><span className="tag">{IMAGE_STATUS_LABEL[v.image_status ?? 'needs_image'] ?? 'Image'}</span> {v.figure_description}</div>}
         {v.format === 'Typed-time' && <div className="typed small"><TimeBoxes value={v.correct ?? ''} /> <span className="muted">Typed-time · answer {v.correct}{v.accepted?.length ? `; also accepted: ${v.accepted.join(', ')}` : ''}</span></div>}
         <div className="options">
           {d.options.filter((o) => o.part_label === '').map((o) => (

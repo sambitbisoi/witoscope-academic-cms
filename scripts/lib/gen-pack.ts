@@ -7,6 +7,7 @@
 // per-item ledger (cms_generation_items), so a pooler drop or a pause loses only the open batch and a re-run continues.
 // The CMS mints every key and catalogue ID. Nothing outside the run is added, edited or flagged.
 import { createHash } from 'node:crypto';
+import { briefProblem, type ImageBrief } from '../../shared/image-brief.ts';
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import Ajv2020, { type ErrorObject } from 'ajv/dist/2020.js';
@@ -23,6 +24,8 @@ export interface PackQuestion {
   format: 'MCQ-4' | 'MCQ-3' | 'True/False'; display_format?: string | null; text: string; options: string[]; answer: 'A' | 'B' | 'C' | 'D';
   solution_1: string; solution_2?: string | null; figure_needed?: boolean; figure_description?: string | null;
   figure?: { file: string; sha256: string; width?: number; height?: number; svg?: string | null; alt?: string | null } | null;
+  /** Images PR (DL-040): the structured image brief (shared/image-brief.ts); written to image_brief, figure_description = its text */
+  figure_brief?: ImageBrief | null;
   linked_rows: { row_id: string; role: Role }[]; misconception?: { row_id: string; item_no: number } | null;
   wrong_option_tags?: { option: 'A' | 'B' | 'C' | 'D'; tag: string; row_id?: string | null; item_no?: number | null; why?: string | null }[];
   science_question_type?: number | null; setting?: { setting_id: string } | { new: string } | null; setting_note?: string | null; setting_familiarity?: string | null;
@@ -80,6 +83,7 @@ export function packProblems(pack: unknown, packDir?: string): string[] {
     }
     if (q.misconception && !q.linked_rows.some((l) => l.row_id === q.misconception!.row_id)) out.push(`${at}: misconception ${q.misconception.row_id} #${q.misconception.item_no} is not on one of its linked rows`);
     if (q.setting && 'new' in q.setting && !settings.has(q.setting.new)) out.push(`${at}: new setting "${q.setting.new}" is not in catalogue_new.settings`);
+    if (q.figure_brief !== undefined && q.figure_brief !== null) { const bp = briefProblem(q.figure_brief); if (bp) out.push(`${at}: figure_brief: ${bp}`); }
     if (q.figure && packDir) {
       const f = resolve(packDir, q.figure.file);
       if (!existsSync(f)) out.push(`${at}: figure ${q.figure.file} is missing`);
@@ -118,7 +122,8 @@ const canon = (v: unknown): unknown => Array.isArray(v) ? v.map(canon)
 /** The question's content fingerprint: everything that is the question itself (not the review decision, the checks,
  *  the warnings or the originality score). The same item re-sent with the same hash is "unchanged". */
 export function contentHash(q: PackQuestion): string {
-  const { review: _r, warnings: _w, warning_reason: _wr, checks: _c, passed: _p, originality: _o, figure, ...rest } = q;
+  // figure_brief is left out: a brief added to a pack later (images:briefs) never makes an imported question "changed"
+  const { review: _r, warnings: _w, warning_reason: _wr, checks: _c, passed: _p, originality: _o, figure, figure_brief: _fb, ...rest } = q;
   return sha256(JSON.stringify(canon({ ...rest, figure: figure ? { sha256: figure.sha256 } : null })));
 }
 /** Published R2 key of a figure: flat, under figures/ (upload-figures and /api/files accept only figures/<name>.png). */
@@ -199,7 +204,7 @@ export interface ItemResult { local_id: string; status: string; question_id?: st
 export interface ImportResult {
   run_code: string; run_id: number; import_id: number; created: boolean; mode: Mode; settings: Record<string, string>; shared: Record<string, string>;
   links_proposed: string[]; setting_use: { existing: number; new: number; bare: number; new_settings: number; existing_settings: number };
-  items: ItemResult[]; counts: Record<string, number>; figures: { uploaded: number; present: number }; closed: { status: string; items: Record<string, number> } | null;
+  items: ItemResult[]; counts: Record<string, number>; figures: { uploaded: number; present: number }; /** Images PR */ briefs: { set: number; unchanged: number; skipped: number }; closed: { status: string; items: Record<string, number> } | null;
   changed: string[]; dry_run: boolean;
 }
 class DryRollback extends Error { constructor(public result: ImportResult) { super('dry run: rolled back'); } }
@@ -232,7 +237,7 @@ export async function runPackImport(o: ImportOptions): Promise<ImportResult> {
       existing_settings: new Set(imported.flatMap((q) => (q.setting && 'setting_id' in q.setting ? [q.setting.setting_id] : []))).size };
     const res: ImportResult = { run_code: run.run_code, run_id: Number(run.run_id), import_id: Number(run.import_id), created: run.created, mode: o.mode, settings: run.settings,
       shared: run.shared ?? {}, links_proposed: [], setting_use,
-      items: [], counts: {}, figures: { uploaded: 0, present: 0 }, closed: null, changed: [], dry_run: o.dryRun };
+      items: [], counts: {}, figures: { uploaded: 0, present: 0 }, briefs: { set: 0, unchanged: 0, skipped: 0 }, closed: null, changed: [], dry_run: o.dryRun };
     const dir = dirname(o.packPath);
     for (let i = 0; i < planned.length; i += o.batchSize) {
       const chunk = planned.slice(i, i + o.batchSize);
@@ -254,6 +259,14 @@ export async function runPackImport(o: ImportOptions): Promise<ImportResult> {
         if (it.link_proposed && !res.links_proposed.includes(it.link_proposed)) res.links_proposed.push(it.link_proposed);
       }
       log(`  batch ${batchNo}: ${fmtCounts(b!.r.items.reduce((m: Record<string, number>, x) => (m[x.status] = (m[x.status] ?? 0) + 1, m), {}))}`);
+      // Images PR: structured briefs of this batch's imported questions (idempotent; never on a question someone approved)
+      const briefs = chunk.filter((p) => !p.drop && p.q.figure_brief && b!.r.items.some((x) => x.local_id === p.q.local_id && ['imported', 'unchanged'].includes(x.status)))
+        .map((p) => ({ local_id: p.q.local_id, brief: p.q.figure_brief }));
+      if (briefs.length) {
+        const [s2] = await unit(`briefs ${batchNo}`, (sql) => sql<{ r: { set: number; unchanged: number; skipped: unknown[] } }[]>`
+          select cms.cms_gen_set_briefs(${sql.json({ run_code: run.run_code, briefs } as never)}) as r`);
+        res.briefs.set += s2!.r.set; res.briefs.unchanged += s2!.r.unchanged; res.briefs.skipped += s2!.r.skipped.length;
+      }
     }
     const [c] = await unit('close run', (sql) => sql<{ r: { status: string; items: Record<string, number> } }[]>`
       select cms.cms_gen_close_run(${sql.json({ run_code: run.run_code, import_id: run.import_id, counts: { this_pass: res.counts, figures: res.figures },

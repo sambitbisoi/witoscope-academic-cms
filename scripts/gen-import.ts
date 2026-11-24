@@ -56,6 +56,7 @@ try {
   const r = await runPackImport({ packPath, pack, mode, review, dryRun, batchSize, gitCommit, log: (s) => console.log(s),
     runUnit: freshConnections({ log: (s) => console.log(s) }), figures: target === 'local' ? new LocalFigures() : new RealFigures(), dryRunSql: sql });
   console.log(`\n${r.run_code}${dryRun ? ' (dry run, rolled back)' : ''}: ${Object.entries(r.counts).map(([k, v]) => `${v} ${k}`).join(' · ')} · figures ${r.figures.uploaded} uploaded, ${r.figures.present} already there`);
+  if (r.briefs.set + r.briefs.unchanged + r.briefs.skipped) console.log(`image briefs: ${r.briefs.set} set · ${r.briefs.unchanged} unchanged · ${r.briefs.skipped} skipped`);
   const u = r.setting_use;
   console.log(`settings (imported questions): ${u.existing} on ${u.existing_settings} existing SETs · ${u.new} on ${u.new_settings} new settings (Proposed) · ${u.bare} bare`
     + `${Object.keys(r.shared).length ? ` · shared with ${pack.run.subject}: ${Object.entries(r.shared).map(([k, v]) => `${k} (was ${v})`).join(', ')}` : ''}`);

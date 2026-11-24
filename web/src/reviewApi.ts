@@ -45,10 +45,10 @@ export async function currentVersion(questionId: string): Promise<number> {
 export const decideSetting = (id: string, status: 'active' | 'retired' | 'proposed', where: string) =>
   setCatalogueStatus('setting', id, status, status === 'active' ? `approved ${where}` : status === 'retired' ? `rejected ${where}` : 'back to proposed');
 
-export interface TopicClassProposal { topic_id: string; class: number; suggested_role: string; status: 'proposed' | 'active' | 'retired'; source: string | null }
+export interface TopicClassProposal { topic_id: string; class: number; suggested_role: string; status: 'proposed' | 'active' | 'retired'; source: string | null; evidence: string | null }
 export async function topicClassProposals(topicIds: string[]): Promise<TopicClassProposal[]> {
   if (!topicIds.length) return [];
-  return must<TopicClassProposal[]>(await supabase.from('cms_topic_class_proposals').select('topic_id, class, suggested_role, status, source').in('topic_id', topicIds).order('class'));
+  return must<TopicClassProposal[]>(await supabase.from('cms_topic_class_proposals').select('topic_id, class, suggested_role, status, source, evidence').in('topic_id', topicIds).order('class'));
 }
 export const decideTopicClass = (topicId: string, cls: number, status: 'active' | 'retired' | 'proposed') => rpc('cms_decide_topic_class', { p_topic_id: topicId, p_class: cls, p_status: status });
 

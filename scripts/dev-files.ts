@@ -1,5 +1,5 @@
 // npm run dev:files — local stand-ins (dev only) for the R2 file service and the AI
-// service (/api/ai, with a fake model: no API key, no cost).
+// service (/api/ai, with a fake model: no API key, no cost) and the image service (/api/images, fake provider).
 // Serves functions/_lib/files.ts (the same code as the Pages Function) on
 // http://127.0.0.1:8790 against .r2-local/cms-sources, with a LOCAL Access key:
 // .dev-access/ holds a generated RSA key, its JWKS and a dev token for
@@ -11,6 +11,7 @@ import { createServer } from 'node:http';
 import { join, resolve } from 'node:path';
 import { handleAi } from '../functions/_lib/ai.ts';
 import { handleFiles, type FilesEnv } from '../functions/_lib/files.ts';
+import { handleImages } from '../functions/_lib/images.ts';
 import { fakeAiClient } from './lib/fake-ai.ts';
 import { handleLocal } from './lib/local-import.ts';
 import { verifyAccess } from '../functions/_lib/access.ts';
@@ -59,7 +60,10 @@ if (import.meta.filename === process.argv[1]) {
       const path = new URL(request.url).pathname;
       // U3: local-mode import (this Mac only; the live site has no /api/local). Same Access check as the file service.
       const r = path.startsWith('/api/local/') ? await verifyAccess(request, env).then(() => handleLocal(request), () => new Response(JSON.stringify({ error: 'Access required' }), { status: 403 }))
-        : path.startsWith('/api/ai/') ? await handleAi(request, env, ai) : await handleFiles(request, env, bucket);
+        : path.startsWith('/api/ai/') ? await handleAi(request, env, ai)
+        // Images PR: the fake image provider locally (no key, no cost); DEV_IMAGES=off shows "Image service not set up"
+        : path.startsWith('/api/images/') ? await handleImages(request, { ...env, IMAGE_PROVIDER: process.env.DEV_IMAGES === 'off' ? undefined : 'fake', IMAGE_ALLOW_FAKE: '1' }, bucket)
+        : await handleFiles(request, env, bucket);
       res.writeHead(r.status, Object.fromEntries(r.headers));
       res.end(Buffer.from(await r.arrayBuffer()));
     } catch (e) {

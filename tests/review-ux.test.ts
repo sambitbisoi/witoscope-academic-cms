@@ -68,7 +68,7 @@ describe('Q8: Kind line and the item in the URL', async () => {
   it('says Kind and Class', () => {
     expect(kindLine({ kind: 'typical_set', id: 'TS-G3-X', status: 'proposed', cls: 3, via: null, topic_id: null })).toBe('Proposed question type · Class 3');
     expect(kindLine({ kind: 'pattern', id: 'MP1', status: 'proposed', cls: 3, via: 'via its question type', topic_id: null })).toBe('Proposed pattern · Class 3 (via its question type)');
-    expect(kindLine({ kind: 'topic_class', id: 'MT0261·6', status: 'proposed', cls: 6, via: null, topic_id: 'MT0261' })).toBe('Proposed topic–class link MT0261 → Class 6');
+    expect(kindLine({ kind: 'topic_class', id: 'MT0261·6', status: 'proposed', cls: 6, via: null, topic_id: 'MT0261' })).toBe('Add topic to Class 6 · proposed');   // PR 4b wording
     expect(kindLine({ kind: 'concept', id: 'G6-A', status: 'active', cls: 6, via: null, topic_id: null })).toBe('Concept · Class 6');
     expect(kindLine({ kind: 'setting', id: 'SET001', status: 'proposed', cls: null, via: null, topic_id: null })).toBe('Proposed setting');
   });

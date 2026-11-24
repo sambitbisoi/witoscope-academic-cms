@@ -163,7 +163,9 @@ export function walkOrder<R extends RowLike, Q extends { question_id: string; to
     else loose.set(q.topic_id, [...(loose.get(q.topic_id) ?? []), q]);
   }
   const sort = (qs: Q[]) => [...qs].sort((a, b) => (a.science_question_type ?? 9) - (b.science_question_type ?? 9) || a.question_id.localeCompare(b.question_id));
-  const topics = [...topicIds, ...[...new Set([...rows.map((r) => r.topic_id), ...questions.map((q) => q.topic_id)])].filter((t) => !topicIds.includes(t)).sort()];
+  // only the topics given (the ones the tree shows); a question of another topic is never walked (PR 4b, 24 Nov 2026)
+  const topics = topicIds;
+  questions = questions.filter((q) => topicIds.includes(q.topic_id));
   const out: { question_id: string; topic_id: string; row_id: string | null }[] = [];
   for (const t of topics) {
     for (const r of rowsInOrder(rows.filter((x) => x.topic_id === t))) for (const q of sort(byRow.get(r.row_id) ?? [])) out.push({ question_id: q.question_id, topic_id: t, row_id: r.row_id });
@@ -172,6 +174,18 @@ export function walkOrder<R extends RowLike, Q extends { question_id: string; to
   return out;
 }
 /** Where a question sits in the walk and its neighbours ("12 / 87"); onlyIds narrows the walk (e.g. only Needs review). */
+/** PR 4b (Sambit, 24 Nov 2026): the walk uses EXACTLY the Browse filters of the tree and the question list, so its total
+ *  matches the chapter count: the topics the tree shows (core, plus extra ones when "Include extra topics" is ticked), each
+ *  topic's class ceiling (its highest selected class) unless "Show higher-level questions" is on, and only counted
+ *  questions (not retired). "only Needs review" narrows it further (walkStep). */
+export interface WalkTopic { topic_id: string; ceiling: number | null }
+export function walkQuestions<Q extends { topic_id: string; effective_level: number; retired_at?: string | null; counted?: boolean | null }>(
+  questions: Q[], topics: WalkTopic[], higher: boolean): Q[] {
+  const ceil = new Map(topics.map((t) => [t.topic_id, t.ceiling]));
+  return questions.filter((q) => ceil.has(q.topic_id) && !q.retired_at && q.counted !== false
+    && (ceil.get(q.topic_id) === null || higher || q.effective_level <= ceil.get(q.topic_id)!));
+}
+
 export function walkStep<W extends { question_id: string }>(walk: W[], current: string | null, onlyIds?: Set<string>) {
   const list = onlyIds ? walk.filter((w) => onlyIds.has(w.question_id) || w.question_id === current) : walk;
   const i = current ? list.findIndex((w) => w.question_id === current) : -1;
@@ -195,6 +209,3 @@ export function rowState(r: { row_id: string; retired_at: string | null }, pendi
 /** OL-044: approving a GENERATED question also confirms its single proposed primary (cms_approve_questions). */
 export const primaryConfirmedOnApproval = (createdFrom: string | null | undefined, links: { rank: string; rank_proposed: boolean }[]) =>
   createdFrom === 'generation' && !links.some((l) => l.rank === 'primary' && !l.rank_proposed) && links.filter((l) => l.rank === 'primary' && l.rank_proposed).length === 1;
-/** (g) Until the Images PR (DL-040): a generated Science question with a drawn figure can't be approved. */
-export const imageToRedo = (subject: string, createdFrom: string | null | undefined, imageStatus: string | null | undefined) =>
-  subject === 'science' && createdFrom === 'generation' && imageStatus === 'has_image';

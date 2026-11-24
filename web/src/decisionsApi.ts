@@ -15,7 +15,7 @@ export const BLOCK_LABEL: Record<string, string> = {
   science_primary_not_confirmed: 'Science: primary row not confirmed', science_free_text_misconception: 'Science: misconception is free text',
   science_item_not_active: 'Science: misconception item not active', science_wrong_option_item_not_active: 'Science: a wrong option\'s item not active',
   science_type_missing: 'Science: question type not set', science_concept_error_row_not_linked: 'Science: a concept error\'s target row is not one of its rows',
-  image_to_redo: 'Image to redo (DL-040): a drawn figure, replaced in the Images PR',
+  image_to_check: 'Image to check (mark it OK or Redo in the question\'s Image)',
 };
 
 export async function gatherDecisions(f: { subject: string; cls: string }): Promise<DecisionCard[]> {

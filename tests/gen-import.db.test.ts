@@ -300,4 +300,23 @@ describe('gen:import (local, rolled back)', () => {
       await expect(tx`select cms.cms_gen_open_run('{}'::jsonb)`).rejects.toThrow(/needs subject math or science/);   // past the admin check
     }, su);
   });
+  it('Images PR: a figure_brief is stored as the structured brief (its text as figure_description); a re-import is unchanged; images:briefs-style updates later are audited', async () => {
+    await inRollback(async (tx) => {
+      await fixtures(tx);
+      const brief = { shown: 'Four test pictures in a row: a cup, a pot, a pan and a jug.', style: 'flat colour', must_not_show: 'no words', layout: 'row4' as const,
+        labels: [{ label: 'A' as const, points_to: 'the cup' }, { label: 'B' as const, points_to: 'the pot' }, { label: 'C' as const, points_to: 'the pan' }, { label: 'D' as const, points_to: 'the jug' }] };
+      const p = pack([q('B-01', { figure_needed: true, figure_brief: brief }), q('B-02')]);
+      const r = await run(tx, p, 'pilot', review({ 'B-01': 'approve', 'B-02': 'approve' }));
+      expect(r.briefs).toEqual({ set: 1, unchanged: 0, skipped: 0 });
+      const qid = r.items.find((i) => i.local_id === 'B-01')!.question_id!;
+      const [v] = await tx`select v.image_brief, v.figure_description, v.image_status from cms.cms_questions q join cms.cms_question_versions v on v.question_id = q.question_id and v.version_no = q.current_version where q.question_id = ${qid}`;
+      expect(v).toMatchObject({ image_brief: brief, image_status: 'needs_image' });
+      expect(v!.figure_description).toMatch(/^Shown: Four test pictures .* · Labels: A -> the cup; B -> the pot; C -> the pan; D -> the jug$/);
+      const again = await run(tx, p, 'pilot', review({ 'B-01': 'approve', 'B-02': 'approve' }));
+      expect(again.items.map((i) => i.status)).toEqual(['unchanged', 'unchanged']);
+      expect(again.briefs).toEqual({ set: 0, unchanged: 1, skipped: 0 });
+      const later = await tx`select cms.cms_gen_set_briefs(${tx.json({ run_code: r.run_code, briefs: [{ local_id: 'B-02', brief: { ...brief, shown: 'A test jug on a shelf.' } }, { local_id: 'NOPE', brief }] } as never)}) as r`;
+      expect(later[0]!.r).toMatchObject({ set: 1, skipped: [{ local_id: 'NOPE', why: 'not imported by this run' }] });
+    });
+  });
 });

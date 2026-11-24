@@ -13,10 +13,11 @@ import { rowDetail, scienceData, type ScienceData, type ScienceQuestion, type Sc
 import { clamp, Handle } from './Handle';
 import { ItemDecide, PrimaryDecide, TopicClassDecide } from './Proposals';
 import { pendingItems } from './reviewApi';
+import { ImageRunBar } from './ImageRun';
 import { browseHash, showsAtLevel, statusLabel } from './logic';
 import { sciFilter, SCI_FILTER_NONE, type SciFilter } from './scienceLogic';
 import { classesLine, isDimmed, listedOrder, rightPane, rowClassLine, rowQuestions, rowsForClass, rowsInOrder, rowSplit, rowSplitLabel, topicGroups } from './scienceLogic';
-import { PFILTERS, primaryOf, questionState, rowState, walkOrder, walkStep, type PFilter } from './scienceLogic';
+import { PFILTERS, primaryOf, questionState, rowState, walkOrder, walkQuestions, walkStep, type PFilter, type WalkTopic } from './scienceLogic';
 
 export const CONTENT_TYPES = ['Fact', 'Concept', 'How it works', 'Experiment', 'Scenario-Case', 'Diagram', 'Vocabulary'] as const;
 const STATUS: Record<ScienceRow['status'], { icon: string; label: string; cls: string }> = {
@@ -54,7 +55,8 @@ export function ScienceView({ scope, cls, higher = false, topicNames, row, q, on
   row: string | null; q: string | null; onRow: (row: string | null) => void; onQuestion: (id: string) => void; onBack: () => void;
   onOrder: (ids: string[]) => void; reload: number; /** the question detail shown in the right column when q is set */ detail: ReactNode;
   /** Q38 PR 4 (b): Previous / Next through the whole chapter (its topics in order); a step may open another topic */
-  walk?: { chapterId: string; topicIds: string[]; onGo: (topicId: string, questionId: string) => void };
+  walk?: { chapterId: string; /** the topics the tree shows, in order, each with its class ceiling */ topics: WalkTopic[]; /** Show higher-level questions */ higher: boolean;
+    onGo: (topicId: string, questionId: string) => void };
 }) {
   const [data, setData] = useState<ScienceData | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -112,20 +114,28 @@ export function ScienceView({ scope, cls, higher = false, topicNames, row, q, on
 
   return (
     <div className="sci">
-      <Coverage rows={rows.filter((r) => !r.retired_at)} questions={qsAll} cls={cls} />
-      <div className="filters sci-filters small">
-        <label>Science question type <select value={sf.type} onChange={(e) => setSf({ ...sf, type: e.target.value })}>
-          <option value="">Any</option><option value="none">Not set</option>
-          {(Object.entries(SCIENCE_QUESTION_TYPES) as [string, string][]).map(([k, l]) => <option key={k} value={k}>{k} · {l}</option>)}</select></label>
-        <label>Tier <select value={sf.tier} onChange={(e) => setSf({ ...sf, tier: e.target.value })}>
-          <option value="">Any</option><option value="none">None (no type)</option>{['School', 'Achiever', 'Super Achiever'].map((t) => <option key={t}>{t}</option>)}</select></label>
-        <label>Markers <select value={sf.markers} onChange={(e) => setSf({ ...sf, markers: e.target.value })}>
-          <option value="">Any</option>{['0', '1', '2', '3+'].map((m) => <option key={m}>{m}</option>)}</select></label>
-        {(sf.type || sf.tier || sf.markers) && <><span className="muted">{qs.length} of {qsAll.length} questions</span> <button className="link small" onClick={() => setSf(SCI_FILTER_NONE)}>Clear</button></>}
+      {/* PR 4b (Sambit, 24 Nov 2026): one compact row: filters, then the proposal filter, then the topic summary behind (i) */}
+      <div className="sci-bar small">
+        <select aria-label="Science question type" className={sf.type ? 'active' : ''} value={sf.type} onChange={(e) => setSf({ ...sf, type: e.target.value })}>
+          <option value="">Type: any</option><option value="none">Type: not set</option>
+          {(Object.entries(SCIENCE_QUESTION_TYPES) as [string, string][]).map(([k, l]) => <option key={k} value={k}>Type {k} · {l}</option>)}</select>
+        <select aria-label="Tier" className={sf.tier ? 'active' : ''} value={sf.tier} onChange={(e) => setSf({ ...sf, tier: e.target.value })}>
+          <option value="">Tier: any</option><option value="none">Tier: none (no type)</option>{['School', 'Achiever', 'Super Achiever'].map((t) => <option key={t} value={t}>{t}</option>)}</select>
+        <select aria-label="Markers" className={sf.markers ? 'active' : ''} value={sf.markers} onChange={(e) => setSf({ ...sf, markers: e.target.value })}>
+          <option value="">Markers: any</option>{['0', '1', '2', '3+'].map((m) => <option key={m} value={m}>{m} marker{m === '1' ? '' : 's'}</option>)}</select>
+        {(sf.type || sf.tier || sf.markers) && <span><span className="muted">{qs.length} of {qsAll.length}</span> <button className="link small" onClick={() => setSf(SCI_FILTER_NONE)}>Clear</button></span>}
         <span className="pfilter" role="group" aria-label="Show proposals" title="Rows, links and questions: Proposed = waiting for a decision (Needs review, a proposed primary, an item to review) · Rejected = rejected or retired">
           {PFILTERS.map(([v, l]) => <button key={v} className={`pill small ${pf === v ? 'on' : ''}`} aria-pressed={pf === v} onClick={() => setPf(v)}>{l}</button>)}</span>
+        <InfoPop label={`Summary of this ${chapterMode ? 'chapter' : 'topic'}`}
+          attention={rows.some((r) => !r.retired_at && r.status === 'none') || qsAll.some((x) => !x.retired_at && x.bank === 'production' && !x.science_question_type) || pending.size > 0}
+          attentionText={[rows.some((r) => !r.retired_at && r.status === 'none') ? 'content rows with no question yet' : null,
+            qsAll.some((x) => !x.retired_at && x.bank === 'production' && !x.science_question_type) ? 'questions without a type' : null,
+            pending.size > 0 ? 'misconception items to review' : null].filter(Boolean).join(' · ')}>
+          <Coverage rows={rows.filter((r) => !r.retired_at)} questions={qsAll} cls={cls} />
+        </InfoPop>
       </div>
       {'topicId' in scope && <TopicClassDecide topicId={scope.topicId} />}
+      <ImageRunBar scope={scope} onChanged={() => setTick((t) => t + 1)} />
       <div className={`sci-cols split ${split !== null ? 'sized' : ''}`} style={split !== null ? { '--sci-left': `${split}px` } as CSSProperties : undefined}>
         <section className="sci-content" aria-label="Content rows" ref={contentRef}>
           <div className="eyebrow sci-content-head"><span>Content · master order{hidden > 0 ? <span className="muted"> · {hidden} row{hidden === 1 ? '' : 's'} of a higher class not shown (tick "Show higher-level questions")</span> : null}</span>
@@ -141,7 +151,7 @@ export function ScienceView({ scope, cls, higher = false, topicNames, row, q, on
                   <button className="sci-topic-head" aria-expanded={open} onClick={() => toggle(g.topic_id)}>
                     <span className="caret" aria-hidden>{open ? '▾' : '▸'}</span>
                     <span className="sci-topic-name">{t?.no ? `${t.no} ` : ''}{t?.name ?? g.topic_id} <Id>{g.topic_id}</Id></span>
-                    <span className="muted small">{g.rows.length ? `${g.rows.length} row${g.rows.length === 1 ? '' : 's'}` : 'no content rows'} · {nq} Q{nq === 1 ? '' : 's'}</span>
+                    <span className="muted small">{g.rows.length ? `${g.rows.length} row${g.rows.length === 1 ? '' : 's'}` : 'no content rows'} · {nq} question{nq === 1 ? '' : 's'}</span>
                   </button>
                   {open && (g.rows.length ? list(g.rows) : <p className="muted small sci-empty">no content rows</p>)}
                 </div>
@@ -225,7 +235,7 @@ function RowItem({ n, r, cls, open, onPick, inScope, onRow, onAdd, onEdit, state
           <span className="sci-row-text">{r.content}</span>
           <span className="sci-row-meta small">
             <span className={`cov ${s.cls}`} title={`Row status: ${s.label}`}>{s.icon} {s.label}</span>
-            <span className="muted">&nbsp;· {r.n_direct} direct · {r.n_supporting} supporting</span>
+            <span className="muted" title="Links from questions to this row; one question can be linked to several rows">&nbsp;· {r.n_direct} direct link{r.n_direct === 1 ? '' : 's'} · {r.n_supporting} supporting link{r.n_supporting === 1 ? '' : 's'}</span>
             <RowClassTag rowClass={r.row_class} cls={cls} />
             <RowTags r={r} />
             {r.retired_at && <span className="tag gone" title={r.retired_reason ?? undefined}>Retired</span>}
@@ -349,7 +359,8 @@ function WalkBar({ walk, q, reload }: { walk: NonNullable<Parameters<typeof Scie
     let live = true; walkCache.get(k)!.then((d) => live && setData(d)).catch(() => live && setData(null));
     return () => { live = false; };
   }, [walk.chapterId, reload]);
-  const order = useMemo(() => (data ? walkOrder(data.rows.filter((r) => !r.retired_at), data.questions.filter((x) => !x.retired_at), walk.topicIds) : []), [data, walk.topicIds]);
+  const order = useMemo(() => (data ? walkOrder(data.rows.filter((r) => !r.retired_at), walkQuestions(data.questions, walk.topics, walk.higher), walk.topics.map((t) => t.topic_id)) : []),
+    [data, walk.topics, walk.higher]);
   const only = useMemo(() => (onlyReview && data ? new Set(data.questions.filter((x) => x.status === 'in_review' && !x.retired_at).map((x) => x.question_id)) : undefined), [onlyReview, data]);
   const st = walkStep(order, q, only);
   const go = (w: { topic_id: string; question_id: string } | null) => { if (w) walk.onGo(w.topic_id, w.question_id); };
@@ -376,4 +387,24 @@ function WalkBar({ walk, q, reload }: { walk: NonNullable<Parameters<typeof Scie
 
 export function Box({ title, children, tone }: { title: ReactNode; children: ReactNode; tone?: string }) {
   return <div className={`tint-box ${tone ?? ''}`}><div className="tint-title">{title}</div>{children}</div>;
+}
+
+/** PR 4b: a summary behind an (i) button (popover; Escape or a click outside closes it). An amber dot asks for attention. */
+function InfoPop({ label, attention, attentionText, children }: { label: string; attention: boolean; attentionText: string; children: ReactNode }) {
+  const [open, setOpen] = useState(false);
+  const box = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const away = (e: MouseEvent) => { if (box.current && !box.current.contains(e.target as Node)) setOpen(false); };
+    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
+    document.addEventListener('mousedown', away); document.addEventListener('keydown', esc);
+    return () => { document.removeEventListener('mousedown', away); document.removeEventListener('keydown', esc); };
+  }, [open]);
+  return (
+    <span className="info-pop" ref={box}>
+      <button type="button" className={`info-btn ${open ? 'on' : ''}`} aria-expanded={open} aria-label={label} title={attention ? `${label} · needs attention: ${attentionText}` : label} onClick={() => setOpen(!open)}>
+        i{attention && <span className="info-dot" aria-hidden />}</button>
+      {open && <div className="info-panel" role="dialog" aria-label={label}>{attention && <div className="info-attn small">Needs attention: {attentionText}</div>}{children}</div>}
+    </span>
+  );
 }

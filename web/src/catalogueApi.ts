@@ -85,7 +85,7 @@ export async function loadItems(show: Show, places: Places): Promise<CatItem[]> 
   }
   for (const r of links) {
     const t = places.topics.get(r.topic_id);
-    out.push({ kind: 'topic_class', id: `${r.topic_id}·${r.class}`, label: `${t?.name ?? r.topic_id} → also in Class ${r.class}`,
+    out.push({ kind: 'topic_class', id: `${r.topic_id}·${r.class}`, label: t?.name ?? r.topic_id,
       detail: `Home class ${t?.class ?? '?'} · suggested role: ${ROLE_TEXT[r.suggested_role] ?? r.suggested_role}${r.evidence ? ` · ${r.evidence}` : ''}`,
       status: r.status, ...place(r.topic_id), cls: r.class, via: null, proposedBy: [r.source], usedBy: [] });
   }
