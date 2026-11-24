@@ -1,7 +1,8 @@
 // Review tab (D6, 12 Nov 2026): questions flagged "Needs review" and rejected ones, with the
 // note given (optional for Needs review, required for Reject). Drafts are reviewed in Browse
 // (keys A / R / F, ↓↑); they are not listed here.
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { approveQuestions, runOfQuestions, shortReason, type ApproveResult } from './reviewApi';
 import { decideOverrides, overrideExtras, overrideRequests, reviewQueue, type OverrideExtras, type OverrideRequest } from './editApi';
 import { browseHash, FLAG_FILTERS, matchesFlag, STATUS_LABEL, subjectLabel, subjectOfChapter, type FlagFilter } from './logic';
 import { OriginFlags } from './AddQuestions';
@@ -9,19 +10,40 @@ import { OriginFlags } from './AddQuestions';
 type Item = Awaited<ReturnType<typeof reviewQueue>>[number];
 type Show = 'all' | 'in_review' | 'rejected' | 'overrides';
 
-export function ReviewQueue({ initial }: { initial?: string | null } = {}) {
+export function ReviewQueue({ initial, run: initialRun }: { initial?: string | null; /** Q38 PR 4: GR#### */ run?: string | null } = {}) {
   const [items, setItems] = useState<Item[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [show, setShow] = useState<Show>(initial === 'overrides' ? 'overrides' : 'all');
   const [flag, setFlag] = useState<FlagFilter>('all');
   const [nOverrides, setNOverrides] = useState<number | null>(null);
+  const [tick, setTick] = useState(0);
   useEffect(() => { overrideRequests().then((r) => setNOverrides(r.filter((x) => x.status === 'pending').length)).catch(() => setNOverrides(null)); }, []);
-  useEffect(() => { reviewQueue().then(setItems).catch((e) => setError(e.message)); }, []);
+  useEffect(() => { reviewQueue().then(setItems).catch((e) => setError(e.message)); }, [tick]);
+  // Q38 PR 4: Run filter, tick boxes, Approve selected / Approve all in run (each through cms_set_status; OL-044)
+  const [runOf, setRunOf] = useState<Map<string, string>>(new Map());
+  useEffect(() => { runOfQuestions().then(setRunOf).catch(() => setRunOf(new Map())); }, [tick]);
+  const [run, setRun] = useState<string>(initialRun?.toUpperCase() ?? '');
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [confirm, setConfirm] = useState<{ ids: string[]; label: string } | null>(null);
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
+  const [result, setResult] = useState<ApproveResult | null>(null);
+  const [bulkErr, setBulkErr] = useState<string | null>(null);
+  const runCounts = useMemo(() => { const m = new Map<string, number>(); for (const i of items ?? []) { const r = runOf.get(i.question_id); if (r) m.set(r, (m.get(r) ?? 0) + 1); } return m; }, [items, runOf]);
+  const doApprove = async (ids: string[]) => {
+    setConfirm(null); setBulkErr(null); setResult(null); setProgress({ done: 0, total: ids.length });
+    try {
+      const r = await approveQuestions(ids, null, (done, total) => setProgress({ done, total }));
+      setResult(r); setPicked(new Set(r.blocked.map((b) => b.question_id)));   // blocked ones stay ticked
+    } catch (e) { setBulkErr((e as Error).message); } finally { setProgress(null); setTick((t) => t + 1); }
+  };
   if (error) return <p className="error">Couldn't load the review queue: {error}</p>;
   if (!items) return <p className="muted">Loading…</p>;
-  const shown = items.filter((i) => (show === 'all' || i.status === show) && matchesFlag(flag, i));
+  const shown = items.filter((i) => (show === 'all' || i.status === show) && matchesFlag(flag, i) && (!run || runOf.get(i.question_id) === run));
+  const openShown = shown.filter((i) => i.status === 'in_review');
+  const toggle = (id: string) => setPicked((p) => { const n = new Set(p); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  const pickedShown = openShown.filter((i) => picked.has(i.question_id));
   const groups = new Map<string, Item[]>();
-  for (const i of shown) { const k = `${i.subject}|${i.class}`; groups.set(k, [...(groups.get(k) ?? []), i]); }
+  for (const i of shown) { const k = `${i.subject}|${i.level}`; groups.set(k, [...(groups.get(k) ?? []), i]); }
   const age = (iso: string | null) => {
     if (!iso) return '';
     const d = Math.floor((Date.now() - new Date(iso).getTime()) / 86400000);
@@ -41,19 +63,36 @@ export function ReviewQueue({ initial }: { initial?: string | null } = {}) {
           {show !== 'overrides' && <select className={`small-select ${flag !== 'all' ? 'active' : ''}`} aria-label="Flags" value={flag} onChange={(e) => setFlag(e.target.value as FlagFilter)}>
             {FLAG_FILTERS.map(([v, l]) => <option key={v} value={v}>{l}{v !== 'all' ? ` · ${items.filter((i) => matchesFlag(v, i)).length}` : ''}</option>)}
           </select>}
+          {show !== 'overrides' && runCounts.size > 0 && <select className={`small-select ${run ? 'active' : ''}`} aria-label="Run" value={run} onChange={(e) => { setRun(e.target.value); setPicked(new Set()); setResult(null); }}>
+            <option value="">Run: all</option>{[...runCounts.entries()].sort().map(([r, n]) => <option key={r} value={r}>{r} · {n}</option>)}</select>}
         </div>
       </div>
       {show === 'overrides' ? <OverrideRequests onCount={setNOverrides} /> : <>
       <p className="muted small">Questions flagged <strong>Needs review</strong> and <strong>rejected</strong> ones, with their notes, oldest first.
         Drafts are reviewed in Browse: open a topic and use <kbd>A</kbd> approve · <kbd>R</kbd> reject · <kbd>F</kbd> needs review · <kbd>↓</kbd><kbd>↑</kbd>.
         A rejected question stays; edit it to make a new version.</p>
-      {shown.length === 0 ? <p className="muted">{flag !== 'all' ? 'Nothing with this flag.' : 'Nothing flagged or rejected.'}</p> : [...groups.entries()].sort().map(([k, list]) => {
+      {openShown.length > 0 && <div className="bulk-bar small">
+        <label className="check"><input type="checkbox" checked={pickedShown.length === openShown.length} ref={(el) => { if (el) el.indeterminate = pickedShown.length > 0 && pickedShown.length < openShown.length; }}
+          onChange={(e) => setPicked(e.target.checked ? new Set(openShown.map((i) => i.question_id)) : new Set())} /> {pickedShown.length ? `${pickedShown.length} ticked` : 'Tick all shown'}</label>
+        <button className="approve small" disabled={!pickedShown.length || !!progress} onClick={() => setConfirm({ ids: pickedShown.map((i) => i.question_id), label: `${pickedShown.length} ticked question${pickedShown.length === 1 ? '' : 's'}` })}>Approve selected</button>
+        {run && <button className="approve small" disabled={!!progress} onClick={() => setConfirm({ ids: openShown.map((i) => i.question_id), label: `all ${openShown.length} Needs-review questions of ${run}` })}>Approve all in run ({openShown.length})</button>}
+        <span className="muted">Each one goes through the normal approval rules; a generated question's proposed primary is confirmed with it. Blocked ones are listed with the reason.</span>
+      </div>}
+      {confirm && <div className="reason bulk-confirm small"><div>Approve {confirm.label}? One audit row each; blocked ones are skipped and listed.</div>
+        <button className="approve" onClick={() => doApprove(confirm.ids)}>Approve {confirm.ids.length}</button> <button className="link" onClick={() => setConfirm(null)}>Cancel</button></div>}
+      {progress && <div className="small bulk-progress"><progress max={progress.total} value={progress.done} /> Approving… {progress.done} / {progress.total}</div>}
+      {bulkErr && <p className="error small">{bulkErr}</p>}
+      {result && <div className="bulk-result small"><strong>{result.approved.length} approved</strong>{result.approved.some((a) => a.primary_confirmed) ? ` (${result.approved.filter((a) => a.primary_confirmed).length} with their proposed primary confirmed)` : ''} · <strong>{result.blocked.length} still blocked</strong>{result.already.length ? ` · ${result.already.length} already approved` : ''} <button className="link small" onClick={() => setResult(null)}>Hide</button>
+        {result.blocked.length > 0 && <ul className="plain blocked-list">{result.blocked.map((b) => <li key={b.question_id}><a href={`#/q/${encodeURIComponent(b.question_id)}`} className="mono">{b.question_id}</a> · {shortReason(b.reason)}</li>)}</ul>}</div>}
+      {shown.length === 0 ? <p className="muted">{flag !== 'all' || run ? 'Nothing with this filter.' : 'Nothing flagged or rejected.'}</p> : [...groups.entries()].sort().map(([k, list]) => {
         const [subject, cls] = k.split('|');
         return (
           <div key={k} className="group">
             <div className="group-head static"><div className="group-title">{subjectLabel(subject!)} · Class {cls} · {list.length}</div></div>
             {list.map((i) => (
-              <a key={i.question_id} className="qrow review-row" href={browseHash({ subject: subjectOfChapter(i.chapter_id), cls: String(i.class), ch: i.chapter_id, topic: i.topic_id, q: i.question_id })}>
+              <div key={i.question_id} className="review-line">
+              {i.status === 'in_review' ? <input type="checkbox" aria-label={`Tick ${i.question_id}`} checked={picked.has(i.question_id)} onChange={() => toggle(i.question_id)} /> : <span className="tick-space" />}
+              <a className="qrow review-row" href={browseHash({ subject: subjectOfChapter(i.chapter_id), cls: String(i.level), ch: i.chapter_id, topic: i.topic_id, q: i.question_id })}>
                 <span className="qid mono">{i.question_id}</span>
                 <span className="review-main">
                   <span className="qtext">{i.text}</span>
@@ -65,8 +104,10 @@ export function ReviewQueue({ initial }: { initial?: string | null } = {}) {
                 {i.bank === 'gold' && <span className="tag gold">Gold</span>}
                 <OriginFlags q={i} compact />
                 <span className={`lvl ${i.math_difficulty ?? ''}`}>{i.math_difficulty ?? '—'}</span>
+                {runOf.get(i.question_id) && <span className="tag run" title="Generation run">{runOf.get(i.question_id)}</span>}
                 <span className="qstatus small">v{i.current_version}{i.approved_version ? ` · approved v${i.approved_version}` : ''}</span>
               </a>
+              </div>
             ))}
           </div>
         );

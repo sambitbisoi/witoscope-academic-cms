@@ -44,11 +44,12 @@ export function Shell({ email, route, children }: { email?: string; route: Route
   );
 }
 
-const KIND_LABEL: Record<SearchHit['kind'], string> = { topic: 'Topics', set: 'Typical sets', pattern: 'Patterns', concept: 'Concepts', question: 'Questions' };
+const KIND_LABEL: Record<SearchHit['kind'], string> = { run: 'Generation runs', topic: 'Topics', set: 'Typical sets', pattern: 'Patterns', concept: 'Concepts', question: 'Questions' };
 
 /** Where a search hit opens. Hits that only know a topic look up its chapter and class. */
 export async function openHit(h: SearchHit) {
   if (h.kind === 'question') { location.hash = `#/q/${encodeURIComponent(h.id)}`; return; }
+  if (h.kind === 'run') { location.hash = `#/review?run=${encodeURIComponent(h.id)}`; return; }
   const t = h.topicId ? await topicHome(h.topicId) : null;
   if (!t) { if (h.chapterId) location.hash = browseHash({ subject: subjectOfChapter(h.chapterId), cls: h.cls ? String(h.cls) : 'all' }); return; }
   location.hash = browseHash({ subject: subjectOfChapter(t.chapter_id), cls: String(t.class), ch: t.chapter_id, topic: t.topic_id, tab: h.kind === 'concept' ? 'concepts' : 'types' });
@@ -76,7 +77,7 @@ function Search() {
   return (
     <div className="search" ref={box}>
       <label htmlFor="search" className="sr-only">Search</label>
-      <input id="search" placeholder="Search topic, set, pattern, concept or question ID" value={text}
+      <input id="search" placeholder="Search topic, set, pattern, concept, question ID or run (GR…)" value={text}
         onChange={(e) => { setText(e.target.value); setOpen(true); }} onFocus={() => setOpen(true)}
         onKeyDown={(e) => { if (e.key === 'Enter' && hits?.[0]) go(hits[0]); if (e.key === 'Escape') setOpen(false); }} />
       {open && hits && (

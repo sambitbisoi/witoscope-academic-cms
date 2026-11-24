@@ -15,7 +15,7 @@ export const subjectOfChapter = (chapterId: string): Subject =>
 export type Route =
   | { name: 'home'; grade: string | null }
   | { name: 'browse'; subject: Subject; cls: string; strand: string | null; ch: string | null; topic: string | null; q: string | null; v: number | null; tab: 'types' | 'concepts' | 'sources' | 'content'; edit: boolean; row: string | null; chview: boolean; item: string | null }
-  | { name: 'review'; show: string | null }
+  | { name: 'review'; show: string | null; /** Q38 PR 4: a generation run (GR####) */ run: string | null }
   | { name: 'proposed'; kind: string | null; item: string | null }
   | { name: 'map'; tab: 'topics' | 'sources'; cls: string; subject: string; strand: string | null; ch: string | null; show: MapShow; q: string; chapters: boolean; topics: boolean }
   | { name: 'generate'; q: string | null; set: string | null; topic: string | null }
@@ -43,7 +43,7 @@ export function parseRoute(hash: string): Route {
   if (p.length === 0) return { name: 'home', grade: qs.get('grade') };
   if (p[0] === 'imports') return p[1] && /^\d+$/.test(p[1]) ? { name: 'import', id: Number(p[1]) } : { name: 'imports' };
   if (p[0] === 'q' && p[1]) return { name: 'question', id: p[1] };
-  if (p[0] === 'review') return { name: 'review', show: qs.get('show') };
+  if (p[0] === 'review') return { name: 'review', show: qs.get('show'), run: qs.get('run') };
   if (p[0] === 'decisions') return { name: 'decisions' };
   if (p[0] === 'courses') {
     const dch = (x: string | null) => (x && /^DCH[0-9]{4,5}$/.test(x) ? x : null);

@@ -11,8 +11,8 @@ export const KIND_LABEL: Record<CatKind, string> = {
 export const TAB_LABEL: Record<CatKind, string> = {
   concept: 'Concepts', misconception: 'Misconceptions', typical_set: 'Typical sets', pattern: 'Patterns', topic_class: 'Topic classes', setting: 'Settings',
 };
-/** Kinds that Approve / Reject can decide (settings have no approval path: shown read-only, decision 1). */
-export const decidable = (k: CatKind) => k !== 'setting';
+/** Kinds that Approve / Reject can decide. Q38 PR 4 (Q2, Sambit 24 Nov 2026): settings too (cms_set_catalogue_status, 0048). */
+export const decidable = (_k: CatKind) => true;
 export type Show = 'proposed' | 'active' | 'retired';
 
 export interface CatItem {

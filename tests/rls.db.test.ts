@@ -113,6 +113,8 @@ describe('catalog: every table is locked the same way', () => {
     expect(fns).toEqual([
       { proname: 'cms_add_questions', prosecdef: true, provolatile: 'v', proconfig: ['search_path=""'], auth_exec: true, anon_exec: false, public_exec: false },
       { proname: 'cms_apply_save', prosecdef: true, provolatile: 'v', proconfig: ['search_path=""'], auth_exec: true, anon_exec: false, public_exec: false },
+      // 0048 (Q38 PR 4): bulk approve (OL-044) and a proposed primary decided in place
+      { proname: 'cms_approve_questions', prosecdef: true, provolatile: 'v', proconfig: ['search_path=""'], auth_exec: true, anon_exec: false, public_exec: false },
       // 0035: rank default for links written without one (trigger)
       { proname: 'cms_content_link_rank', prosecdef: false, provolatile: 'v', proconfig: ['search_path=""'], auth_exec: false, anon_exec: false, public_exec: false },
       // 0044 (Q23): linked content rows edited on a Science draft
@@ -126,6 +128,7 @@ describe('catalog: every table is locked the same way', () => {
       { proname: 'cms_decide_override', prosecdef: true, provolatile: 'v', proconfig: ['search_path=""'], auth_exec: true, anon_exec: false, public_exec: false },
       // 0039 (Q19): several overrides in one transaction
       { proname: 'cms_decide_overrides', prosecdef: true, provolatile: 'v', proconfig: ['search_path=""'], auth_exec: true, anon_exec: false, public_exec: false },
+      { proname: 'cms_decide_primary', prosecdef: true, provolatile: 'v', proconfig: ['search_path=""'], auth_exec: true, anon_exec: false, public_exec: false },
       { proname: 'cms_decide_topic_class', prosecdef: true, provolatile: 'v', proconfig: ['search_path=""'], auth_exec: true, anon_exec: false, public_exec: false },
       // 0034 Achievers rule: invoker helpers, not callable by the app user
       // 0038 (Q21): the Held-out area
@@ -164,6 +167,8 @@ describe('catalog: every table is locked the same way', () => {
       { proname: 'cms_topic_achievers', prosecdef: false, provolatile: 'v', proconfig: ['search_path=""'], auth_exec: false, anon_exec: false, public_exec: false },
       { proname: 'cms_topic_class_achievers', prosecdef: false, provolatile: 'v', proconfig: ['search_path=""'], auth_exec: false, anon_exec: false, public_exec: false },
       { proname: 'cms_version_flags', prosecdef: false, provolatile: 'v', proconfig: ['search_path=""'], auth_exec: false, anon_exec: false, public_exec: false },
+      // 0048 (g): Image to redo (DL-040) until the Images PR
+      { proname: 'cms_version_image_redo', prosecdef: false, provolatile: 'v', proconfig: ['search_path=""'], auth_exec: false, anon_exec: false, public_exec: false },
     ]);
   });
 });

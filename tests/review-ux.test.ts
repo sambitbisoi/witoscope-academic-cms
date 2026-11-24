@@ -72,8 +72,8 @@ describe('Q8: Kind line and the item in the URL', async () => {
     expect(kindLine({ kind: 'concept', id: 'G6-A', status: 'active', cls: 6, via: null, topic_id: null })).toBe('Concept · Class 6');
     expect(kindLine({ kind: 'setting', id: 'SET001', status: 'proposed', cls: null, via: null, topic_id: null })).toBe('Proposed setting');
   });
-  it('settings are read-only; every other kind can be decided', () => {
-    expect(decidable('setting')).toBe(false);
+  it('every kind can be decided, settings too (0048)', () => {
+    expect(decidable('setting')).toBe(true);   // Q38 PR 4 (Q2): settings have an approval path since 0048
     expect(decidable('pattern')).toBe(true);
   });
   it('item=kind:id round-trips through Browse and Proposed routes; a question closes it', () => {

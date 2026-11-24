@@ -3,16 +3,20 @@
 //           with every field of its detail card. Chapter view: rows under collapsible topic headers.
 //   Right:  no row → all questions · row → "For row <ID>": DIRECT then SUPPORTING · question → its detail with "← Back".
 // Content rows are read-only here. Selected topic, row and question live in the URL hash.
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { Id } from './Id';
 import { SCIENCE_QUESTION_TYPES } from '../../shared/types.ts';
 import { LevelTag, RowClassTag } from './Tags';
 import { AddQuestionForm, OriginFlags } from './AddQuestions';
 import { ContentRowForm } from './ContentRowForm';
 import { rowDetail, scienceData, type ScienceData, type ScienceQuestion, type ScienceRow } from './scienceApi';
+import { clamp, Handle } from './Handle';
+import { ItemDecide, PrimaryDecide, TopicClassDecide } from './Proposals';
+import { pendingItems } from './reviewApi';
 import { browseHash, showsAtLevel, statusLabel } from './logic';
 import { sciFilter, SCI_FILTER_NONE, type SciFilter } from './scienceLogic';
 import { classesLine, isDimmed, listedOrder, rightPane, rowClassLine, rowQuestions, rowsForClass, rowsInOrder, rowSplit, rowSplitLabel, topicGroups } from './scienceLogic';
+import { PFILTERS, primaryOf, questionState, rowState, walkOrder, walkStep, type PFilter } from './scienceLogic';
 
 export const CONTENT_TYPES = ['Fact', 'Concept', 'How it works', 'Experiment', 'Scenario-Case', 'Diagram', 'Vocabulary'] as const;
 const STATUS: Record<ScienceRow['status'], { icon: string; label: string; cls: string }> = {
@@ -44,11 +48,13 @@ export function Coverage({ rows, questions, cls = 'all' }: { rows: ScienceRow[];
   );
 }
 
-export function ScienceView({ scope, cls, higher = false, topicNames, row, q, onRow, onQuestion, onBack, onOrder, reload, detail }: {
+export function ScienceView({ scope, cls, higher = false, topicNames, row, q, onRow, onQuestion, onBack, onOrder, reload, detail, walk }: {
   scope: { topicId: string } | { chapterId: string }; cls: string; /** Q1: also questions above the class */ higher?: boolean;
   /** the topics to show, in their order (chapter view keeps topics without rows) */ topicNames: Map<string, { name: string; no: string | null }>;
   row: string | null; q: string | null; onRow: (row: string | null) => void; onQuestion: (id: string) => void; onBack: () => void;
   onOrder: (ids: string[]) => void; reload: number; /** the question detail shown in the right column when q is set */ detail: ReactNode;
+  /** Q38 PR 4 (b): Previous / Next through the whole chapter (its topics in order); a step may open another topic */
+  walk?: { chapterId: string; topicIds: string[]; onGo: (topicId: string, questionId: string) => void };
 }) {
   const [data, setData] = useState<ScienceData | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -62,13 +68,22 @@ export function ScienceView({ scope, cls, higher = false, topicNames, row, q, on
   /** Q14: the row form in the right column: a new row (row undefined) or edit an open row */
   const [rowForm, setRowForm] = useState<{ row?: ScienceRow } | null>(null);
   const [showRetired, setShowRetired] = useState(false);
+  // Q38 PR 4 (e): All · Proposed · Approved · Rejected (rows and questions; default All)
+  const [pf, setPf] = useState<PFilter>('all');
+  const [pending, setPending] = useState<Set<string>>(new Set());
+  // Q38 PR 4 (a): the content pane's width, remembered (null = the default split)
+  const [split, setSplitState] = useState<number | null>(() => { try { const v = localStorage.getItem('cms.sci.split'); return v ? Number(v) : null; } catch { return null; } });
+  const setSplit = (w: number | null) => { setSplitState(w); try { if (w === null) localStorage.removeItem('cms.sci.split'); else localStorage.setItem('cms.sci.split', String(Math.round(w))); } catch { /* best effort */ } };
+  const contentRef = useRef<HTMLElement>(null);
   useEffect(() => { setError(null); scienceData(scope).then(setData).catch((e) => setError(e.message)); }, [key, reload, tick]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (data) pendingItems(data.rows.map((r) => r.row_id)).then(setPending).catch(() => setPending(new Set())); }, [data]);
   useEffect(() => { if (addFor && row !== addFor.row_id) setAddFor(null); }, [row]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (rowForm?.row && row !== rowForm.row.row_id) setRowForm(null); }, [row]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Rows written for class N show in class N and above (as questions do, D3); lower-class rows are marked.
   // Q14: retired rows are kept but hidden unless asked for
-  const live = useMemo(() => (data?.rows ?? []).filter((r) => showRetired || !r.retired_at), [data, showRetired]);
+  const live = useMemo(() => (data?.rows ?? []).filter((r) => showRetired || pf === 'rejected' || !r.retired_at)
+    .filter((r) => pf === 'all' || rowState(r, pending, data?.questions ?? []) === pf), [data, showRetired, pf, pending]);
   const nRetired = (data?.rows ?? []).filter((r) => r.retired_at).length;
   const rows = useMemo(() => rowsInOrder(rowsForClass(live, cls, higher)), [live, cls, higher]);
   const hidden = live.length - rows.length;
@@ -76,7 +91,7 @@ export function ScienceView({ scope, cls, higher = false, topicNames, row, q, on
   const qsAll = useMemo(() => (data?.questions ?? []).filter((x) => showsAtLevel(x.effective_level, ceiling, higher)), [data, ceiling, higher]);
   // Q34: Science question type / tier / markers filters (narrow the question lists; the coverage line counts all)
   const [sf, setSf] = useState<SciFilter>(SCI_FILTER_NONE);
-  const qs = useMemo(() => sciFilter(qsAll, sf), [qsAll, sf]);
+  const qs = useMemo(() => sciFilter(qsAll, sf).filter((x) => pf === 'all' || questionState(x) === pf), [qsAll, sf, pf]);
   const order = useMemo(() => listedOrder(qs, row), [qs, row]);
   useEffect(() => { onOrder(order); }, [order, onOrder]);
   useEffect(() => () => onOrder([]), [onOrder]);
@@ -88,7 +103,7 @@ export function ScienceView({ scope, cls, higher = false, topicNames, row, q, on
   const inScope = (id: string) => data.rows.some((x) => x.row_id === id);
   const list = (rs: ScienceRow[]) => (
     <ol className="sci-list">
-      {rs.map((r, i) => <RowItem key={r.row_id} n={i + 1} r={r} cls={cls} open={r.row_id === row} onPick={() => onRow(r.row_id === row ? null : r.row_id)} inScope={inScope} onRow={onRow}
+      {rs.map((r, i) => <RowItem key={r.row_id} n={i + 1} r={r} cls={cls} state={rowState(r, pending, data.questions)} open={r.row_id === row} onPick={() => onRow(r.row_id === row ? null : r.row_id)} inScope={inScope} onRow={onRow}
         onAdd={() => { setRowForm(null); setAddFor(r); onBack(); }} onEdit={() => { setAddFor(null); setRowForm({ row: r }); onBack(); }} />)}
     </ol>
   );
@@ -107,9 +122,12 @@ export function ScienceView({ scope, cls, higher = false, topicNames, row, q, on
         <label>Markers <select value={sf.markers} onChange={(e) => setSf({ ...sf, markers: e.target.value })}>
           <option value="">Any</option>{['0', '1', '2', '3+'].map((m) => <option key={m}>{m}</option>)}</select></label>
         {(sf.type || sf.tier || sf.markers) && <><span className="muted">{qs.length} of {qsAll.length} questions</span> <button className="link small" onClick={() => setSf(SCI_FILTER_NONE)}>Clear</button></>}
+        <span className="pfilter" role="group" aria-label="Show proposals" title="Rows, links and questions: Proposed = waiting for a decision (Needs review, a proposed primary, an item to review) · Rejected = rejected or retired">
+          {PFILTERS.map(([v, l]) => <button key={v} className={`pill small ${pf === v ? 'on' : ''}`} aria-pressed={pf === v} onClick={() => setPf(v)}>{l}</button>)}</span>
       </div>
-      <div className="sci-cols">
-        <section className="sci-content" aria-label="Content rows">
+      {'topicId' in scope && <TopicClassDecide topicId={scope.topicId} />}
+      <div className={`sci-cols split ${split !== null ? 'sized' : ''}`} style={split !== null ? { '--sci-left': `${split}px` } as CSSProperties : undefined}>
+        <section className="sci-content" aria-label="Content rows" ref={contentRef}>
           <div className="eyebrow sci-content-head"><span>Content · master order{hidden > 0 ? <span className="muted"> · {hidden} row{hidden === 1 ? '' : 's'} of a higher class not shown (tick "Show higher-level questions")</span> : null}</span>
             {nRetired > 0 && <button className="link small" onClick={() => setShowRetired(!showRetired)}>{showRetired ? 'Hide' : 'Show'} retired ({nRetired})</button>}
             {!chapterMode && <button className="secondary small" onClick={() => { setAddFor(null); onRow(null); setRowForm({}); onBack(); }}>+ Add content row</button>}</div>
@@ -130,6 +148,7 @@ export function ScienceView({ scope, cls, higher = false, topicNames, row, q, on
               );
             })}
         </section>
+        <Handle side="sci" onDrag={(dx) => setSplit(clamp((split ?? contentRef.current?.getBoundingClientRect().width ?? 600) + dx, 320, 1200))} onReset={() => setSplit(null)} />
         <section className="sci-questions" aria-label={pane.kind === 'detail' ? 'Question detail' : 'Questions'}>
           {rowForm && !q && 'topicId' in scope ? <>
             <div className="sci-q-head sci-detail-nav"><button className="link" onClick={() => setRowForm(null)}>← Back{rowForm.row ? ` to row ${rowForm.row.row_id}` : ''}</button></div>
@@ -148,6 +167,7 @@ export function ScienceView({ scope, cls, higher = false, topicNames, row, q, on
           </> : pane.kind === 'detail' ? <>
             <div className="sci-q-head sci-detail-nav">
               <button className="link" onClick={onBack}>{pane.back}</button>
+              {walk && <WalkBar walk={walk} q={pane.q} reload={reload + tick} />}
               <a className="small" href={`#/q/${encodeURIComponent(pane.q)}`}>Open full page ↗</a>
             </div>
             <div className="sci-q-detail">{detail}</div>
@@ -160,9 +180,9 @@ export function ScienceView({ scope, cls, higher = false, topicNames, row, q, on
                   <button className="link small" onClick={() => onRow(null)}>show all {qs.length} in {where}</button></div>
                 {selRow && <div className="muted small sci-for-text">{selRow.content.length > 110 ? `${selRow.content.slice(0, 110)}…` : selRow.content}</div>}
               </div>
-              <QSection title="Direct" hint="tests this row (primary or secondary)" items={s.direct} rowId={pane.row} q={q} ceiling={ceiling} onQuestion={onQuestion}
+              <QSection title="Direct" hint="tests this row (primary or secondary)" items={s.direct} rowId={pane.row} q={q} ceiling={ceiling} onQuestion={onQuestion} onDone={() => setTick((t) => t + 1)}
                 empty={selRow && selRow.question_use !== 'OK' ? `No questions: this row is "${selRow.question_use}".` : 'No question tests this row yet.'} />
-              <QSection title="Supporting" hint="uses it as background" items={s.supporting} q={q} ceiling={ceiling} onQuestion={onQuestion} empty="None." />
+              <QSection title="Supporting" hint="uses it as background" items={s.supporting} q={q} ceiling={ceiling} onQuestion={onQuestion} onDone={() => setTick((t) => t + 1)} empty="None." />
             </>;
           })() : <>
             <div className="sci-q-head">
@@ -172,8 +192,8 @@ export function ScienceView({ scope, cls, higher = false, topicNames, row, q, on
             {qs.length === 0 ? <p className="muted small sci-empty">No questions yet.</p>
               : chapterMode ? [...topicNames.keys()].filter((tid) => qs.some((x) => x.topic_id === tid)).map((tid) => (
                 <div key={tid}><div className="sci-q-topic small">{topicNames.get(tid)?.name ?? tid} <Id>{tid}</Id></div>
-                  {order.map((id) => qs.find((x) => x.question_id === id)!).filter((x) => x.topic_id === tid).map((x) => <QItem key={x.question_id} q={x} ceiling={ceiling} selected={x.question_id === q} onPick={() => onQuestion(x.question_id)} />)}</div>))
-              : order.map((id) => qs.find((x) => x.question_id === id)!).map((x) => <QItem key={x.question_id} q={x} ceiling={ceiling} selected={x.question_id === q} onPick={() => onQuestion(x.question_id)} />)}
+                  {order.map((id) => qs.find((x) => x.question_id === id)!).filter((x) => x.topic_id === tid).map((x) => <QItem key={x.question_id} q={x} ceiling={ceiling} showPrimary selected={x.question_id === q} onPick={() => onQuestion(x.question_id)} onDone={() => setTick((t) => t + 1)} />)}</div>))
+              : order.map((id) => qs.find((x) => x.question_id === id)!).map((x) => <QItem key={x.question_id} q={x} ceiling={ceiling} showPrimary selected={x.question_id === q} onPick={() => onQuestion(x.question_id)} onDone={() => setTick((t) => t + 1)} />)}
           </>}
         </section>
       </div>
@@ -181,19 +201,20 @@ export function ScienceView({ scope, cls, higher = false, topicNames, row, q, on
   );
 }
 
-function QSection({ title, hint, items, rowId, q, ceiling, onQuestion, empty }: { title: string; hint: string; items: ScienceQuestion[]; /** 0035: show each question's rank for this row */ rowId?: string; q: string | null; ceiling: number | null; onQuestion: (id: string) => void; empty: string }) {
+function QSection({ title, hint, items, rowId, q, ceiling, onQuestion, onDone, empty }: { title: string; hint: string; items: ScienceQuestion[]; /** 0035: show each question's rank for this row */ rowId?: string; q: string | null; ceiling: number | null; onQuestion: (id: string) => void; onDone: () => void; empty: string }) {
   return (
     <div className="sci-q-section">
       <div className="sci-q-section-head"><span className="eyebrow">{title} · {items.length}</span> <span className="muted small">{hint}</span></div>
-      {items.length ? items.map((x) => <QItem key={x.question_id} q={x} rowId={rowId} ceiling={ceiling} selected={x.question_id === q} onPick={() => onQuestion(x.question_id)} />) : <p className="muted small sci-empty">{empty}</p>}
+      {items.length ? items.map((x) => <QItem key={x.question_id} q={x} rowId={rowId} ceiling={ceiling} selected={x.question_id === q} onPick={() => onQuestion(x.question_id)} onDone={onDone} />) : <p className="muted small sci-empty">{empty}</p>}
     </div>
   );
 }
 
-function RowItem({ n, r, cls, open, onPick, inScope, onRow, onAdd, onEdit }: { n: number; r: ScienceRow; cls: string; open: boolean; onPick: () => void; inScope: (id: string) => boolean; onRow: (id: string) => void; onAdd: () => void; onEdit: () => void }) {
+function RowItem({ n, r, cls, open, onPick, inScope, onRow, onAdd, onEdit, state }: { n: number; r: ScienceRow; cls: string; open: boolean; onPick: () => void; inScope: (id: string) => boolean; onRow: (id: string) => void; onAdd: () => void; onEdit: () => void;
+  /** Q38 PR 4 (e) */ state: 'proposed' | 'approved' | 'rejected' }) {
   const s = STATUS[r.status];
   return (
-    <li className={`sci-row ${open ? 'sel open' : ''} ${isDimmed(r) ? 'dim' : ''} ${r.in_master ? '' : 'gone'}`} ref={open ? (el) => el?.scrollIntoView({ block: 'nearest' }) : undefined}>
+    <li className={`sci-row ${open ? 'sel open' : ''} ${isDimmed(r) ? 'dim' : ''} ${r.in_master ? '' : 'gone'} pstate-row ${state}`} ref={open ? (el) => el?.scrollIntoView({ block: 'nearest' }) : undefined}>
       <button className="sci-row-head" onClick={onPick} aria-expanded={open}>
         <span className="sci-row-no" aria-label={`Row ${n}`}>{n}</span>
         <span className="sci-row-body">
@@ -240,7 +261,9 @@ function RowTags({ r }: { r: ScienceRow }) {
 function RowDetail({ r, inScope, onRow }: { r: ScienceRow; inScope: (id: string) => boolean; onRow: (id: string) => void }) {
   const [d, setD] = useState<Awaited<ReturnType<typeof rowDetail>> | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  useEffect(() => { setD(null); setErr(null); rowDetail(r).then(setD).catch((e) => setErr(e.message)); }, [r.row_id]); // eslint-disable-line react-hooks/exhaustive-deps
+  const [itemsTick, setItemsTick] = useState(0);
+  useEffect(() => { setErr(null); rowDetail(r).then(setD).catch((e) => setErr(e.message)); }, [r.row_id, itemsTick]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { setD(null); }, [r.row_id]);
   const cl = classesLine(r.topic_classes_mapped, d ? d.classes : null);
   const F = ({ label, children }: { label: string; children: ReactNode }) => <div className="sci-f"><div className="sci-f-l">{label}</div><div className="sci-f-v">{children}</div></div>;
   const book = [r.book, r.book_chapter_no !== null ? `Ch ${r.book_chapter_no}${r.book_chapter_title ? ` ${r.book_chapter_title}` : ''}` : r.book_chapter_title].filter(Boolean).join(' · ');
@@ -249,9 +272,10 @@ function RowDetail({ r, inScope, onRow }: { r: ScienceRow; inScope: (id: string)
       {r.why_it_matters && <F label="Why it matters / real-life link">{r.why_it_matters}</F>}
       {r.misconceptions && <F label="Common misconceptions">
         {d && d.items.length > 0 ? <ol className="plain sci-items">{d.items.map((i) => (
-          <li key={i.item_no} className={i.status === 'retired' ? 'muted' : ''}><span className="mono muted">#{i.item_no}</span> {i.text}
+          <li key={i.item_no} className={i.status === 'retired' ? 'pstate-item rejected' : i.status === 'needs_review' ? 'pstate-item proposed' : ''}><span className="mono muted">#{i.item_no}</span> {i.text}
             {i.status === 'needs_review' && <span className="tag proposed" title={i.proposed_by ? `Proposed from ${i.proposed_by}` : undefined}>Needs review</span>}
-            {i.status === 'retired' && <span className="tag gone">Retired</span>}
+            {i.status === 'retired' && <span className="pstate-tag">Rejected</span>}
+            <ItemDecide rowId={r.row_id} itemNo={i.item_no} status={i.status} onDone={() => setItemsTick((t) => t + 1)} />
             {i.unclear && <span className="tag mismatch" title={i.split_note ?? ''}>Split unclear</span>}
             <span className="mono muted small"> {r.row_id} #{i.item_no}</span></li>))}</ol>
           : r.misconceptions}
@@ -281,18 +305,27 @@ function RowDetail({ r, inScope, onRow }: { r: ScienceRow; inScope: (id: string)
   );
 }
 
-function QItem({ q, rowId, ceiling, selected, onPick }: { q: ScienceQuestion; rowId?: string; /** the class being viewed (null = all) */ ceiling: number | null; selected: boolean; onPick: () => void }) {
+function QItem({ q, rowId, ceiling, selected, onPick, showPrimary, onDone }: { q: ScienceQuestion; rowId?: string; /** the class being viewed (null = all) */ ceiling: number | null; selected: boolean; onPick: () => void;
+  /** Q38 PR 4 (c): no row selected: each question's primary row and its state */ showPrimary?: boolean; onDone: () => void }) {
   const nd = q.links.filter((l) => l.role === 'direct').length, ns = q.links.length - nd;
   const here = rowId ? q.links.find((l) => l.row_id === rowId) : undefined;
+  const p = primaryOf(q);
+  const open = q.status === 'draft' || q.status === 'in_review';
+  // (d): the primary decided in place (open versions only); a row list shows it on the row's own chip
+  const primaryChip = (rid: string, state: 'confirmed' | 'proposed' | 'rejected') => (open && state !== 'confirmed' && !q.retired_at
+    ? <PrimaryDecide questionId={q.question_id} rowId={rid} state={state} onChange={onPick} onDone={onDone} />
+    : <span className={`tag rank-primary ${state === 'proposed' ? 'pstate proposed' : ''}`}>Primary {rid}{state === 'proposed' ? ' · proposed' : ''}</span>);
   return (
-    <button className={`qrow sci-qrow ${selected ? 'sel' : ''}`} onClick={onPick} title={q.text} ref={selected ? (el) => el?.scrollIntoView({ block: 'nearest' }) : undefined}>
+    <div role="button" tabIndex={0} className={`qrow sci-qrow pstate-q ${questionState(q)} ${selected ? 'sel' : ''}`} onClick={onPick} onKeyDown={(e) => { if (e.key === 'Enter') onPick(); }} title={q.text} ref={selected ? (el) => el?.scrollIntoView({ block: 'nearest' }) : undefined}>
       <span className="qtext">{q.text}</span>
       <span className="sci-q-meta small">
         {q.science_question_type ? <span className="tag tier" title={`Science question type ${q.science_question_type} · ${SCIENCE_QUESTION_TYPES[q.science_question_type as 1]}`}>Type {q.science_question_type}{q.tier ? ` · ${q.tier}` : ''}</span>
           : q.level_tier && <span className="muted" title="Old tier (legacy, retired): the type is not set yet">{q.level_tier}</span>}
         {(q.markers ?? 0) > 0 && <span className="muted" title="Markers (Q29)">{q.markers} marker{q.markers === 1 ? '' : 's'}</span>}
         <LevelTag q={q} ceiling={ceiling} />
-        {here && here.rank && here.rank !== 'context' && <span className={`tag rank-${here.rank}${here.rank_proposed ? ' rank-proposed' : ''}`} title="This row's rank for the question">{here.rank === 'primary' ? `Primary${here.rank_proposed ? ' (proposed)' : ''}` : 'Secondary'}</span>}
+        {here && here.rank === 'primary' && primaryChip(here.row_id, here.rank_proposed ? 'proposed' : 'confirmed')}
+        {here && here.rank === 'secondary' && (here.primary_rejected ? primaryChip(here.row_id, 'rejected') : <span className="tag rank-secondary" title="This row's rank for the question">Secondary</span>)}
+        {showPrimary && (p.row_id ? primaryChip(p.row_id, p.state as 'confirmed' | 'proposed' | 'rejected') : <span className="muted">Primary · none</span>)}
         <span className="muted">{nd} direct{ns ? ` · ${ns} supporting` : ''}</span>
         {q.display_format && <span className="muted">{q.display_format}</span>}
         {q.safety_note && <span className="tag safety" title={q.safety_note}>Safety</span>}
@@ -300,7 +333,44 @@ function QItem({ q, rowId, ceiling, selected, onPick }: { q: ScienceQuestion; ro
         <span className={`qstatus st-${q.retired_at ? 'retired' : q.status}`}>{statusLabel(q)}</span>
         <Id>{q.question_id}</Id>
       </span>
-    </button>
+    </div>
+  );
+}
+
+/** Q38 PR 4 (b): Previous / Next through the whole chapter in master order (topic → content row → question, each question
+ *  once at its primary row), crossing topics, stopping at the chapter's end. "12 / 87" · keys ← / → · only Needs review. */
+const walkCache = new Map<string, Promise<ScienceData>>();
+function WalkBar({ walk, q, reload }: { walk: NonNullable<Parameters<typeof ScienceView>[0]['walk']>; q: string; reload: number }) {
+  const [data, setData] = useState<ScienceData | null>(null);
+  const [onlyReview, setOnlyReview] = useState<boolean>(() => { try { return localStorage.getItem('cms.walk.review') === '1'; } catch { return false; } });
+  useEffect(() => {
+    const k = `${walk.chapterId}|${reload}`;
+    if (!walkCache.has(k)) { walkCache.clear(); walkCache.set(k, scienceData({ chapterId: walk.chapterId })); }
+    let live = true; walkCache.get(k)!.then((d) => live && setData(d)).catch(() => live && setData(null));
+    return () => { live = false; };
+  }, [walk.chapterId, reload]);
+  const order = useMemo(() => (data ? walkOrder(data.rows.filter((r) => !r.retired_at), data.questions.filter((x) => !x.retired_at), walk.topicIds) : []), [data, walk.topicIds]);
+  const only = useMemo(() => (onlyReview && data ? new Set(data.questions.filter((x) => x.status === 'in_review' && !x.retired_at).map((x) => x.question_id)) : undefined), [onlyReview, data]);
+  const st = walkStep(order, q, only);
+  const go = (w: { topic_id: string; question_id: string } | null) => { if (w) walk.onGo(w.topic_id, w.question_id); };
+  useEffect(() => {
+    const on = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (e.metaKey || e.ctrlKey || e.altKey || (t && (t.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(t.tagName)))) return;
+      if (e.key === 'ArrowLeft' && st.prev) { e.preventDefault(); go(st.prev); }
+      if (e.key === 'ArrowRight' && st.next) { e.preventDefault(); go(st.next); }
+    };
+    window.addEventListener('keydown', on);
+    return () => window.removeEventListener('keydown', on);
+  });
+  if (!data) return <span className="muted small walkbar">…</span>;
+  return (
+    <span className="walkbar small" aria-label="Previous / Next in this chapter">
+      <button className="secondary small" disabled={!st.prev} onClick={() => go(st.prev)} title="Previous in this chapter (←)">← Previous</button>
+      <span className="walk-pos" title="Position in the chapter: topic → content row → question">{st.pos ? `${st.pos} / ${st.total}` : `– / ${st.total}`}</span>
+      <button className="secondary small" disabled={!st.next} onClick={() => go(st.next)} title="Next in this chapter (→)">Next →</button>
+      <label className="check"><input type="checkbox" checked={onlyReview} onChange={(e) => { setOnlyReview(e.target.checked); try { localStorage.setItem('cms.walk.review', e.target.checked ? '1' : '0'); } catch { /* best effort */ } }} /> only Needs review</label>
+    </span>
   );
 }
 

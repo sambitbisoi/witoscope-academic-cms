@@ -286,20 +286,26 @@ export async function locateQuestion(questionId: string) {
 }
 
 // ---------------------------------------------------------------- Search
-export interface SearchHit { kind: 'topic' | 'set' | 'pattern' | 'concept' | 'question'; id: string; label: string; topicId: string | null; chapterId: string | null; cls: number | null; questionId?: string }
+export interface SearchHit { kind: 'topic' | 'set' | 'pattern' | 'concept' | 'question' | 'run'; id: string; label: string; topicId: string | null; chapterId: string | null; cls: number | null; questionId?: string }
 
 export async function search(raw: string): Promise<SearchHit[]> {
   const s = safeSearch(raw);
   if (s.length < 2) return [];
   const like = `*${s}*`;
-  const [topics, sets, patterns, concepts, questions] = await Promise.all([
+  // Q38 PR 4: a generation run code (GR0013) opens Review filtered to that run
+  const runQ = /^gr\d{0,4}$/i.test(s) ? supabase.from('cms_generation_runs').select('run_code, source_run, subject, status').ilike('run_code', `${s}%`).not('run_code', 'is', null).order('run_code').limit(8) : null;
+  const [topics, sets, patterns, concepts, questions, runsFound] = await Promise.all([
     supabase.from('cms_topics').select('topic_id, name, chapter_id, class').or(`topic_id.ilike.${like},name.ilike.${like}`).order('topic_kind', { ascending: false }).order('topic_id').limit(8),
     supabase.from('cms_typical_sets').select('typical_set_id, name, topic_id, chapter_id, class').or(`typical_set_id.ilike.${like},name.ilike.${like}`).limit(6),
     supabase.from('cms_patterns').select('pattern_id, name, topic_id').or(`pattern_id.ilike.${like},name.ilike.${like}`).limit(6),
     supabase.from('cms_concepts').select('concept_id, name, topic_id, class').or(`concept_id.ilike.${like},name.ilike.${like}`).limit(6),
     supabase.from('cms_question_list').select('question_id, file_key, text, topic_id, chapter_id, class').or(`question_id.ilike.${like},file_key.ilike.${like}`).limit(8),
+    runQ ?? Promise.resolve({ data: [], error: null }),
   ]);
   const hits: SearchHit[] = [];
+  for (const r of must<{ run_code: string; source_run: string | null; subject: string | null; status: string }[]>(runsFound)) {
+    hits.push({ kind: 'run', id: r.run_code, label: `${r.subject ?? ''} · ${r.source_run ?? ''} · ${r.status}`.replace(/^ · /, ''), topicId: null, chapterId: null, cls: null });
+  }
   for (const t of must<{ topic_id: string; name: string; chapter_id: string; class: number }[]>(topics)) hits.push({ kind: 'topic', id: t.topic_id, label: t.name, topicId: t.topic_id, chapterId: t.chapter_id, cls: t.class });
   for (const t of must<{ typical_set_id: string; name: string; topic_id: string | null; chapter_id: string | null; class: number }[]>(sets)) hits.push({ kind: 'set', id: t.typical_set_id, label: t.name, topicId: t.topic_id, chapterId: t.chapter_id, cls: t.class });
   for (const t of must<{ pattern_id: string; name: string; topic_id: string }[]>(patterns)) hits.push({ kind: 'pattern', id: t.pattern_id, label: t.name, topicId: t.topic_id, chapterId: null, cls: null });

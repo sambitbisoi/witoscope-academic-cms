@@ -231,7 +231,7 @@ export async function itemDetail(kind: CatKind, id: string, places?: Places): Pr
       await supabase.from('cms_settings').select('setting_id, name, description, theme, status, subject').eq('setting_id', id).maybeSingle());
     if (!s) return null;
     return { ...base, name: s.name, description: s.description, status: s.status, cls: null, via: null, topic: null, chapter: null,
-      facts: [{ k: 'Subject', v: s.subject === 'science' ? 'Science' : 'Math' }, ...(s.theme ? [{ k: 'Theme', v: s.theme }] : [])], linked: [], ...(await qBy('setting_id', id)) };
+      facts: [{ k: 'Subject', v: s.subject === 'science' ? 'Science' : s.subject === 'both' ? 'Math + Science (shared)' : 'Math' }, ...(s.theme ? [{ k: 'Theme', v: s.theme }] : [])], linked: [], ...(await qBy('setting_id', id)) };
   }
   // topic–class link: id = "MT0261·6"
   const [topicId, c] = id.split('·');
@@ -248,10 +248,9 @@ export async function itemDetail(kind: CatKind, id: string, places?: Places): Pr
 /**
  * Approve (active), Reject (retired; kept, reversible) or Back to proposed, through the existing audited
  * functions only. A reject reason is stored in the audit for catalogue items; topic–class links take no
- * reason this round (decision 2). Settings cannot be decided (decision 1).
+ * reason this round (decision 2). Settings are decided like catalogue items (Q38 PR 4, 0048).
  */
 export async function decide(kind: CatKind, id: string, status: 'active' | 'retired' | 'proposed', reason: string | null, where: string) {
-  if (kind === 'setting') throw new Error('Settings cannot be approved here yet.');
   if (kind === 'topic_class') {
     const [topic, cls] = id.split('·');
     const { error } = await supabase.rpc('cms_decide_topic_class', { p_topic_id: topic, p_class: Number(cls), p_status: status });
