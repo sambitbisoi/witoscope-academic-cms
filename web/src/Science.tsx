@@ -13,10 +13,11 @@ import { rowDetail, scienceData, type ScienceData, type ScienceQuestion, type Sc
 import { clamp, Handle } from './Handle';
 import { ItemDecide, PrimaryDecide, TopicClassDecide } from './Proposals';
 import { pendingItems } from './reviewApi';
+import { ImageRunBar } from './ImageRun';
 import { browseHash, showsAtLevel, statusLabel } from './logic';
 import { sciFilter, SCI_FILTER_NONE, type SciFilter } from './scienceLogic';
 import { classesLine, isDimmed, listedOrder, rightPane, rowClassLine, rowQuestions, rowsForClass, rowsInOrder, rowSplit, rowSplitLabel, topicGroups } from './scienceLogic';
-import { PFILTERS, primaryOf, questionState, rowState, walkOrder, walkStep, type PFilter } from './scienceLogic';
+import { PFILTERS, primaryOf, questionState, rowState, walkOrder, walkQuestions, walkStep, type PFilter, type WalkTopic } from './scienceLogic';
 
 export const CONTENT_TYPES = ['Fact', 'Concept', 'How it works', 'Experiment', 'Scenario-Case', 'Diagram', 'Vocabulary'] as const;
 const STATUS: Record<ScienceRow['status'], { icon: string; label: string; cls: string }> = {
@@ -54,7 +55,8 @@ export function ScienceView({ scope, cls, higher = false, topicNames, row, q, on
   row: string | null; q: string | null; onRow: (row: string | null) => void; onQuestion: (id: string) => void; onBack: () => void;
   onOrder: (ids: string[]) => void; reload: number; /** the question detail shown in the right column when q is set */ detail: ReactNode;
   /** Q38 PR 4 (b): Previous / Next through the whole chapter (its topics in order); a step may open another topic */
-  walk?: { chapterId: string; topicIds: string[]; onGo: (topicId: string, questionId: string) => void };
+  walk?: { chapterId: string; /** the topics the tree shows, in order, each with its class ceiling */ topics: WalkTopic[]; /** Show higher-level questions */ higher: boolean;
+    onGo: (topicId: string, questionId: string) => void };
 }) {
   const [data, setData] = useState<ScienceData | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -126,6 +128,7 @@ export function ScienceView({ scope, cls, higher = false, topicNames, row, q, on
           {PFILTERS.map(([v, l]) => <button key={v} className={`pill small ${pf === v ? 'on' : ''}`} aria-pressed={pf === v} onClick={() => setPf(v)}>{l}</button>)}</span>
       </div>
       {'topicId' in scope && <TopicClassDecide topicId={scope.topicId} />}
+      <ImageRunBar scope={scope} onChanged={() => setTick((t) => t + 1)} />
       <div className={`sci-cols split ${split !== null ? 'sized' : ''}`} style={split !== null ? { '--sci-left': `${split}px` } as CSSProperties : undefined}>
         <section className="sci-content" aria-label="Content rows" ref={contentRef}>
           <div className="eyebrow sci-content-head"><span>Content · master order{hidden > 0 ? <span className="muted"> · {hidden} row{hidden === 1 ? '' : 's'} of a higher class not shown (tick "Show higher-level questions")</span> : null}</span>
@@ -141,7 +144,7 @@ export function ScienceView({ scope, cls, higher = false, topicNames, row, q, on
                   <button className="sci-topic-head" aria-expanded={open} onClick={() => toggle(g.topic_id)}>
                     <span className="caret" aria-hidden>{open ? '▾' : '▸'}</span>
                     <span className="sci-topic-name">{t?.no ? `${t.no} ` : ''}{t?.name ?? g.topic_id} <Id>{g.topic_id}</Id></span>
-                    <span className="muted small">{g.rows.length ? `${g.rows.length} row${g.rows.length === 1 ? '' : 's'}` : 'no content rows'} · {nq} Q{nq === 1 ? '' : 's'}</span>
+                    <span className="muted small">{g.rows.length ? `${g.rows.length} row${g.rows.length === 1 ? '' : 's'}` : 'no content rows'} · {nq} question{nq === 1 ? '' : 's'}</span>
                   </button>
                   {open && (g.rows.length ? list(g.rows) : <p className="muted small sci-empty">no content rows</p>)}
                 </div>
@@ -225,7 +228,7 @@ function RowItem({ n, r, cls, open, onPick, inScope, onRow, onAdd, onEdit, state
           <span className="sci-row-text">{r.content}</span>
           <span className="sci-row-meta small">
             <span className={`cov ${s.cls}`} title={`Row status: ${s.label}`}>{s.icon} {s.label}</span>
-            <span className="muted">&nbsp;· {r.n_direct} direct · {r.n_supporting} supporting</span>
+            <span className="muted" title="Links from questions to this row; one question can be linked to several rows">&nbsp;· {r.n_direct} direct link{r.n_direct === 1 ? '' : 's'} · {r.n_supporting} supporting link{r.n_supporting === 1 ? '' : 's'}</span>
             <RowClassTag rowClass={r.row_class} cls={cls} />
             <RowTags r={r} />
             {r.retired_at && <span className="tag gone" title={r.retired_reason ?? undefined}>Retired</span>}
@@ -349,7 +352,8 @@ function WalkBar({ walk, q, reload }: { walk: NonNullable<Parameters<typeof Scie
     let live = true; walkCache.get(k)!.then((d) => live && setData(d)).catch(() => live && setData(null));
     return () => { live = false; };
   }, [walk.chapterId, reload]);
-  const order = useMemo(() => (data ? walkOrder(data.rows.filter((r) => !r.retired_at), data.questions.filter((x) => !x.retired_at), walk.topicIds) : []), [data, walk.topicIds]);
+  const order = useMemo(() => (data ? walkOrder(data.rows.filter((r) => !r.retired_at), walkQuestions(data.questions, walk.topics, walk.higher), walk.topics.map((t) => t.topic_id)) : []),
+    [data, walk.topics, walk.higher]);
   const only = useMemo(() => (onlyReview && data ? new Set(data.questions.filter((x) => x.status === 'in_review' && !x.retired_at).map((x) => x.question_id)) : undefined), [onlyReview, data]);
   const st = walkStep(order, q, only);
   const go = (w: { topic_id: string; question_id: string } | null) => { if (w) walk.onGo(w.topic_id, w.question_id); };

@@ -927,3 +927,36 @@ input.time-box { font: inherit; font-weight: 600; }
 .review-line > .review-row { flex: 1; min-width: 0; }
 .tick-space { display: inline-block; width: 13px; }
 .tag.run { background: var(--bg); border: 1px solid var(--line); font-family: ui-monospace, Menlo, monospace; }
+
+/* ---------------------------------------------------------------- Images PR (DL-040): the Image box and Generate missing */
+.image-panel { margin: 10px 0; }
+.image-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.tag.image-status.needs_image { background: var(--warn-bg); color: var(--warn); border: 1px dashed var(--warn); }
+.tag.image-status.to_check { background: var(--warn-bg); color: var(--warn); border: 1px solid var(--warn); }
+.tag.image-status.has_image { background: var(--ok-bg); color: var(--ok); }
+.brief { display: grid; grid-template-columns: max-content 1fr; gap: 3px 12px; margin: 6px 0; }
+.brief > div { grid-column: 1 / -1; }
+.brief dt { color: var(--muted); }
+.brief dd { margin: 0; }
+.brief-label { display: inline-block; margin-right: 12px; }
+.brief-form { display: grid; gap: 6px; margin: 6px 0; }
+.brief-form label { display: grid; gap: 2px; }
+.brief-form textarea, .brief-form input, .brief-form select { font: inherit; }
+.brief-labels { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.brief-labels label { grid-template-columns: auto 1fr; align-items: center; gap: 6px; }
+.image-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 6px; }
+.image-history summary { cursor: pointer; margin-top: 8px; }
+.image-thumbs { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 6px; }
+.thumb { margin: 0; width: 200px; }
+.thumb img { width: 100%; border: 1px solid var(--line); border-radius: 6px; background: var(--card); }
+.thumb.current img { outline: 2px solid var(--ok); }
+.thumb figcaption { color: var(--muted); }
+.thumb-missing { height: 80px; display: flex; align-items: center; justify-content: center; border: 1px dashed var(--line); border-radius: 6px; }
+.place-labels { display: grid; gap: 6px; margin: 6px 0; }
+.place-box { position: relative; cursor: crosshair; max-width: 560px; }
+.place-box img { width: 100%; display: block; border: 1px solid var(--line); border-radius: 6px; }
+.place-dot { position: absolute; transform: translate(-50%, -50%); width: 26px; height: 26px; border-radius: 50%; background: #fff; border: 2px solid #1d2330; color: #1d2330;
+  font-weight: 700; display: flex; align-items: center; justify-content: center; pointer-events: none; }
+.image-run { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 4px 0 8px; }
+.image-run-confirm, .image-run-progress, .image-run-msg { width: 100%; }
+.image-run-confirm input[type="number"] { width: 6em; }

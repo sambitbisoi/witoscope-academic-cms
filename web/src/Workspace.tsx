@@ -20,6 +20,7 @@ import { ScienceView } from './Science';
 import { ClassTag, LevelTag } from './Tags';
 import { MultiSelect } from './MultiSelect';
 import { clamp, Handle } from './Handle';
+import type { WalkTopic } from './scienceLogic';
 
 type R = { subject: Subject; cls: string; strand: string | null; ch: string | null; topic: string | null; q: string | null; v: number | null; tab: 'types' | 'concepts' | 'sources' | 'content'; edit: boolean; row: string | null; chview: boolean;
   /** Q8: a catalogue item open in the right-hand pane (kind:id); a question and an item never show together */ item: string | null };
@@ -207,12 +208,12 @@ export function Workspace(r: R) {
         <Handle side="tree" disabled={!panes.pinned} onDrag={(dx) => setPanes({ ...panes, tree: clamp(panes.tree + dx, 200, 560) })} onReset={() => setPanes({ ...panes, tree: PANES.tree })} />
         <section className="ws-main" aria-label="Questions">
           {r.edit && r.q ? <EditForm key={r.q} questionId={r.q} onDone={(saved) => { go({ edit: false, v: null }); if (saved) setReload((x) => x + 1); }} />
-            : r.chview && r.ch && !r.topic && r.subject === 'science' ? (!data ? <p className="muted">Loading…</p> : <ChapterView key={r.ch} r={r} go={go} higher={showHigher} ceiling={sel.length ? Math.max(...sel) : null} data={data} seq={seq} reload={reload} onOrder={setOrder} detail={qDetail} />)
+            : r.chview && r.ch && !r.topic && r.subject === 'science' ? (!data ? <p className="muted">Loading…</p> : <ChapterView key={r.ch} walkScope={{ topics: walkTopics(shownTopics, seq, r.ch!, sel), higher: showHigher }} r={r} go={go} higher={showHigher} ceiling={sel.length ? Math.max(...sel) : null} data={data} seq={seq} reload={reload} onOrder={setOrder} detail={qDetail} />)
             : !r.topic ? <Pick subject={r.subject} sel={sel} ch={chSel.length === 1 ? chapters.find((c) => c.chapter_id === chSel[0]) : undefined}
                 n={data ? shownTopics.filter((t) => (!chSel.length || chSel.includes(t.chapter_id)) && (!strandSel.length || strandSel.includes(chapterOf.get(t.chapter_id)?.strand_id ?? ''))).length : undefined} />
             : !data ? <p className="muted">Loading…</p>
             : !topic ? <p>Topic {r.topic} isn't in {subjectLabel(r.subject)}{r.cls !== 'all' ? ` ${classesText(sel)}` : ''}. <a href={browseHash({ ...r, cls: 'all' })}>Look in all classes</a></p>
-            : <TopicView key={topic.topic_id} chapterTopics={chapterTopicIds(data, seq, topic.chapter_id)} reload={reload} higher={showHigher} ceiling={topicCeiling(topic.classes, sel)} decided={decided} onOpenItem={openItem} selItem={r.item} topic={topic} no={seq?.topic.get(topic.topic_id) ?? null} chapterNo={seq?.chapter.get(topic.chapter_id) ?? null} review={data.reviews.get(topic.topic_id)} chapter={data.chapters.find((c) => c.chapter_id === topic.chapter_id)} r={r} go={go} onOrder={setOrder} onChanged={() => setReload((x) => x + 1)} detail={qDetail} />}
+            : <TopicView key={topic.topic_id} walkScope={{ topics: walkTopics(shownTopics, seq, topic.chapter_id, sel), higher: showHigher }} reload={reload} higher={showHigher} ceiling={topicCeiling(topic.classes, sel)} decided={decided} onOpenItem={openItem} selItem={r.item} topic={topic} no={seq?.topic.get(topic.topic_id) ?? null} chapterNo={seq?.chapter.get(topic.chapter_id) ?? null} review={data.reviews.get(topic.topic_id)} chapter={data.chapters.find((c) => c.chapter_id === topic.chapter_id)} r={r} go={go} onOrder={setOrder} onChanged={() => setReload((x) => x + 1)} detail={qDetail} />}
         </section>
         {!sciLayout && <>
           <Handle side="detail" onDrag={(dx) => setPanes({ ...panes, detail: clamp(panes.detail - dx, 320, 900) })} onReset={() => setPanes({ ...panes, detail: PANES.detail })} />
@@ -315,7 +316,7 @@ function useOpenGroups(topicId: string, tab: string) {
   return [open, setOpen] as const;
 }
 
-function TopicView({ topic, no, chapterNo, review, chapter, r, go, reload, higher, ceiling, decided, onOpenItem, selItem, onOrder, onChanged, detail, chapterTopics }: { topic: TopicWithStats; /** Q38 PR 4 (b) */ chapterTopics: string[]; /** Q1 */ higher: boolean; /** Q5: the highest selected class the topic is in (null = all classes) */ ceiling: number | null;
+function TopicView({ topic, no, chapterNo, review, chapter, r, go, reload, higher, ceiling, decided, onOpenItem, selItem, onOrder, onChanged, detail, walkScope }: { topic: TopicWithStats; /** Q38 PR 4 (b) */ walkScope: { topics: WalkTopic[]; higher: boolean }; /** Q1 */ higher: boolean; /** Q5: the highest selected class the topic is in (null = all classes) */ ceiling: number | null;
   /** Q8 / Q9 */ decided: { kind: CatKind; id: string; status: string; n: number } | null; onOpenItem: (kind: CatKind, id: string) => void; selItem: string | null; no?: string | null; chapterNo?: string | null; review?: TopicReview; chapter?: Chapter; r: R; go: (p: Partial<R>) => void; reload: number; onOrder: (ids: string[]) => void; onChanged: () => void; detail: ReactNode }) {
   // D5: the add / edit form open on this topic (one at a time)
   const [form, setForm] = useState<{ kind: Kind; id: string | null; fixed?: Record<string, unknown> } | null>(null);
@@ -405,7 +406,7 @@ function TopicView({ topic, no, chapterNo, review, chapter, r, go, reload, highe
             {sources && ` · ${sources}`}</span>
         </div>
         <div className="muted small">
-          {science ? null : <>{data ? `${data.sets.length} question type${data.sets.length === 1 ? '' : 's'} · ` : ''}{countsLabel(s)}
+          {science ? <span title="Each question once, as the tree counts it (a content row counts links: one question can be linked to several rows)"><strong>{s?.n_questions ?? 0} question{(s?.n_questions ?? 0) === 1 ? '' : 's'}</strong> in this topic</span> : <>{data ? `${data.sets.length} question type${data.sets.length === 1 ? '' : 's'} · ` : ''}{countsLabel(s)}
           {data && <> · <strong>{nGroups} clone group{nGroups === 1 ? '' : 's'}</strong></>}</>}
           {nRevision > 0 && ` · ${nRevision} revision (lower level)`}
           {hiddenHigher > 0 && <span title='Tick "Show higher-level questions" in the bar above to see them'> · {hiddenHigher} above Class {ceiling} not shown (Show higher-level questions)</span>}
@@ -446,7 +447,7 @@ function TopicView({ topic, no, chapterNo, review, chapter, r, go, reload, highe
       {r.tab === 'sources' ? <SourcesTab chapterId={topic.chapter_id} chapterName={chapter?.name ?? ''} cls={topic.class} topicId={topic.topic_id} />
         : <ScienceView scope={{ topicId: topic.topic_id }} cls={ceiling === null ? 'all' : String(ceiling)} higher={higher} topicNames={new Map([[topic.topic_id, { name: topic.name, no: no ?? null }]])} row={r.row} q={r.q} reload={reload}
             onRow={(row) => go({ row, q: null, v: null, edit: false })} onQuestion={(id) => go({ q: id, v: null, edit: false })} onBack={() => go({ q: null, v: null, edit: false })} onOrder={onOrder} detail={detail}
-          walk={{ chapterId: topic.chapter_id, topicIds: chapterTopics, onGo: (t, id) => go({ topic: t, q: id, row: null, v: null, edit: false }) }} />}
+          walk={{ chapterId: topic.chapter_id, ...walkScope, onGo: (t, id) => go({ topic: t, q: id, row: null, v: null, edit: false }) }} />}
       </> : <>
       <div role="tablist" className="tabs">
         <button role="tab" aria-selected={r.tab === 'types'} className={r.tab === 'types' ? 'on' : ''} onClick={() => go({ tab: 'types' })}>By question type</button>
@@ -556,14 +557,16 @@ function TopicView({ topic, no, chapterNo, review, chapter, r, go, reload, highe
 }
 
 /** Science chapter view (13 Nov 2026): the same three columns over every topic of the chapter, grouped by topic. */
-/** Q38 PR 4 (b): a chapter's topics in the class's order (as the chapter view lists them). */
-function chapterTopicIds(data: Awaited<ReturnType<typeof tree>>, seq: ReturnType<typeof numbersOf> | null, chapterId: string): string[] {
+/** Q38 PR 4 (b): the walk's topics = the chapter's topics the TREE shows (core, plus extra ones when "Include extra topics"
+ *  is ticked), in the class's order, each with its class ceiling, exactly as the tree counts them (fix, 24 Nov 2026). */
+function walkTopics(shown: TopicWithStats[], seq: ReturnType<typeof numbersOf> | null, chapterId: string, sel: number[]): WalkTopic[] {
   const rank = (id: string) => seq?.topicRank.get(id) ?? 1e9;
-  return data.topics.filter((t) => t.chapter_id === chapterId && t.status === 'active')
-    .sort((a, b) => rank(a.topic_id) - rank(b.topic_id) || a.class - b.class || (a.seq ?? 999) - (b.seq ?? 999) || a.topic_id.localeCompare(b.topic_id)).map((t) => t.topic_id);
+  return shown.filter((t) => t.chapter_id === chapterId && t.status === 'active')
+    .sort((a, b) => rank(a.topic_id) - rank(b.topic_id) || a.class - b.class || (a.seq ?? 999) - (b.seq ?? 999) || a.topic_id.localeCompare(b.topic_id))
+    .map((t) => ({ topic_id: t.topic_id, ceiling: topicCeiling(t.classes, sel) }));
 }
 
-function ChapterView({ r, go, higher, ceiling, data, seq, reload, onOrder, detail }: { r: R; go: (p: Partial<R>) => void; higher: boolean; ceiling: number | null; data: Awaited<ReturnType<typeof tree>>; seq: ReturnType<typeof numbersOf> | null; reload: number; onOrder: (ids: string[]) => void; detail: ReactNode }) {
+function ChapterView({ r, go, higher, ceiling, data, seq, reload, onOrder, detail, walkScope }: { /** Q38 PR 4 (b) */ walkScope: { topics: WalkTopic[]; higher: boolean }; r: R; go: (p: Partial<R>) => void; higher: boolean; ceiling: number | null; data: Awaited<ReturnType<typeof tree>>; seq: ReturnType<typeof numbersOf> | null; reload: number; onOrder: (ids: string[]) => void; detail: ReactNode }) {
   const ch = data.chapters.find((c) => c.chapter_id === r.ch);
   // topics in the class's order (sequencing), then by class and seq; topics without content rows are kept
   const rank = (id: string) => seq?.topicRank.get(id) ?? 1e9;
@@ -578,7 +581,7 @@ function ChapterView({ r, go, higher, ceiling, data, seq, reload, onOrder, detai
       </div>
       <ScienceView scope={{ chapterId: r.ch! }} cls={ceiling === null ? 'all' : String(ceiling)} higher={higher} topicNames={names} row={r.row} q={r.q} reload={reload}
         onRow={(row) => go({ row, q: null, v: null, edit: false })} onQuestion={(id) => go({ q: id, v: null, edit: false })} onBack={() => go({ q: null, v: null, edit: false })} onOrder={onOrder} detail={detail}
-        walk={{ chapterId: r.ch!, topicIds: topics.map((t) => t.topic_id), onGo: (_t, id) => go({ q: id, row: null, v: null, edit: false }) }} />
+        walk={{ chapterId: r.ch!, ...walkScope, onGo: (_t, id) => go({ q: id, row: null, v: null, edit: false }) }} />
     </>
   );
 }

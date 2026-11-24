@@ -1,6 +1,6 @@
 // Q38 PR 4 (24 Nov 2026): Previous / Next walk, primary line, proposal states. Synthetic rows only.
 import { describe, expect, it } from 'vitest';
-import { imageToRedo, primaryConfirmedOnApproval, primaryOf, questionState, rowState, walkOrder, walkStep } from '../web/src/scienceLogic.ts';
+import { primaryConfirmedOnApproval, primaryOf, questionState, rowState, walkOrder, walkQuestions, walkStep } from '../web/src/scienceLogic.ts';
 
 const row = (row_id: string, topic_id: string, sort: number) => ({ row_id, topic_id, sort, row_class: 3, question_use: 'OK', retired_at: null as string | null });
 const q = (question_id: string, topic_id: string, primary: string | null, o: { proposed?: boolean; type?: number; rejected?: string } = {}) => ({
@@ -26,6 +26,36 @@ describe('(b) walk order', () => {
   });
 });
 
+describe('(b) fix 24 Nov: the walk uses the Browse filters, so its total matches the chapter count', () => {
+  // SC02 in the Class 3 view (Sambit's report): the tree shows 31 Qs (Level ≤ 3); ST0064 also has 8 Level-4 questions
+  const lv = (id: string, topic_id: string, effective_level: number, o: { retired?: boolean; counted?: boolean } = {}) =>
+    ({ ...q(id, topic_id, null), effective_level, retired_at: o.retired ? '2026-11-20' : null, counted: o.counted ?? true });
+  const qs = [
+    ...Array.from({ length: 20 }, (_, i) => lv(`A${i}`, 'ST0004', 3)),
+    ...Array.from({ length: 11 }, (_, i) => lv(`B${i}`, 'ST0064', i % 2 ? 2 : 3)),
+    ...Array.from({ length: 8 }, (_, i) => lv(`C${i}`, 'ST0064', 4)),
+    lv('R1', 'ST0004', 3, { retired: true }), lv('G1', 'ST0004', 3, { counted: false }),
+    ...Array.from({ length: 5 }, (_, i) => lv(`X${i}`, 'ST0099', 3)),   // an extra topic (lower / higher class), not shown in the tree
+  ];
+  const shown: { topic_id: string; ceiling: number | null }[] = [{ topic_id: 'ST0004', ceiling: 3 }, { topic_id: 'ST0064', ceiling: 3 }];
+  it('Class 3, higher-level off, extra topics off: 31 (as the tree); higher on: 39; extra topic ticked: + its 5', () => {
+    const total = (topics: typeof shown, higher: boolean) => walkStep(walkOrder([], walkQuestions(qs, topics, higher), topics.map((t) => t.topic_id)), null).total;
+    expect(total(shown, false)).toBe(31);
+    expect(total(shown, true)).toBe(39);
+    expect(total([...shown, { topic_id: 'ST0099', ceiling: 3 }], false)).toBe(36);
+    expect(total(shown.map((t) => ({ ...t, ceiling: null })), false)).toBe(39);   // All classes: no ceiling
+  });
+  it('a question of a topic not shown is never walked, even when its primary row is in a shown topic', () => {
+    const rows = [row('C3-01-001', 'ST0004', 1)];
+    const w = walkOrder(rows, walkQuestions([lv('A', 'ST0004', 3), { ...q('X', 'ST0099', 'C3-01-001'), effective_level: 3, counted: true }], shown, false), ['ST0004', 'ST0064']);
+    expect(w.map((x) => x.question_id)).toEqual(['A']);
+  });
+  it('only Needs review narrows the same walk', () => {
+    const w = walkOrder([], walkQuestions(qs, shown, false), ['ST0004', 'ST0064']);
+    expect(walkStep(w, null, new Set(['A1', 'B2', 'C1'])).total).toBe(2);   // C1 is Level 4: not in the walk
+  });
+});
+
 describe('(c)(e) primary line and proposal states', () => {
   it('primary: confirmed · proposed · rejected · none', () => {
     expect(primaryOf(q('A', 'ST1', 'C3-01-001'))).toEqual({ row_id: 'C3-01-001', state: 'confirmed' });
@@ -42,13 +72,10 @@ describe('(c)(e) primary line and proposal states', () => {
     expect(rowState(r, new Set(['C3-01-001']), [])).toBe('proposed');
     expect(rowState({ ...r, retired_at: 'x' }, new Set(), [])).toBe('rejected');
   });
-  it('OL-044 and (g)', () => {
+  it('OL-044 (the 0048 (g) rule moved to the image status, 0049)', () => {
     const P = [{ rank: 'primary', rank_proposed: true }, { rank: 'secondary', rank_proposed: false }];
     expect(primaryConfirmedOnApproval('generation', P)).toBe(true);
     expect(primaryConfirmedOnApproval('import', P)).toBe(false);
     expect(primaryConfirmedOnApproval('generation', [{ rank: 'primary', rank_proposed: false }])).toBe(false);
-    expect(imageToRedo('science', 'generation', 'has_image')).toBe(true);
-    expect(imageToRedo('science', 'manual', 'has_image')).toBe(false);
-    expect(imageToRedo('math', 'generation', 'has_image')).toBe(false);
   });
 });
