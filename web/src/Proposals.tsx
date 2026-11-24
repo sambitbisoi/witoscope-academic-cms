@@ -8,6 +8,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { Id } from './Id';
 import { currentVersion, decidePrimary, decideSetting, decideTopicClass, topicClassProposals, type PrimaryDecision, type TopicClassProposal } from './reviewApi';
 import { setRowItemStatus } from './scienceApi';
+import { topicClassLine } from './catalogueLogic';
 
 /** Runs one decision; shows "…" while busy and the error in place. */
 function useDecide(onDone: () => void) {
@@ -89,14 +90,15 @@ export function TopicClassDecide({ topicId, onDone }: { topicId: string; onDone?
   if (!shown.length) return null;
   return (
     <div className="small topic-class-props">
-      <span className="muted">Class links:</span>
-      {shown.map((p) => <PState key={p.class} state={p.status === 'proposed' ? 'proposed' : 'rejected'}
-        label={<>Class {p.class} ({p.suggested_role === 'lower' ? 'from a lower class' : 'from a higher class'}){p.status === 'proposed' ? ' · proposed' : ''}</>} title={p.source ?? undefined}>
+      {/* PR 4b: "Add topic to Class 6 · proposed" [Confirm] [Reject]; no explanation on the line, the evidence only as a tooltip */}
+      {shown.map((p) => <span key={p.class} className="tc-prop">
+        <PState state={p.status === 'proposed' ? 'proposed' : 'rejected'} label={topicClassLine(p.class, p.status)}
+          title={[p.evidence, p.source ? `Suggested by ${p.source}` : null].filter(Boolean).join(' · ') || undefined} />
         {p.status === 'proposed' ? <>
-          <Btn busy={busy} kind="ok" onClick={go(() => decideTopicClass(topicId, p.class, 'active'))}>Confirm</Btn>
-          <Btn busy={busy} kind="no" onClick={go(() => decideTopicClass(topicId, p.class, 'retired'))}>Reject</Btn>
-        </> : <Btn busy={busy} onClick={go(() => decideTopicClass(topicId, p.class, 'proposed'))}>Undo</Btn>}
-      </PState>)}
+          <button type="button" className="approve small-btn" disabled={busy} onClick={go(() => decideTopicClass(topicId, p.class, 'active'))}>Confirm</button>
+          <button type="button" className="secondary small-btn" disabled={busy} onClick={go(() => decideTopicClass(topicId, p.class, 'retired'))}>Reject</button>
+        </> : <button type="button" className="link small" disabled={busy} onClick={go(() => decideTopicClass(topicId, p.class, 'proposed'))}>Undo</button>}
+      </span>)}
       {err && <span className="error small"> {err}</span>}
     </div>
   );

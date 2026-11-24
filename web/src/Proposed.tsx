@@ -88,7 +88,7 @@ export function ProposedList({ kind: routeKind, item: routeItem }: { kind: strin
           ))}
         </div>
       </div>
-      <p className="muted small">{kind === 'topic_class' ? 'Topic–class links the Science master suggests. Approving adds the link; the topic then shows in that class as an extra topic. '
+      <p className="muted small">{kind === 'topic_class' ? 'Topics the Science master suggests adding to another class. Confirm adds the topic to that class (it shows there as an extra topic); Reject keeps the proposal, undoable. Hover a row for the evidence. '
         : kind === 'setting' ? 'Settings (the story or context of a question) proposed by the pipeline or a generation run. Approve makes one active; Reject keeps it (retired) and can be undone. '
         : 'Concepts, misconceptions, question types and patterns proposed by the book pipeline. They can already be used as tags; approving makes them part of the catalogue. '}
         A class is where an item was first catalogued; it is information only. Nothing is deleted: Reject retires an item and keeps it. Every change is logged. Select a row to see its details.</p>
@@ -131,14 +131,15 @@ export function ProposedList({ kind: routeKind, item: routeItem }: { kind: strin
                     onClick={(e) => { if (!(e.target as HTMLElement).closest('button, input, a')) open(i.kind, i.id); }}>
                     {show === 'proposed' && canDecide && <td><input type="checkbox" aria-label={`Tick ${i.id}`} checked={picked.has(i.id)} onChange={() => tick(i.id)} /></td>}
                     <td className="mono nowrap">{i.kind === 'topic_class' ? i.id.replace('·', ' → ') : i.id}</td>
-                    <td className="col-name"><div className={`kind-line ${i.status === 'proposed' ? '' : 'decided'}`}>{kindLine({ ...i, via: null })}</div><div>{i.label}</div>{i.detail && <div className="muted small">{i.detail}</div>}</td>
+                    <td className="col-name" title={i.kind === 'topic_class' ? i.detail : undefined}><div className={`kind-line ${i.status === 'proposed' ? '' : 'decided'}`}>{kindLine({ ...i, via: null })}</div><div>{i.label}</div>
+                      {i.detail && i.kind !== 'topic_class' && <div className="muted small">{i.detail}</div>}</td>
                     <td className="nowrap">{i.cls ? <>Class {i.cls}{i.via && <div className="muted small">{i.via}</div>}</> : <span className="muted">—</span>}</td>
                     <td className="col-topic">{i.topic_id ? <><a href={topicLink(i)}>{places?.topics.get(i.topic_id)?.name ?? i.topic_id}</a> <Id>{i.topic_id}</Id></> : <span className="muted">—</span>}</td>
                     <td className="small col-wide nowrap">{i.proposedBy.join(', ') || <span className="muted">—</span>}</td>
                     <td className="small col-wide nowrap" title={i.usedBy.join(', ')}>{i.usedBy.length ? `${i.usedBy.length} question${i.usedBy.length === 1 ? '' : 's'}` : <span className="muted">none</span>}</td>
                     <td className="nowrap">
-                      {i.status === 'proposed' && canDecide && <><button className="approve small-btn" disabled={busy} onClick={() => approveMany([i.id])}>Approve</button>{' '}
-                        <button className="link small" disabled={busy} onClick={() => open(i.kind, i.id, true)}>Reject…</button></>}
+                      {i.status === 'proposed' && canDecide && <><button className="approve small-btn" disabled={busy} onClick={() => approveMany([i.id])}>{i.kind === 'topic_class' ? 'Confirm' : 'Approve'}</button>{' '}
+                        <button className="link small" disabled={busy} onClick={() => open(i.kind, i.id, true)}>{i.kind === 'topic_class' ? 'Reject' : 'Reject…'}</button></>}
                       {i.status !== 'proposed' && <button className="link small" onClick={() => open(i.kind, i.id)}>Details</button>}
                     </td>
                   </tr>

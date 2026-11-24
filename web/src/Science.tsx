@@ -114,18 +114,25 @@ export function ScienceView({ scope, cls, higher = false, topicNames, row, q, on
 
   return (
     <div className="sci">
-      <Coverage rows={rows.filter((r) => !r.retired_at)} questions={qsAll} cls={cls} />
-      <div className="filters sci-filters small">
-        <label>Science question type <select value={sf.type} onChange={(e) => setSf({ ...sf, type: e.target.value })}>
-          <option value="">Any</option><option value="none">Not set</option>
-          {(Object.entries(SCIENCE_QUESTION_TYPES) as [string, string][]).map(([k, l]) => <option key={k} value={k}>{k} · {l}</option>)}</select></label>
-        <label>Tier <select value={sf.tier} onChange={(e) => setSf({ ...sf, tier: e.target.value })}>
-          <option value="">Any</option><option value="none">None (no type)</option>{['School', 'Achiever', 'Super Achiever'].map((t) => <option key={t}>{t}</option>)}</select></label>
-        <label>Markers <select value={sf.markers} onChange={(e) => setSf({ ...sf, markers: e.target.value })}>
-          <option value="">Any</option>{['0', '1', '2', '3+'].map((m) => <option key={m}>{m}</option>)}</select></label>
-        {(sf.type || sf.tier || sf.markers) && <><span className="muted">{qs.length} of {qsAll.length} questions</span> <button className="link small" onClick={() => setSf(SCI_FILTER_NONE)}>Clear</button></>}
+      {/* PR 4b (Sambit, 24 Nov 2026): one compact row: filters, then the proposal filter, then the topic summary behind (i) */}
+      <div className="sci-bar small">
+        <select aria-label="Science question type" className={sf.type ? 'active' : ''} value={sf.type} onChange={(e) => setSf({ ...sf, type: e.target.value })}>
+          <option value="">Type: any</option><option value="none">Type: not set</option>
+          {(Object.entries(SCIENCE_QUESTION_TYPES) as [string, string][]).map(([k, l]) => <option key={k} value={k}>Type {k} · {l}</option>)}</select>
+        <select aria-label="Tier" className={sf.tier ? 'active' : ''} value={sf.tier} onChange={(e) => setSf({ ...sf, tier: e.target.value })}>
+          <option value="">Tier: any</option><option value="none">Tier: none (no type)</option>{['School', 'Achiever', 'Super Achiever'].map((t) => <option key={t} value={t}>{t}</option>)}</select>
+        <select aria-label="Markers" className={sf.markers ? 'active' : ''} value={sf.markers} onChange={(e) => setSf({ ...sf, markers: e.target.value })}>
+          <option value="">Markers: any</option>{['0', '1', '2', '3+'].map((m) => <option key={m} value={m}>{m} marker{m === '1' ? '' : 's'}</option>)}</select>
+        {(sf.type || sf.tier || sf.markers) && <span><span className="muted">{qs.length} of {qsAll.length}</span> <button className="link small" onClick={() => setSf(SCI_FILTER_NONE)}>Clear</button></span>}
         <span className="pfilter" role="group" aria-label="Show proposals" title="Rows, links and questions: Proposed = waiting for a decision (Needs review, a proposed primary, an item to review) · Rejected = rejected or retired">
           {PFILTERS.map(([v, l]) => <button key={v} className={`pill small ${pf === v ? 'on' : ''}`} aria-pressed={pf === v} onClick={() => setPf(v)}>{l}</button>)}</span>
+        <InfoPop label={`Summary of this ${chapterMode ? 'chapter' : 'topic'}`}
+          attention={rows.some((r) => !r.retired_at && r.status === 'none') || qsAll.some((x) => !x.retired_at && x.bank === 'production' && !x.science_question_type) || pending.size > 0}
+          attentionText={[rows.some((r) => !r.retired_at && r.status === 'none') ? 'content rows with no question yet' : null,
+            qsAll.some((x) => !x.retired_at && x.bank === 'production' && !x.science_question_type) ? 'questions without a type' : null,
+            pending.size > 0 ? 'misconception items to review' : null].filter(Boolean).join(' · ')}>
+          <Coverage rows={rows.filter((r) => !r.retired_at)} questions={qsAll} cls={cls} />
+        </InfoPop>
       </div>
       {'topicId' in scope && <TopicClassDecide topicId={scope.topicId} />}
       <ImageRunBar scope={scope} onChanged={() => setTick((t) => t + 1)} />
@@ -380,4 +387,24 @@ function WalkBar({ walk, q, reload }: { walk: NonNullable<Parameters<typeof Scie
 
 export function Box({ title, children, tone }: { title: ReactNode; children: ReactNode; tone?: string }) {
   return <div className={`tint-box ${tone ?? ''}`}><div className="tint-title">{title}</div>{children}</div>;
+}
+
+/** PR 4b: a summary behind an (i) button (popover; Escape or a click outside closes it). An amber dot asks for attention. */
+function InfoPop({ label, attention, attentionText, children }: { label: string; attention: boolean; attentionText: string; children: ReactNode }) {
+  const [open, setOpen] = useState(false);
+  const box = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const away = (e: MouseEvent) => { if (box.current && !box.current.contains(e.target as Node)) setOpen(false); };
+    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
+    document.addEventListener('mousedown', away); document.addEventListener('keydown', esc);
+    return () => { document.removeEventListener('mousedown', away); document.removeEventListener('keydown', esc); };
+  }, [open]);
+  return (
+    <span className="info-pop" ref={box}>
+      <button type="button" className={`info-btn ${open ? 'on' : ''}`} aria-expanded={open} aria-label={label} title={attention ? `${label} · needs attention: ${attentionText}` : label} onClick={() => setOpen(!open)}>
+        i{attention && <span className="info-dot" aria-hidden />}</button>
+      {open && <div className="info-panel" role="dialog" aria-label={label}>{attention && <div className="info-attn small">Needs attention: {attentionText}</div>}{children}</div>}
+    </span>
+  );
 }

@@ -557,8 +557,8 @@ function TopicView({ topic, no, chapterNo, review, chapter, r, go, reload, highe
 }
 
 /** Science chapter view (13 Nov 2026): the same three columns over every topic of the chapter, grouped by topic. */
-/** Q38 PR 4 (b): the walk's topics = the chapter's topics the TREE shows (core, plus extra ones when "Include extra topics"
- *  is ticked), in the class's order, each with its class ceiling, exactly as the tree counts them (fix, 24 Nov 2026). */
+/** Q38 PR 4 (b), PR 4b: the walk's topics = the chapter's topics the TREE shows (core, plus extra ones when "Include extra
+ *  topics" is ticked), in the class's order, each with its class ceiling, exactly as the tree counts them. */
 function walkTopics(shown: TopicWithStats[], seq: ReturnType<typeof numbersOf> | null, chapterId: string, sel: number[]): WalkTopic[] {
   const rank = (id: string) => seq?.topicRank.get(id) ?? 1e9;
   return shown.filter((t) => t.chapter_id === chapterId && t.status === 'active')

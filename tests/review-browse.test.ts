@@ -26,7 +26,7 @@ describe('(b) walk order', () => {
   });
 });
 
-describe('(b) fix 24 Nov: the walk uses the Browse filters, so its total matches the chapter count', () => {
+describe('PR 4b: the walk uses the Browse filters, so its total matches the chapter count', () => {
   // SC02 in the Class 3 view (Sambit's report): the tree shows 31 Qs (Level ≤ 3); ST0064 also has 8 Level-4 questions
   const lv = (id: string, topic_id: string, effective_level: number, o: { retired?: boolean; counted?: boolean } = {}) =>
     ({ ...q(id, topic_id, null), effective_level, retired_at: o.retired ? '2026-11-20' : null, counted: o.counted ?? true });
@@ -38,16 +38,15 @@ describe('(b) fix 24 Nov: the walk uses the Browse filters, so its total matches
     ...Array.from({ length: 5 }, (_, i) => lv(`X${i}`, 'ST0099', 3)),   // an extra topic (lower / higher class), not shown in the tree
   ];
   const shown: { topic_id: string; ceiling: number | null }[] = [{ topic_id: 'ST0004', ceiling: 3 }, { topic_id: 'ST0064', ceiling: 3 }];
-  it('Class 3, higher-level off, extra topics off: 31 (as the tree); higher on: 39; extra topic ticked: + its 5', () => {
-    const total = (topics: typeof shown, higher: boolean) => walkStep(walkOrder([], walkQuestions(qs, topics, higher), topics.map((t) => t.topic_id)), null).total;
+  const total = (topics: typeof shown, higher: boolean) => walkStep(walkOrder([], walkQuestions(qs, topics, higher), topics.map((t) => t.topic_id)), null).total;
+  it('Class 3, higher-level off, extra topics off: 31 (as the tree); higher on: 39; extra topic ticked: + its 5; all classes: 39', () => {
     expect(total(shown, false)).toBe(31);
     expect(total(shown, true)).toBe(39);
     expect(total([...shown, { topic_id: 'ST0099', ceiling: 3 }], false)).toBe(36);
-    expect(total(shown.map((t) => ({ ...t, ceiling: null })), false)).toBe(39);   // All classes: no ceiling
+    expect(total(shown.map((t) => ({ ...t, ceiling: null })), false)).toBe(39);
   });
   it('a question of a topic not shown is never walked, even when its primary row is in a shown topic', () => {
-    const rows = [row('C3-01-001', 'ST0004', 1)];
-    const w = walkOrder(rows, walkQuestions([lv('A', 'ST0004', 3), { ...q('X', 'ST0099', 'C3-01-001'), effective_level: 3, counted: true }], shown, false), ['ST0004', 'ST0064']);
+    const w = walkOrder([row('C3-01-001', 'ST0004', 1)], walkQuestions([lv('A', 'ST0004', 3), { ...q('X', 'ST0099', 'C3-01-001'), effective_level: 3, counted: true }], shown, false), ['ST0004', 'ST0064']);
     expect(w.map((x) => x.question_id)).toEqual(['A']);
   });
   it('only Needs review narrows the same walk', () => {

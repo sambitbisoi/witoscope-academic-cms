@@ -163,7 +163,7 @@ export function walkOrder<R extends RowLike, Q extends { question_id: string; to
     else loose.set(q.topic_id, [...(loose.get(q.topic_id) ?? []), q]);
   }
   const sort = (qs: Q[]) => [...qs].sort((a, b) => (a.science_question_type ?? 9) - (b.science_question_type ?? 9) || a.question_id.localeCompare(b.question_id));
-  // only the topics given (the ones the tree shows); a question of another topic is never walked (Sambit, 24 Nov 2026)
+  // only the topics given (the ones the tree shows); a question of another topic is never walked (PR 4b, 24 Nov 2026)
   const topics = topicIds;
   questions = questions.filter((q) => topicIds.includes(q.topic_id));
   const out: { question_id: string; topic_id: string; row_id: string | null }[] = [];
@@ -174,8 +174,8 @@ export function walkOrder<R extends RowLike, Q extends { question_id: string; to
   return out;
 }
 /** Where a question sits in the walk and its neighbours ("12 / 87"); onlyIds narrows the walk (e.g. only Needs review). */
-/** (b) fix, 24 Nov 2026: the walk uses EXACTLY the Browse filters of the tree and the question list, so its total matches
- *  the chapter count: the topics the tree shows (core, plus extra ones when "Include extra topics" is ticked), each
+/** PR 4b (Sambit, 24 Nov 2026): the walk uses EXACTLY the Browse filters of the tree and the question list, so its total
+ *  matches the chapter count: the topics the tree shows (core, plus extra ones when "Include extra topics" is ticked), each
  *  topic's class ceiling (its highest selected class) unless "Show higher-level questions" is on, and only counted
  *  questions (not retired). "only Needs review" narrows it further (walkStep). */
 export interface WalkTopic { topic_id: string; ceiling: number | null }
