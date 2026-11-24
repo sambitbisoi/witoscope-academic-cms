@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://witoscope.com/schemas/cms/generation-pack/1.json",
-  "title": "WitoScope Academic CMS — generation pack",
-  "description": "One run of the question-generation engine (Route A: the CMS Generate button; Route B: Claude Code on the Mac), imported with `npm run gen:import`. Our own wording only: no book text, extracts or numbers; citations and originality scores only. IDs are run-local; the CMS mints every key and catalogue ID. Plan: docs/plan-2026-11-23-q38-direct-generation.md §2.",
+  "title": "WitoScope Academic CMS \u2014 generation pack",
+  "description": "One run of the question-generation engine (Route A: the CMS Generate button; Route B: Claude Code on the Mac), imported with `npm run gen:import`. Our own wording only: no book text, extracts or numbers; citations and originality scores only. IDs are run-local; the CMS mints every key and catalogue ID. Plan: docs/plan-2026-11-23-q38-direct-generation.md \u00a72.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -668,6 +668,85 @@
                 "string",
                 "null"
               ]
+            }
+          }
+        },
+        "figure_brief": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "additionalProperties": false,
+          "required": [
+            "shown"
+          ],
+          "description": "Images PR (DL-040): the structured image brief. The picture is made WITHOUT letters; the CMS draws A-D at the labels' panels (row4 / grid2x2) or placed points (single).",
+          "properties": {
+            "shown": {
+              "type": "string",
+              "minLength": 1
+            },
+            "style": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "must_not_show": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "layout": {
+              "enum": [
+                "row4",
+                "grid2x2",
+                "single",
+                null
+              ]
+            },
+            "labels": {
+              "type": "array",
+              "maxItems": 4,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "label",
+                  "points_to"
+                ],
+                "properties": {
+                  "label": {
+                    "enum": [
+                      "A",
+                      "B",
+                      "C",
+                      "D"
+                    ]
+                  },
+                  "points_to": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "x": {
+                    "type": [
+                      "number",
+                      "null"
+                    ],
+                    "minimum": 0,
+                    "maximum": 1
+                  },
+                  "y": {
+                    "type": [
+                      "number",
+                      "null"
+                    ],
+                    "minimum": 0,
+                    "maximum": 1
+                  }
+                }
+              }
             }
           }
         }

@@ -66,7 +66,8 @@ try {
   const DEFINER_ALLOWED = ['cms_is_admin', 'cms_apply_save', 'cms_set_status', 'cms_retire', 'cms_record_run', 'cms_save_job', 'cms_set_catalogue_status', 'cms_save_curriculum', 'cms_decide_override', 'cms_set_topic_review', 'cms_add_questions', 'cms_save_order', 'cms_decide_topic_class', 'cms_save_science_review', 'cms_save_content_links', 'cms_set_row_misconception_status', 'cms_save_content_row', 'cms_place_held_out', 'cms_discard_held_out', 'cms_decide_overrides',
     'cms_save_course_board', 'cms_save_course', 'cms_set_course_status', 'cms_copy_course',
     'cms_gen_open_run', 'cms_gen_import_batch', 'cms_gen_close_run', 'cms_gen_rollback', 'cms_gen_place_held',
-    'cms_approve_questions', 'cms_decide_primary'];
+    'cms_approve_questions', 'cms_decide_primary',
+    'cms_set_image_brief', 'cms_set_image', 'cms_check_image', 'cms_undo_image', 'cms_image_run_open', 'cms_image_run_claim', 'cms_image_run_item', 'cms_image_run_close', 'cms_gen_set_briefs'];
   const badFns = fns.filter((f) => f.proconfig?.[0] !== 'search_path=""' || f.anon_exec || (f.prosecdef && !DEFINER_ALLOWED.includes(f.proname)));
   check('every cms function: empty search_path, no anon access; only the listed functions run as owner', badFns.length === 0, badFns.map((f) => f.proname).join(', '));
 
