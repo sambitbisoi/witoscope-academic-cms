@@ -14,7 +14,9 @@ import { supabase } from './supabase';
 import { OriginFlags } from './AddQuestions';
 import { Id } from './Id';
 import { scienceDetail, type ScienceDetail } from './scienceApi';
-import { rankLabel, scienceBlockers } from './scienceLogic';
+import { imageToRedo, primaryConfirmedOnApproval, rankLabel, scienceBlockers } from './scienceLogic';
+import { approveQuestions, shortReason } from './reviewApi';
+import { ItemDecide, PrimaryDecide, SettingDecide } from './Proposals';
 import { ScienceReview } from './ScienceReview';
 import { TimeBoxes } from './TimeBoxes';
 
@@ -67,7 +69,8 @@ export function QuestionDetail({ id, versionNo, onVersion, onEdit, reloadKey = 0
       </div>
       {q.subject === 'science' ? <ScienceBody d={d} x={sx} err={sxErr} isCurrent={isCurrent} onVersion={onVersion} onSaved={() => { setTick((t) => t + 1); onChanged?.(); }}
         actions={isCurrent ? <Actions key={v.version_id} d={d} onEdit={onEdit} onChanged={() => { setTick((t) => t + 1); onChanged?.(); }} command={command} onAdvance={onAdvance}
-          extra={q.bank === 'production' ? (sx ? scienceBlockersOf(d, sx) : ['checking its content rows…']) : []} /> : null} /> : <>
+          extra={q.bank === 'production' ? (sx ? scienceBlockersOf(d, sx) : ['checking its content rows…']) : []}
+          fixes={sx ? <PendingFixes d={d} x={sx} onDone={() => { setTick((t) => t + 1); onChanged?.(); }} /> : null} /> : null} /> : <>
       {!isCurrent && <div className="notice small">You're looking at an older version. <button className="link" onClick={() => onVersion(null)}>Show current (v{q.current_version})</button></div>}
       {isCurrent && <Actions key={v.version_id} d={d} onEdit={onEdit} onChanged={() => { setTick((t) => t + 1); onChanged?.(); }} command={command} onAdvance={onAdvance} />}
 
@@ -135,7 +138,7 @@ export function QuestionDetail({ id, versionNo, onVersion, onEdit, reloadKey = 0
                 <a href={browseHash({ subject: subjectOfChapter(q.chapter_id), cls: String(pl.class), ch: q.chapter_id, topic: q.topic_id, q: q.question_id })}>Class {pl.class}</a>
                 <span className="muted"> ({pl.is_home ? 'home' : 'revision'})</span></span>)}
           </div>
-          <div><span className="muted">Setting</span> {d.setting ? <><strong>{d.setting.name}</strong>{d.setting.status === 'proposed' && <Proposed status="proposed" />}
+          <div><span className="muted">Setting</span> {d.setting ? <><SettingDecide setting={d.setting} onDone={() => { setTick((t) => t + 1); onChanged?.(); }} />
             {q.setting_confidence && <span className="muted"> · {q.setting_confidence} confidence</span>}{q.setting_note && <span className="muted"> · {q.setting_note}</span>}</> : <span className="muted">—</span>}</div>
           <div><span className="muted">Clone group</span>{' '}
             {d.clones.length > 1 ? <>{d.clones.findIndex((c) => c.question_id === q.question_id) + 1} of {d.clones.length} clones ·{' '}
@@ -322,8 +325,8 @@ const ACTION_LABEL: Record<string, string> = { submit: 'needs review', withdraw:
  * deleted and there is no Retire button here (a question retired earlier can be restored).
  * Keyboard (from Browse): A / R / F; after a keyboard action Browse moves to the next question.
  */
-function Actions({ d, onEdit, onChanged, command, onAdvance, extra }: { d: QuestionDetailData; onEdit?: () => void; onChanged: () => void; command?: ReviewCommand | null; onAdvance?: () => void;
-  /** Science (0035): Solution 1, primary row, misconception items */ extra?: string[] }) {
+function Actions({ d, onEdit, onChanged, command, onAdvance, extra, fixes }: { d: QuestionDetailData; onEdit?: () => void; onChanged: () => void; command?: ReviewCommand | null; onAdvance?: () => void;
+  /** Science (0035): Solution 1, primary row, misconception items */ extra?: string[]; /** Q38 PR 4 (d): its pending proposals with one-click fixes */ fixes?: ReactNode }) {
   const [ask, setAsk] = useState<null | 'reject' | 'flag' | 'restore' | 'override'>(null);
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
@@ -354,7 +357,13 @@ function Actions({ d, onEdit, onChanged, command, onAdvance, extra }: { d: Quest
   // 13 Nov 2026: "Approved" means ready for the app: no approval while the book check, the picture
   // (production only) or the attributes are pending. The SQL trigger enforces the same rules.
   const blockers = [...approvalBlockers(d.flags, q.bank), ...(extra ?? [])];
-  const approve = () => (blockers.length ? setErr(`Can't approve yet: ${blockers.join('; ')}.`) : nearCopy ? setAsk('override') : run(() => setStatus(q.question_id, v.version_no, 'approve', null)));
+  // OL-044 (Q38 PR 4): a generated question is approved through cms_approve_questions, which also confirms its proposed primary
+  const approveOne = async () => {
+    if (d.flags?.created_from !== 'generation') return setStatus(q.question_id, v.version_no, 'approve', null);
+    const r = await approveQuestions([q.question_id], null);
+    if (r.blocked[0]) throw new Error(`Can't approve yet: ${shortReason(r.blocked[0].reason)}.`);
+  };
+  const approve = () => (blockers.length ? setErr(`Can't approve yet: ${blockers.join('; ')}.`) : nearCopy ? setAsk('override') : run(approveOne));
   useEffect(() => {
     if (!command || command.n < mounted.current || busy || q.retired_at || !open) return;
     viaKey.current = true;
@@ -383,6 +392,7 @@ function Actions({ d, onEdit, onChanged, command, onAdvance, extra }: { d: Quest
         <button className="reject" disabled={busy} title="R" onClick={() => { viaKey.current = false; setAsk(ask === 'reject' ? null : 'reject'); }}>Reject…</button>
       </>}
       {open && blockers.length > 0 && <span className="muted small blockers">Approve is off until: {blockers.join(' · ')}</span>}
+      {open && fixes}
       {v.status === 'approved' && <span className="muted small">Approved. Edit makes a new version (a typo fix keeps this one).</span>}
       {v.status === 'rejected' && <span className="muted small">Rejected. Edit to make a new version.</span>}
       {q.bank === 'production' && q.subject !== 'science' && <a className="small" href={`#/generate?q=${encodeURIComponent(q.question_id)}`}>Generate similar</a>}
@@ -503,13 +513,45 @@ const SCIENCE_ATTRS: { k: string; col: 'reading' | 'steps' | 'inhibition' | 'has
 /** Science approval blockers (0035) from the loaded detail; the SQL trigger enforces the same. */
 function scienceBlockersOf(d: QuestionDetailData, x: ScienceDetail): string[] {
   const item = (rowId: string | null, no: number | null) => (rowId ? x.items.find((i) => i.row_id === rowId && i.item_no === no) ?? { status: 'missing' } : null);
-  return scienceBlockers({
+  // OL-044: a generated question's single proposed primary is confirmed by Approve itself, so it doesn't block it
+  const confirmsPrimary = primaryConfirmedOnApproval(d.flags?.created_from, x.links);
+  // (g) until the Images PR (DL-040); the SQL trigger enforces the same
+  const redo = imageToRedo(d.question.subject, d.flags?.created_from, d.version.image_status) ? ['Image to redo (DL-040)'] : [];
+  return [...redo, ...scienceBlockers({
     solution1: d.solutions.find((s) => s.slot === 1)?.text ?? null, links: x.links, misconceptionText: x.version.misconception_targeted,
     misconception: item(x.version.misconception_row_id, x.version.misconception_item_no),
     wrongItems: [...x.wrongItems.values()].map((r) => { const [rowId, no] = r.split(' #'); return item(rowId!, Number(no))!; }),
     typeSet: !!x.version.science_question_type,
     conceptErrorRowsOk: [...x.wrongTags.values()].filter((t) => t.startsWith('concept_error|')).every((t) => x.links.some((l) => l.row_id === t.split('|')[1])),
-  });
+  }).filter((b) => !(confirmsPrimary && b === 'primary row not confirmed'))];
+}
+
+/** Q38 PR 4 (d): an open question's pending proposals, next to "Approve is off until…", each with a one-click fix. */
+function PendingFixes({ d, x, onDone }: { d: QuestionDetailData; x: ScienceDetail; onDone: () => void }) {
+  const q = d.question, v = d.version;
+  const proposed = x.links.find((l) => l.rank === 'primary' && l.rank_proposed);
+  const rejected = x.links.filter((l) => l.primary_rejected);
+  const noPrimary = !x.links.some((l) => l.rank === 'primary');
+  const itemOf = (rowId: string, no: number) => x.items.find((i) => i.row_id === rowId && i.item_no === no);
+  const refs = [...new Set([...(x.version.misconception_row_id ? [`${x.version.misconception_row_id} #${x.version.misconception_item_no}`] : []), ...x.wrongItems.values()])];
+  const items = refs.map((r) => { const [rowId, no] = r.split(' #'); return itemOf(rowId!, Number(no)); }).filter((i): i is NonNullable<typeof i> => !!i && i.status === 'needs_review');
+  const setting = d.setting && d.setting.status !== 'active' ? d.setting : null;
+  const redo = imageToRedo(q.subject, d.flags?.created_from, v.image_status);
+  const toLinks = () => document.querySelector('.tint-box.linked')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  if (!proposed && !(noPrimary && rejected.length) && !items.length && !setting && !redo) return null;
+  return (
+    <div className="pending-fixes small" aria-label="Pending proposals">
+      <span className="muted">Pending:</span>
+      {proposed && <span className="fix"><PrimaryDecide questionId={q.question_id} versionNo={v.version_no} rowId={proposed.row_id} state="proposed" onChange={toLinks} onDone={onDone} />
+        {primaryConfirmedOnApproval(d.flags?.created_from, x.links) && <span className="muted"> (Approve confirms it too)</span>}</span>}
+      {noPrimary && rejected.map((l) => <span key={l.row_id} className="fix"><PrimaryDecide questionId={q.question_id} versionNo={v.version_no} rowId={l.row_id} state="rejected" onDone={onDone} />
+        <button className="link small" onClick={toLinks}>pick a primary in Linked content</button></span>)}
+      {items.map((i) => <span key={`${i.row_id}#${i.item_no}`} className="fix"><span className="pstate proposed"><span className="pstate-label">Item {i.row_id} #{i.item_no} · needs review</span>
+        <ItemDecide rowId={i.row_id} itemNo={i.item_no} status={i.status} onDone={onDone} /></span></span>)}
+      {setting && <span className="fix"><span className="muted">Setting </span><SettingDecide setting={setting} onDone={onDone} /></span>}
+      {redo && <span className="fix"><span className="tag image-redo" title="A drawn figure: replaced in the Images PR (Image needed → Image to check → OK)">Image to redo (DL-040)</span></span>}
+    </div>
+  );
 }
 
 /** Q29 + Q31 (0042): derived values and review warnings of a Science version, from the loaded detail (same TS as Edit). */
@@ -614,7 +656,7 @@ function ScienceBody({ d, x, err, isCurrent, onVersion, onSaved, actions }: { d:
         <div className="tint-title">Attributes{d.flags?.attributes_pending ? <span className="muted small"> · pending</span> : ''}</div>
         <KV rows={[
           { k: 'Science question type', v: x?.version.science_question_type ? `${x.version.science_question_type} · ${SCIENCE_QUESTION_TYPES[x.version.science_question_type as 1]}` : <span className="warn-text">Not set (needed to approve)</span> },
-          { k: 'Setting', v: d.setting ? <>{d.setting.name} <Id>{d.setting.setting_id}</Id></> : <span className="muted">bare (no setting)</span> },
+          { k: 'Setting', v: d.setting ? <SettingDecide setting={d.setting} onDone={onSaved} /> : <span className="muted">bare (no setting)</span> },
           { k: 'Setting familiarity', v: x?.version.setting_familiarity ?? '—' },
           { k: 'Hidden idea', v: yn(x?.version.has_hidden_idea) },
           { k: 'Experiment', v: yn(x?.version.has_experiment) },

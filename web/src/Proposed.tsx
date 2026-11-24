@@ -89,7 +89,7 @@ export function ProposedList({ kind: routeKind, item: routeItem }: { kind: strin
         </div>
       </div>
       <p className="muted small">{kind === 'topic_class' ? 'Topic–class links the Science master suggests. Approving adds the link; the topic then shows in that class as an extra topic. '
-        : kind === 'setting' ? 'Settings (the story or context of a question) proposed by the pipeline. They are shown for information: there is no approval path for settings yet. '
+        : kind === 'setting' ? 'Settings (the story or context of a question) proposed by the pipeline or a generation run. Approve makes one active; Reject keeps it (retired) and can be undone. '
         : 'Concepts, misconceptions, question types and patterns proposed by the book pipeline. They can already be used as tags; approving makes them part of the catalogue. '}
         A class is where an item was first catalogued; it is information only. Nothing is deleted: Reject retires an item and keeps it. Every change is logged. Select a row to see its details.</p>
       <div role="tablist" className="tabs">

@@ -139,3 +139,62 @@ export function linkChecks(draft: DraftLink[], saved: DraftLink[], refs: LinkRef
   const key = (ls: DraftLink[]) => ls.map((l) => `${l.row_id}:${l.rank}`).sort().join();
   return { problems, lock, dirty: key(draft) !== key(saved) };
 }
+
+// ---------------------------------------------------------------- Q38 PR 4 (Sambit, 24 Nov 2026): review in Browse
+type PLink = { row_id: string; role: 'direct' | 'supporting'; rank?: string; rank_proposed?: boolean; primary_rejected?: boolean };
+/** A question's primary row and its state: "Primary C3-05-008 · proposed" (c). */
+export function primaryOf(q: { links: PLink[] }): { row_id: string | null; state: 'confirmed' | 'proposed' | 'rejected' | 'none' } {
+  const p = q.links.find((l) => l.rank === 'primary');
+  if (p) return { row_id: p.row_id, state: p.rank_proposed ? 'proposed' : 'confirmed' };
+  const r = q.links.find((l) => l.primary_rejected);
+  return r ? { row_id: r.row_id, state: 'rejected' } : { row_id: null, state: 'none' };
+}
+
+/** (b) Previous / Next: the whole chapter in master order: topic → content row → its questions, each question ONCE, at its
+ *  primary row (wherever that row sits in the chapter, so it crosses topics). A question whose primary row is not a row of
+ *  this chapter (or that has none) comes at the end of its own topic. Questions under a row: by type then ID. */
+export function walkOrder<R extends RowLike, Q extends { question_id: string; topic_id: string; science_question_type?: number | null; links: PLink[] }>(
+  rows: R[], questions: Q[], topicIds: string[]): { question_id: string; topic_id: string; row_id: string | null }[] {
+  const rowTopic = new Map(rows.map((r) => [r.row_id, r.topic_id]));
+  const byRow = new Map<string, Q[]>(), loose = new Map<string, Q[]>();
+  for (const q of questions) {
+    const p = q.links.find((l) => l.rank === 'primary')?.row_id ?? null;
+    if (p && rowTopic.has(p)) byRow.set(p, [...(byRow.get(p) ?? []), q]);
+    else loose.set(q.topic_id, [...(loose.get(q.topic_id) ?? []), q]);
+  }
+  const sort = (qs: Q[]) => [...qs].sort((a, b) => (a.science_question_type ?? 9) - (b.science_question_type ?? 9) || a.question_id.localeCompare(b.question_id));
+  const topics = [...topicIds, ...[...new Set([...rows.map((r) => r.topic_id), ...questions.map((q) => q.topic_id)])].filter((t) => !topicIds.includes(t)).sort()];
+  const out: { question_id: string; topic_id: string; row_id: string | null }[] = [];
+  for (const t of topics) {
+    for (const r of rowsInOrder(rows.filter((x) => x.topic_id === t))) for (const q of sort(byRow.get(r.row_id) ?? [])) out.push({ question_id: q.question_id, topic_id: t, row_id: r.row_id });
+    for (const q of sort(loose.get(t) ?? [])) out.push({ question_id: q.question_id, topic_id: t, row_id: null });
+  }
+  return out;
+}
+/** Where a question sits in the walk and its neighbours ("12 / 87"); onlyIds narrows the walk (e.g. only Needs review). */
+export function walkStep<W extends { question_id: string }>(walk: W[], current: string | null, onlyIds?: Set<string>) {
+  const list = onlyIds ? walk.filter((w) => onlyIds.has(w.question_id) || w.question_id === current) : walk;
+  const i = current ? list.findIndex((w) => w.question_id === current) : -1;
+  return { pos: i + 1, total: onlyIds ? list.filter((w) => onlyIds.has(w.question_id)).length : list.length, prev: i > 0 ? list[i - 1]! : null, next: i >= 0 && i < list.length - 1 ? list[i + 1]! : null };
+}
+
+/** (e) One visual state for every proposal in Browse. */
+export type PState = 'proposed' | 'approved' | 'rejected';
+export type PFilter = 'all' | PState;
+export const PFILTERS: [PFilter, string][] = [['all', 'All'], ['proposed', 'Proposed'], ['approved', 'Approved'], ['rejected', 'Rejected']];
+/** A question: Needs review / draft = proposed · approved · rejected (Q4). Retired counts as rejected. */
+export const questionState = (q: { status: string; retired_at?: string | null }): PState =>
+  q.retired_at || q.status === 'rejected' ? 'rejected' : q.status === 'approved' ? 'approved' : 'proposed';
+/** A content row (Q4, inferred): retired = rejected; a pending proposal on it (a needs-review item, or a question whose
+ *  primary on this row is proposed) = proposed; otherwise approved. */
+export function rowState(r: { row_id: string; retired_at: string | null }, pendingItems: Set<string>, questions: { links: PLink[] }[]): PState {
+  if (r.retired_at) return 'rejected';
+  if (pendingItems.has(r.row_id)) return 'proposed';
+  return questions.some((q) => q.links.some((l) => l.row_id === r.row_id && l.rank === 'primary' && l.rank_proposed)) ? 'proposed' : 'approved';
+}
+/** OL-044: approving a GENERATED question also confirms its single proposed primary (cms_approve_questions). */
+export const primaryConfirmedOnApproval = (createdFrom: string | null | undefined, links: { rank: string; rank_proposed: boolean }[]) =>
+  createdFrom === 'generation' && !links.some((l) => l.rank === 'primary' && !l.rank_proposed) && links.filter((l) => l.rank === 'primary' && l.rank_proposed).length === 1;
+/** (g) Until the Images PR (DL-040): a generated Science question with a drawn figure can't be approved. */
+export const imageToRedo = (subject: string, createdFrom: string | null | undefined, imageStatus: string | null | undefined) =>
+  subject === 'science' && createdFrom === 'generation' && imageStatus === 'has_image';

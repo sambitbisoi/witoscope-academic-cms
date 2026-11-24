@@ -13,8 +13,9 @@ describe('routes', () => {
     ['', { name: 'home', grade: null }],
     ['#/?grade=6', { name: 'home', grade: '6' }],
     ['#/imports', { name: 'imports' }],
-    ['#/review', { name: 'review', show: null }],
-    ['#/review?show=overrides', { name: 'review', show: 'overrides' }],
+    ['#/review', { name: 'review', show: null, run: null }],
+    ['#/review?show=overrides', { name: 'review', show: 'overrides', run: null }],
+    ['#/review?run=GR0013', { name: 'review', show: null, run: 'GR0013' }],   // Q38 PR 4
     ['#/decisions', { name: 'decisions' }],
     ['#/held-out?id=4', { name: 'held', id: 4, status: 'held' }],
     ['#/generate?q=MQ000010', { name: 'generate', q: 'MQ000010', set: null, topic: null }],

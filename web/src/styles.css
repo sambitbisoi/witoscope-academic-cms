@@ -175,7 +175,7 @@ select.active { border-color: var(--accent); }
 .lvl.Complex { background: var(--err-bg); color: var(--error); }
 .qstatus { color: var(--muted); flex: none; min-width: 64px; text-align: right; }
 .tag.gold { background: var(--warn-bg); color: var(--warn); margin-left: 6px; }
-.tag.proposed { background: var(--proposed-bg); color: var(--proposed); font-weight: 600; }
+.tag.proposed { background: var(--warn-bg); color: var(--warn); font-weight: 600; border: 1px dashed var(--warn); }
 
 .ws-detail { background: var(--card); border-left: 1px solid var(--line); padding: 18px; overflow: auto; max-height: calc(100vh - 110px); position: sticky; top: 104px; }
 .detail { display: flex; flex-direction: column; gap: 14px; }
@@ -557,6 +557,10 @@ table.map-table tr.warn-row td:first-child { box-shadow: inset 3px 0 0 var(--war
 .sci-coverage .sep { color: var(--line); }
 .cov.ok { color: var(--ok); } .cov.sup { color: var(--ok); opacity: 0.75; } .cov.ne { color: var(--muted); } .cov.none { color: var(--warn); }
 .sci-cols { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 14px; align-items: start; }
+/* Q38 PR 4 (a): draggable splitter between content and questions; the width is remembered */
+.sci-cols.split { grid-template-columns: minmax(0, 1.1fr) 8px minmax(0, 1fr); column-gap: 6px; }
+.sci-cols.split.sized { grid-template-columns: var(--sci-left) 8px minmax(0, 1fr); }
+.ws-handle.sci { top: 112px; height: calc(100vh - 124px); border-radius: 4px; }
 .sci-content, .sci-questions { min-width: 0; }
 .sci-content > .eyebrow { margin-bottom: 6px; }
 .sci-questions { position: sticky; top: 112px; max-height: calc(100vh - 124px); overflow: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--card); }
@@ -624,7 +628,7 @@ table.map-table tr.warn-row td:first-child { box-shadow: inset 3px 0 0 var(--war
 .linked-rows .tag { margin-left: 0; }
 .linked-text { margin: 3px 0; line-height: 1.4; }
 .banner.safety { background: var(--err-bg); color: var(--error); padding: 6px 8px; border-radius: 6px; }
-@media (max-width: 1100px) { .sci-cols { grid-template-columns: minmax(0, 1fr); } .sci-questions { position: static; max-height: none; } }
+@media (max-width: 1100px) { .sci-cols, .sci-cols.split, .sci-cols.split.sized { grid-template-columns: minmax(0, 1fr); } .ws-handle.sci { display: none; } .sci-questions { position: static; max-height: none; } }
 @media (max-width: 760px) { .ws-cols.sci-layout { grid-template-columns: 1fr; } .sci-detail { padding-left: 12px; } }
 
 /* review UX (15 Nov 2026): multi-select (Q5 / Q6 / Q10) */
@@ -674,7 +678,7 @@ table.proposed-table td.col-topic { min-width: 160px; }
 .tag.rank-primary { background: var(--warn-bg); color: var(--text); font-weight: 600; }
 .tag.rank-secondary { background: var(--chip); color: var(--text); }
 .tag.rank-context { background: var(--chip); color: var(--muted); }
-.tag.rank-proposed { font-style: italic; outline: 1px dashed var(--warn); }
+.tag.rank-proposed { background: var(--warn-bg); color: var(--warn); border: 1px dashed var(--warn); }
 .warn-text { color: var(--warn); }
 .sci-items { margin: 0; padding: 0; list-style: none; }
 .sci-items li { margin: 2px 0; }
@@ -882,3 +886,44 @@ button.crs-plus { padding: 0 8px; height: 22px; line-height: 20px; }
 input.time-box { font: inherit; font-weight: 600; }
 .time-colon { font-weight: 700; font-size: 1.2em; }
 .time-preview { margin-bottom: 6px; }
+
+/* ---------------------------------------------------------------- Q38 PR 4 (e): one visual state for every proposal in Browse
+   proposed = amber dashed border + light amber background · approved = normal · rejected = grey, struck out, "Rejected", undoable.
+   Red stays for Safety and errors. */
+.pstate { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 1px 7px; border-radius: 6px; font-size: 0.85em; }
+.pstate.proposed { background: var(--warn-bg); color: var(--warn); border: 1px dashed var(--warn); }
+.pstate.rejected { background: transparent; color: var(--muted); border: 1px solid var(--line); }
+.pstate.rejected .pstate-label { text-decoration: line-through; }
+.pstate-tag { font-size: 0.78em; font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; color: var(--muted); border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; }
+.pstate-actions { display: inline-flex; gap: 8px; }
+.pdecide { font-size: 0.95em; padding: 0; }
+.pdecide.ok { color: var(--ok); font-weight: 600; }
+.pdecide.no { color: var(--muted); }
+.sci-row.pstate-row.proposed > .sci-row-head { background: var(--warn-bg); outline: 1px dashed var(--warn); outline-offset: -1px; border-radius: 8px; }
+.sci-row.pstate-row.rejected .sci-row-text { text-decoration: line-through; color: var(--muted); }
+.qrow.pstate-q.proposed { box-shadow: inset 3px 0 0 var(--warn); }
+.qrow.pstate-q.rejected .qtext { text-decoration: line-through; color: var(--muted); }
+.qrow.sci-qrow[role="button"] { cursor: pointer; }
+.pstate-item.proposed { background: var(--warn-bg); outline: 1px dashed var(--warn); border-radius: 4px; }
+.pstate-item.rejected { color: var(--muted); text-decoration: line-through; }
+.pstate-item.rejected .pstate-actions, .pstate-item.rejected .pstate-tag { text-decoration: none; display: inline-flex; }
+.pfilter { display: inline-flex; gap: 4px; margin-left: auto; }
+.topic-class-props { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 4px 0 8px; }
+/* (b) Previous / Next */
+.walkbar { display: inline-flex; align-items: center; gap: 8px; margin: 0 auto; }
+.walkbar .walk-pos { font-variant-numeric: tabular-nums; min-width: 4.5em; text-align: center; }
+.sci-detail-nav { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+/* (d) pending proposals on an open question */
+.pending-fixes { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; width: 100%; margin-top: 4px; }
+.pending-fixes .fix { display: inline-flex; align-items: center; gap: 4px; }
+.tag.image-redo { background: var(--warn-bg); color: var(--warn); border: 1px dashed var(--warn); }
+/* Review: Run filter, tick boxes, bulk approve */
+.bulk-bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 8px 0; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); }
+.bulk-bar .muted { flex: 1 1 260px; }
+.bulk-confirm, .bulk-result, .bulk-progress { margin: 6px 0; }
+.bulk-result .blocked-list { margin: 6px 0 0; max-height: 240px; overflow: auto; }
+.review-line { display: flex; align-items: flex-start; gap: 8px; }
+.review-line > input[type="checkbox"] { margin-top: 12px; }
+.review-line > .review-row { flex: 1; min-width: 0; }
+.tick-space { display: inline-block; width: 13px; }
+.tag.run { background: var(--bg); border: 1px solid var(--line); font-family: ui-monospace, Menlo, monospace; }

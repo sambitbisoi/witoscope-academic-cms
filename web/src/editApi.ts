@@ -117,10 +117,17 @@ export const retire = (questionId: string, doRetire: boolean, reason: string) =>
 
 /** The Review tab (D6): flagged ("Needs review") and rejected current versions with their latest note, oldest first. */
 export async function reviewQueue() {
-  return must<{ question_id: string; bank: string; subject: string; file_key: string | null; chapter_id: string; topic_id: string; class: number; status: string; text: string;
+  const items = must<{ question_id: string; bank: string; subject: string; file_key: string | null; chapter_id: string; topic_id: string; class: number; status: string; text: string;
     current_version: number; approved_version: number | null; version_created_at: string; math_difficulty: string | null; note: string | null; note_action: string | null; noted_at: string | null;
     created_from: string; attributes_pending: boolean; originality_pending: boolean; image_pending: boolean; upload_file: string | null; uploaded_at: string | null }[]>(
     await supabase.from('cms_review_queue').select('*').order('noted_at', { ascending: true, nullsFirst: true }).order('version_created_at').limit(1000));
+  // Q38 PR 4 (Sambit, 24 Nov 2026): grouped by the question's Level (the class it is written for), not the topic's home class
+  const level = new Map<string, number | null>();
+  const ids = items.map((i) => i.question_id);
+  for (let i = 0; i < ids.length; i += 300) {
+    for (const r of must<{ question_id: string; level: number | null }[]>(await supabase.from('cms_questions').select('question_id, level').in('question_id', ids.slice(i, i + 300)))) level.set(r.question_id, r.level);
+  }
+  return items.map((i) => ({ ...i, level: level.get(i.question_id) ?? i.class }));
 }
 
 /** Override requests (Sambit, 12 Nov 2026): pending first, then decided; with the recorded check. */
@@ -187,7 +194,7 @@ export function batchLabel(path: string, startedAt: string) {
 }
 
 /** U2: approve (active), retire, or put back to proposed, a catalogue item (audited). */
-export const setCatalogueStatus = (kind: 'concept' | 'misconception' | 'typical_set' | 'pattern', id: string, status: 'active' | 'retired' | 'proposed', reason: string | null) =>
+export const setCatalogueStatus = (kind: 'concept' | 'misconception' | 'typical_set' | 'pattern' | 'setting', id: string, status: 'active' | 'retired' | 'proposed', reason: string | null) =>
   rpc('cms_set_catalogue_status', { p_kind: kind, p_id: id, p_status: status, p_reason: reason });
 
 /** The current rule version (cms_config current_rule_version, else the newest loaded): what Generate,

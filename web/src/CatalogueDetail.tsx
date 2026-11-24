@@ -79,7 +79,6 @@ export function CatalogueDetail({ kind, id, places, where, startReject, onDecide
           <button className="approve" disabled={busy} onClick={() => act('active')}>Approve</button>
           {!rejecting && <button className="reject" disabled={busy} onClick={() => setRejecting(true)}>Reject…</button>}
         </>}
-        {proposed && kind === 'setting' && <p className="muted small">Settings can't be approved here yet: there is no approval path for them. Shown for information.</p>}
         {!proposed && decidable(kind) && !(kind === 'topic_class' && d.status === 'active') && <button className="link small" disabled={busy} onClick={() => act('proposed')}>Back to proposed</button>}
         {edit && !editing && <button className="link small" onClick={() => setEditing(true)}>Edit</button>}
       </div>
