@@ -18,6 +18,8 @@ import { browseHash, showsAtLevel, statusLabel } from './logic';
 import { sciFilter, SCI_FILTER_NONE, type SciFilter } from './scienceLogic';
 import { classesLine, isDimmed, listedOrder, rightPane, rowClassLine, rowQuestions, rowsForClass, rowsInOrder, rowSplit, rowSplitLabel, topicGroups } from './scienceLogic';
 import { PFILTERS, primaryOf, questionState, rowState, walkOrder, walkQuestions, walkStep, type PFilter, type WalkTopic } from './scienceLogic';
+import { mainRowLook, proposedPrimariesOn, writersPick } from './scienceLogic';
+import { decidePrimary, currentVersion } from './reviewApi';
 
 export const CONTENT_TYPES = ['Fact', 'Concept', 'How it works', 'Experiment', 'Scenario-Case', 'Diagram', 'Vocabulary'] as const;
 const STATUS: Record<ScienceRow['status'], { icon: string; label: string; cls: string }> = {
@@ -85,7 +87,7 @@ export function ScienceView({ scope, cls, higher = false, topicNames, row, q, on
   // Rows written for class N show in class N and above (as questions do, D3); lower-class rows are marked.
   // Q14: retired rows are kept but hidden unless asked for
   const live = useMemo(() => (data?.rows ?? []).filter((r) => showRetired || pf === 'rejected' || !r.retired_at)
-    .filter((r) => pf === 'all' || rowState(r, pending, data?.questions ?? []) === pf), [data, showRetired, pf, pending]);
+    .filter((r) => pf === 'all' || rowState(r, pending) === pf), [data, showRetired, pf, pending]);
   const nRetired = (data?.rows ?? []).filter((r) => r.retired_at).length;
   const rows = useMemo(() => rowsInOrder(rowsForClass(live, cls, higher)), [live, cls, higher]);
   const hidden = live.length - rows.length;
@@ -93,7 +95,11 @@ export function ScienceView({ scope, cls, higher = false, topicNames, row, q, on
   const qsAll = useMemo(() => (data?.questions ?? []).filter((x) => showsAtLevel(x.effective_level, ceiling, higher)), [data, ceiling, higher]);
   // Q34: Science question type / tier / markers filters (narrow the question lists; the coverage line counts all)
   const [sf, setSf] = useState<SciFilter>(SCI_FILTER_NONE);
-  const qs = useMemo(() => sciFilter(qsAll, sf).filter((x) => pf === 'all' || questionState(x) === pf), [qsAll, sf, pf]);
+  // 25 Nov 2026: why a question's main row needs a look (amber); [] = plain "Main row: …" and Approve confirms it
+  const lookOf = useMemo(() => new Map((data?.questions ?? []).map((x) => [x.question_id, mainRowLook(x, data!.rowFacts, data!.genWarnings.get(x.question_id))])), [data]);
+  const [lookOnly, setLookOnly] = useState(false);
+  const qs = useMemo(() => sciFilter(qsAll, sf).filter((x) => (pf === 'all' || questionState(x) === pf) && (!lookOnly || (lookOf.get(x.question_id) ?? []).length > 0)),
+    [qsAll, sf, pf, lookOnly, lookOf]);
   const order = useMemo(() => listedOrder(qs, row), [qs, row]);
   useEffect(() => { onOrder(order); }, [order, onOrder]);
   useEffect(() => () => onOrder([]), [onOrder]);
@@ -105,7 +111,8 @@ export function ScienceView({ scope, cls, higher = false, topicNames, row, q, on
   const inScope = (id: string) => data.rows.some((x) => x.row_id === id);
   const list = (rs: ScienceRow[]) => (
     <ol className="sci-list">
-      {rs.map((r, i) => <RowItem key={r.row_id} n={i + 1} r={r} cls={cls} state={rowState(r, pending, data.questions)} open={r.row_id === row} onPick={() => onRow(r.row_id === row ? null : r.row_id)} inScope={inScope} onRow={onRow}
+      {rs.map((r, i) => <RowItem key={r.row_id} n={i + 1} r={r} cls={cls} state={rowState(r, pending)} proposedHere={proposedPrimariesOn(r.row_id, data.questions).filter((x) => !(lookOf.get(x.question_id) ?? []).length)}
+        flaggedHere={proposedPrimariesOn(r.row_id, data.questions).filter((x) => (lookOf.get(x.question_id) ?? []).length).length} onConfirmed={() => setTick((t) => t + 1)} open={r.row_id === row} onPick={() => onRow(r.row_id === row ? null : r.row_id)} inScope={inScope} onRow={onRow}
         onAdd={() => { setRowForm(null); setAddFor(r); onBack(); }} onEdit={() => { setAddFor(null); setRowForm({ row: r }); onBack(); }} />)}
     </ol>
   );
@@ -126,6 +133,9 @@ export function ScienceView({ scope, cls, higher = false, topicNames, row, q, on
         {(sf.type || sf.tier || sf.markers) && <span><span className="muted">{qs.length} of {qsAll.length}</span> <button className="link small" onClick={() => setSf(SCI_FILTER_NONE)}>Clear</button></span>}
         <span className="pfilter" role="group" aria-label="Show proposals" title="Rows, links and questions: Proposed = waiting for a decision (Needs review, a proposed primary, an item to review) · Rejected = rejected or retired">
           {PFILTERS.map(([v, l]) => <button key={v} className={`pill small ${pf === v ? 'on' : ''}`} aria-pressed={pf === v} onClick={() => setPf(v)}>{l}</button>)}</span>
+        <button className={`pill small ${lookOnly ? 'on' : ''}`} aria-pressed={lookOnly} onClick={() => setLookOnly(!lookOnly)}
+          title="Questions whose main row is in another topic, above the question's Level, or has a checker warning about the row choice">
+          Main row needs a look · {qsAll.filter((x) => (lookOf.get(x.question_id) ?? []).length).length}</button>
         <InfoPop label={`Summary of this ${chapterMode ? 'chapter' : 'topic'}`}
           attention={rows.some((r) => !r.retired_at && r.status === 'none') || qsAll.some((x) => !x.retired_at && x.bank === 'production' && !x.science_question_type) || pending.size > 0}
           attentionText={[rows.some((r) => !r.retired_at && r.status === 'none') ? 'content rows with no question yet' : null,
@@ -190,9 +200,9 @@ export function ScienceView({ scope, cls, higher = false, topicNames, row, q, on
                   <button className="link small" onClick={() => onRow(null)}>show all {qs.length} in {where}</button></div>
                 {selRow && <div className="muted small sci-for-text">{selRow.content.length > 110 ? `${selRow.content.slice(0, 110)}…` : selRow.content}</div>}
               </div>
-              <QSection title="Direct" hint="tests this row (primary or secondary)" items={s.direct} rowId={pane.row} q={q} ceiling={ceiling} onQuestion={onQuestion} onDone={() => setTick((t) => t + 1)}
+              <QSection title="Direct" hint="tests this row (primary or secondary)" items={s.direct} rowId={pane.row} q={q} ceiling={ceiling} onQuestion={onQuestion} onDone={() => setTick((t) => t + 1)} lookOf={lookOf}
                 empty={selRow && selRow.question_use !== 'OK' ? `No questions: this row is "${selRow.question_use}".` : 'No question tests this row yet.'} />
-              <QSection title="Supporting" hint="uses it as background" items={s.supporting} q={q} ceiling={ceiling} onQuestion={onQuestion} onDone={() => setTick((t) => t + 1)} empty="None." />
+              <QSection title="Supporting" hint="uses it as background" items={s.supporting} q={q} ceiling={ceiling} onQuestion={onQuestion} onDone={() => setTick((t) => t + 1)} lookOf={lookOf} empty="None." />
             </>;
           })() : <>
             <div className="sci-q-head">
@@ -202,8 +212,8 @@ export function ScienceView({ scope, cls, higher = false, topicNames, row, q, on
             {qs.length === 0 ? <p className="muted small sci-empty">No questions yet.</p>
               : chapterMode ? [...topicNames.keys()].filter((tid) => qs.some((x) => x.topic_id === tid)).map((tid) => (
                 <div key={tid}><div className="sci-q-topic small">{topicNames.get(tid)?.name ?? tid} <Id>{tid}</Id></div>
-                  {order.map((id) => qs.find((x) => x.question_id === id)!).filter((x) => x.topic_id === tid).map((x) => <QItem key={x.question_id} q={x} ceiling={ceiling} showPrimary selected={x.question_id === q} onPick={() => onQuestion(x.question_id)} onDone={() => setTick((t) => t + 1)} />)}</div>))
-              : order.map((id) => qs.find((x) => x.question_id === id)!).map((x) => <QItem key={x.question_id} q={x} ceiling={ceiling} showPrimary selected={x.question_id === q} onPick={() => onQuestion(x.question_id)} onDone={() => setTick((t) => t + 1)} />)}
+                  {order.map((id) => qs.find((x) => x.question_id === id)!).filter((x) => x.topic_id === tid).map((x) => <QItem key={x.question_id} q={x} ceiling={ceiling} showPrimary look={lookOf.get(x.question_id) ?? []} selected={x.question_id === q} onPick={() => onQuestion(x.question_id)} onDone={() => setTick((t) => t + 1)} />)}</div>))
+              : order.map((id) => qs.find((x) => x.question_id === id)!).map((x) => <QItem key={x.question_id} q={x} ceiling={ceiling} showPrimary look={lookOf.get(x.question_id) ?? []} selected={x.question_id === q} onPick={() => onQuestion(x.question_id)} onDone={() => setTick((t) => t + 1)} />)}
           </>}
         </section>
       </div>
@@ -211,17 +221,18 @@ export function ScienceView({ scope, cls, higher = false, topicNames, row, q, on
   );
 }
 
-function QSection({ title, hint, items, rowId, q, ceiling, onQuestion, onDone, empty }: { title: string; hint: string; items: ScienceQuestion[]; /** 0035: show each question's rank for this row */ rowId?: string; q: string | null; ceiling: number | null; onQuestion: (id: string) => void; onDone: () => void; empty: string }) {
+function QSection({ title, hint, items, rowId, q, ceiling, onQuestion, onDone, empty, lookOf }: { title: string; hint: string; items: ScienceQuestion[]; /** 0035: show each question's rank for this row */ rowId?: string; q: string | null; ceiling: number | null; onQuestion: (id: string) => void; onDone: () => void; empty: string; lookOf: Map<string, string[]> }) {
   return (
     <div className="sci-q-section">
       <div className="sci-q-section-head"><span className="eyebrow">{title} · {items.length}</span> <span className="muted small">{hint}</span></div>
-      {items.length ? items.map((x) => <QItem key={x.question_id} q={x} rowId={rowId} ceiling={ceiling} selected={x.question_id === q} onPick={() => onQuestion(x.question_id)} onDone={onDone} />) : <p className="muted small sci-empty">{empty}</p>}
+      {items.length ? items.map((x) => <QItem key={x.question_id} q={x} rowId={rowId} ceiling={ceiling} look={lookOf.get(x.question_id) ?? []} selected={x.question_id === q} onPick={() => onQuestion(x.question_id)} onDone={onDone} />) : <p className="muted small sci-empty">{empty}</p>}
     </div>
   );
 }
 
-function RowItem({ n, r, cls, open, onPick, inScope, onRow, onAdd, onEdit, state }: { n: number; r: ScienceRow; cls: string; open: boolean; onPick: () => void; inScope: (id: string) => boolean; onRow: (id: string) => void; onAdd: () => void; onEdit: () => void;
-  /** Q38 PR 4 (e) */ state: 'proposed' | 'approved' | 'rejected' }) {
+function RowItem({ n, r, cls, open, onPick, inScope, onRow, onAdd, onEdit, state, proposedHere, flaggedHere, onConfirmed }: { n: number; r: ScienceRow; cls: string; open: boolean; onPick: () => void; inScope: (id: string) => boolean; onRow: (id: string) => void; onAdd: () => void; onEdit: () => void;
+  /** Q38 PR 4 (e) */ state: 'proposed' | 'approved' | 'rejected';
+  /** 25 Nov: open questions whose main row here is still proposed (no reason to look) / those that need a look */ proposedHere: ScienceQuestion[]; flaggedHere: number; onConfirmed: () => void }) {
   const s = STATUS[r.status];
   return (
     <li className={`sci-row ${open ? 'sel open' : ''} ${isDimmed(r) ? 'dim' : ''} ${r.in_master ? '' : 'gone'} pstate-row ${state}`} ref={open ? (el) => el?.scrollIntoView({ block: 'nearest' }) : undefined}>
@@ -244,6 +255,7 @@ function RowItem({ n, r, cls, open, onPick, inScope, onRow, onAdd, onEdit, state
           </span>
         </span>
       </button>
+      {(proposedHere.length > 0 || flaggedHere > 0) && <RowPrimaries rowId={r.row_id} qs={proposedHere} flagged={flaggedHere} onDone={onConfirmed} />}
       {/* T2 (17 Nov 2026): the row's actions sit at the top of its details */}
       {open && <div className="sci-add-row sci-add-top">
         {r.question_use !== 'No questions' && !r.retired_at && <><button className="secondary" onClick={onAdd}>+ Add question</button>
@@ -315,16 +327,23 @@ function RowDetail({ r, inScope, onRow }: { r: ScienceRow; inScope: (id: string)
   );
 }
 
-function QItem({ q, rowId, ceiling, selected, onPick, showPrimary, onDone }: { q: ScienceQuestion; rowId?: string; /** the class being viewed (null = all) */ ceiling: number | null; selected: boolean; onPick: () => void;
-  /** Q38 PR 4 (c): no row selected: each question's primary row and its state */ showPrimary?: boolean; onDone: () => void }) {
+function QItem({ q, rowId, ceiling, selected, onPick, showPrimary, onDone, look }: { q: ScienceQuestion; rowId?: string; /** the class being viewed (null = all) */ ceiling: number | null; selected: boolean; onPick: () => void;
+  /** Q38 PR 4 (c): no row selected: each question's primary row and its state */ showPrimary?: boolean; onDone: () => void; /** 25 Nov: why its main row needs a look */ look: string[] }) {
   const nd = q.links.filter((l) => l.role === 'direct').length, ns = q.links.length - nd;
   const here = rowId ? q.links.find((l) => l.row_id === rowId) : undefined;
   const p = primaryOf(q);
   const open = q.status === 'draft' || q.status === 'in_review';
   // (d): the primary decided in place (open versions only); a row list shows it on the row's own chip
-  const primaryChip = (rid: string, state: 'confirmed' | 'proposed' | 'rejected') => (open && state !== 'confirmed' && !q.retired_at
-    ? <PrimaryDecide questionId={q.question_id} rowId={rid} state={state} onChange={onPick} onDone={onDone} />
-    : <span className={`tag rank-primary ${state === 'proposed' ? 'pstate proposed' : ''}`}>Primary {rid}{state === 'proposed' ? ' · proposed' : ''}</span>);
+  // 25 Nov 2026 (Sambit): every generated question has a proposed main row, and Approve confirms it. So the amber chip with
+  // Confirm / Change / Reject shows ONLY when there is a reason to look (`look`) or a rejected main row waits for Undo;
+  // otherwise plain "Main row: <row> · Change" (type 4–5 generated: "· writer's pick", neutral grey).
+  const primaryChip = (rid: string, state: 'confirmed' | 'proposed' | 'rejected') => {
+    if (open && !q.retired_at && (state === 'rejected' || (state === 'proposed' && look.length)))
+      return <span title={look.length ? `Main row needs a look: ${look.join('; ')}` : undefined}><PrimaryDecide questionId={q.question_id} rowId={rid} state={state} onChange={onPick} onDone={onDone} /></span>;
+    return <span className={`main-row ${look.length ? 'look' : ''}`} title={look.length ? `Main row needs a look: ${look.join('; ')}` : state === 'proposed' ? 'Proposed by the generator; Approve confirms it' : 'Confirmed main row'}>
+      Main row: {rid}{writersPick(q) && <span className="muted"> · writer's pick</span>}{look.length > 0 && <span> · needs a look</span>}
+      {open && !q.retired_at && <> · <button type="button" className="link small" onClick={(e) => { e.stopPropagation(); onPick(); }}>Change</button></>}</span>;
+  };
   return (
     <div role="button" tabIndex={0} className={`qrow sci-qrow pstate-q ${questionState(q)} ${selected ? 'sel' : ''}`} onClick={onPick} onKeyDown={(e) => { if (e.key === 'Enter') onPick(); }} title={q.text} ref={selected ? (el) => el?.scrollIntoView({ block: 'nearest' }) : undefined}>
       <span className="qtext">{q.text}</span>
@@ -406,5 +425,33 @@ function InfoPop({ label, attention, attentionText, children }: { label: string;
         i{attention && <span className="info-dot" aria-hidden />}</button>
       {open && <div className="info-panel" role="dialog" aria-label={label}>{attention && <div className="info-attn small">Needs attention: {attentionText}</div>}{children}</div>}
     </span>
+  );
+}
+
+/** 25 Nov 2026 (Sambit): a row whose questions have a proposed main row stays normal, with a small badge and Confirm all
+ *  (the same audited function as a question's Confirm, one question at a time). Questions whose main row needs a look are
+ *  left out of Confirm all and counted separately. */
+function RowPrimaries({ rowId, qs, flagged, onDone }: { rowId: string; qs: { question_id: string }[]; flagged: number; onDone: () => void }) {
+  const [busy, setBusy] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const all = async () => {
+    setErr(null);
+    let done = 0;
+    try {
+      for (const x of qs) {
+        setBusy(`${done} / ${qs.length}`);
+        await decidePrimary({ question_id: x.question_id, version_no: await currentVersion(x.question_id), decision: 'confirm', row_id: rowId, reason: 'main row confirmed (Confirm all on the row)' });
+        done++;
+      }
+    } catch (e) { setErr(`${done} confirmed; then: ${(e as Error).message}`); }
+    setBusy(null); onDone();
+  };
+  return (
+    <div className="row-primaries small">
+      {qs.length > 0 && <><span className="muted">{qs.length} question{qs.length === 1 ? '' : 's'}: primary proposed</span>
+        <button type="button" className="secondary small-btn" disabled={!!busy} onClick={all}>{busy ? `Confirming ${busy}` : 'Confirm all'}</button></>}
+      {flagged > 0 && <span className="main-row look">{flagged} need{flagged === 1 ? 's' : ''} a look (decide on the question)</span>}
+      {err && <span className="error">{err}</span>}
+    </div>
   );
 }

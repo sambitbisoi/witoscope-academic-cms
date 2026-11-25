@@ -1,6 +1,6 @@
 // Q38 PR 4 (24 Nov 2026): Previous / Next walk, primary line, proposal states. Synthetic rows only.
 import { describe, expect, it } from 'vitest';
-import { primaryConfirmedOnApproval, primaryOf, questionState, rowState, walkOrder, walkQuestions, walkStep } from '../web/src/scienceLogic.ts';
+import { mainRowLook, primaryConfirmedOnApproval, primaryOf, proposedPrimariesOn, questionState, rowState, walkOrder, walkQuestions, walkStep, writersPick } from '../web/src/scienceLogic.ts';
 
 const row = (row_id: string, topic_id: string, sort: number) => ({ row_id, topic_id, sort, row_class: 3, question_use: 'OK', retired_at: null as string | null });
 const q = (question_id: string, topic_id: string, primary: string | null, o: { proposed?: boolean; type?: number; rejected?: string } = {}) => ({
@@ -66,15 +66,36 @@ describe('(c)(e) primary line and proposal states', () => {
     expect(['draft', 'in_review', 'approved', 'rejected'].map((s) => questionState({ status: s }))).toEqual(['proposed', 'proposed', 'approved', 'rejected']);
     expect(questionState({ status: 'approved', retired_at: '2026-11-24' })).toBe('rejected');
     const r = row('C3-01-001', 'ST1', 1);
-    expect(rowState(r, new Set(), [q('A', 'ST1', 'C3-01-001')])).toBe('approved');
-    expect(rowState(r, new Set(), [q('A', 'ST1', 'C3-01-001', { proposed: true })])).toBe('proposed');
-    expect(rowState(r, new Set(['C3-01-001']), [])).toBe('proposed');
-    expect(rowState({ ...r, retired_at: 'x' }, new Set(), [])).toBe('rejected');
+    expect(rowState(r, new Set())).toBe('approved');
+    expect(rowState(r, new Set(['C3-01-001']))).toBe('proposed');   // a needs-review item on the row itself
+    expect(rowState({ ...r, retired_at: 'x' }, new Set())).toBe('rejected');
   });
   it('OL-044 (the 0048 (g) rule moved to the image status, 0049)', () => {
     const P = [{ rank: 'primary', rank_proposed: true }, { rank: 'secondary', rank_proposed: false }];
     expect(primaryConfirmedOnApproval('generation', P)).toBe(true);
     expect(primaryConfirmedOnApproval('import', P)).toBe(false);
     expect(primaryConfirmedOnApproval('generation', [{ rank: 'primary', rank_proposed: false }])).toBe(false);
+  });
+});
+
+describe('25 Nov: main row (primary) — amber only for a reason to look', () => {
+  const rows = new Map([['C3-01-001', { topic_id: 'ST1', row_class: 3 }], ['C4-02-001', { topic_id: 'ST1', row_class: 4 }], ['C3-09-001', { topic_id: 'ST9', row_class: 3 }]]);
+  const lq = (primary: string, level: number, proposed = true) => ({ ...q('A', 'ST1', primary, { proposed }), level, effective_level: level });
+  it('a plain proposed primary of the same topic and class: no reason (Approve confirms it)', () => {
+    expect(mainRowLook(lq('C3-01-001', 3), rows)).toEqual([]);
+  });
+  it('reasons: another topic; row class above the Level; a row-choice warning (other warnings ignored)', () => {
+    expect(mainRowLook(lq('C3-09-001', 3), rows)).toEqual(['its main row is in another topic (ST9)']);
+    expect(mainRowLook(lq('C4-02-001', 3), rows)).toEqual(['its main row is Class 4, above the question\'s Level 3']);
+    expect(mainRowLook(lq('C3-01-001', 3), rows, ['type 4 -> 3 (tier change)', 'primary row is supporting-only content'])).toEqual(['check: primary row is supporting-only content']);
+  });
+  it("writer's pick: generated type 4–5 only", () => {
+    expect([writersPick({ created_from: 'generation', science_question_type: 4 }), writersPick({ created_from: 'generation', science_question_type: 3 }),
+      writersPick({ created_from: 'import', science_question_type: 5 })]).toEqual([true, false, false]);
+  });
+  it("a row's Confirm all: open questions whose main row here is still proposed", () => {
+    const qs = [{ ...q('A', 'ST1', 'C3-01-001', { proposed: true }), status: 'in_review' }, { ...q('B', 'ST1', 'C3-01-001', { proposed: true }), status: 'approved' },
+      { ...q('C', 'ST1', 'C3-01-001'), status: 'in_review' }, { ...q('D', 'ST1', 'C4-02-001', { proposed: true }), status: 'draft' }];
+    expect(proposedPrimariesOn('C3-01-001', qs).map((x) => x.question_id)).toEqual(['A']);
   });
 });
