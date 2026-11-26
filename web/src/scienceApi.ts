@@ -39,7 +39,19 @@ export async function scienceData(scope: { topicId: string } | { chapterId: stri
   ]);
   const st = new Map(status.map((s) => [s.row_id, s]));
   const ex = new Map(extra.map((e) => [e.version_id, e]));
+  // 25 Nov 2026 (main row look): the topic and class of every question's main row, also when it sits outside this scope,
+  // and the engine's warnings of generated questions (a warning about the row choice makes the main row amber)
+  const rowFacts = new Map(rows.map((r) => [r.row_id, { topic_id: r.topic_id, row_class: r.row_class }]));
+  const outside = [...new Set(links.filter((l) => l.rank === 'primary' && !rowFacts.has(l.row_id)).map((l) => l.row_id))];
+  const genIds = questions.filter((q) => q.created_from === 'generation').map((q) => q.question_id);
+  const [far, gen] = await Promise.all([
+    outside.length ? all<{ row_id: string; topic_id: string; row_class: number }>((a, b) => supabase.from('cms_content_rows').select('row_id, topic_id, row_class').in('row_id', outside).range(a, b)) : Promise.resolve([]),
+    genIds.length ? all<{ question_id: string; warnings: { kind?: string; reason?: string }[] }>((a, b) => supabase.from('cms_generation_items').select('question_id, warnings').in('question_id', genIds).range(a, b)) : Promise.resolve([]),
+  ]);
+  for (const r of far) rowFacts.set(r.row_id, { topic_id: r.topic_id, row_class: r.row_class });
+  const genWarnings = new Map(gen.map((g) => [g.question_id, (g.warnings ?? []).map((w) => [w.kind, w.reason].filter(Boolean).join(': '))]));
   return {
+    rowFacts, genWarnings,
     rows: rows.map((r) => ({ ...r, status: st.get(r.row_id)?.status ?? 'none', n_direct: st.get(r.row_id)?.n_direct ?? 0, n_supporting: st.get(r.row_id)?.n_supporting ?? 0 })) as ScienceRow[],
     questions: questions.map((q) => ({ ...q, level_tier: ex.get(q.version_id)?.science_tier_legacy ?? ex.get(q.version_id)?.level_tier ?? null,
       science_question_type: ex.get(q.version_id)?.science_question_type ?? null, display_format: ex.get(q.version_id)?.display_format ?? null,

@@ -14,7 +14,7 @@ import { supabase } from './supabase';
 import { OriginFlags } from './AddQuestions';
 import { Id } from './Id';
 import { scienceDetail, type ScienceDetail } from './scienceApi';
-import { primaryConfirmedOnApproval, rankLabel, scienceBlockers } from './scienceLogic';
+import { mainRowLook, primaryConfirmedOnApproval, rankLabel, scienceBlockers, writersPick } from './scienceLogic';
 import { IMAGE_STATUS_LABEL, ImagePanel } from './ImagePanel';
 import type { ImageBrief } from '../../shared/image-brief.ts';
 import { approveQuestions, shortReason } from './reviewApi';
@@ -542,6 +542,15 @@ function scienceBlockersOf(d: QuestionDetailData, x: ScienceDetail): string[] {
 function PendingFixes({ d, x, onDone }: { d: QuestionDetailData; x: ScienceDetail; onDone: () => void }) {
   const q = d.question, v = d.version;
   const proposed = x.links.find((l) => l.rank === 'primary' && l.rank_proposed);
+  // the engine's warnings of a generated question: a warning about the row choice is the third reason (same as Browse)
+  const [genWarnings, setGenWarnings] = useState<string[]>([]);
+  useEffect(() => {
+    if (d.flags?.created_from !== 'generation') { setGenWarnings([]); return; }
+    supabase.from('cms_generation_items').select('warnings').eq('question_id', q.question_id).then(({ data }) =>
+      setGenWarnings((data ?? []).flatMap((g) => ((g.warnings ?? []) as { kind?: string; reason?: string }[]).map((w) => [w.kind, w.reason].filter(Boolean).join(': ')))));
+  }, [q.question_id, d.flags?.created_from]);
+  const look = mainRowLook({ topic_id: q.topic_id, level: (q.level as number | null) ?? null, effective_level: (q.level as number | null) ?? q.class, links: x.links },
+    new Map(x.links.filter((l) => l.row).map((l) => [l.row_id, { topic_id: l.row!.topic_id, row_class: l.row!.row_class }])), genWarnings);
   const rejected = x.links.filter((l) => l.primary_rejected);
   const noPrimary = !x.links.some((l) => l.rank === 'primary');
   const itemOf = (rowId: string, no: number) => x.items.find((i) => i.row_id === rowId && i.item_no === no);
@@ -553,8 +562,12 @@ function PendingFixes({ d, x, onDone }: { d: QuestionDetailData; x: ScienceDetai
   return (
     <div className="pending-fixes small" aria-label="Pending proposals">
       <span className="muted">Pending:</span>
-      {proposed && <span className="fix"><PrimaryDecide questionId={q.question_id} versionNo={v.version_no} rowId={proposed.row_id} state="proposed" onChange={toLinks} onDone={onDone} />
-        {primaryConfirmedOnApproval(d.flags?.created_from, x.links) && <span className="muted"> (Approve confirms it too)</span>}</span>}
+      {/* 25 Nov 2026: the amber Confirm / Change / Reject only when the main row needs a look; otherwise plain text */}
+      {proposed && (look.length || !primaryConfirmedOnApproval(d.flags?.created_from, x.links)
+        ? <span className="fix" title={look.length ? `Main row needs a look: ${look.join('; ')}` : undefined}><PrimaryDecide questionId={q.question_id} versionNo={v.version_no} rowId={proposed.row_id} state="proposed" onChange={toLinks} onDone={onDone} />
+          {look.length > 0 && <span className="main-row look"> needs a look: {look.join('; ')}</span>}</span>
+        : <span className="fix main-row">Main row: {proposed.row_id}{writersPick({ created_from: d.flags?.created_from, science_question_type: x.version.science_question_type }) && " · writer's pick"} ·{' '}
+          <button className="link small" onClick={toLinks}>Change</button> <span className="muted">(Approve confirms it)</span></span>)}
       {noPrimary && rejected.map((l) => <span key={l.row_id} className="fix"><PrimaryDecide questionId={q.question_id} versionNo={v.version_no} rowId={l.row_id} state="rejected" onDone={onDone} />
         <button className="link small" onClick={toLinks}>pick a primary in Linked content</button></span>)}
       {items.map((i) => <span key={`${i.row_id}#${i.item_no}`} className="fix"><span className="pstate proposed"><span className="pstate-label">Item {i.row_id} #{i.item_no} · needs review</span>

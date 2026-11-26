@@ -201,11 +201,35 @@ export const questionState = (q: { status: string; retired_at?: string | null })
   q.retired_at || q.status === 'rejected' ? 'rejected' : q.status === 'approved' ? 'approved' : 'proposed';
 /** A content row (Q4, inferred): retired = rejected; a pending proposal on it (a needs-review item, or a question whose
  *  primary on this row is proposed) = proposed; otherwise approved. */
-export function rowState(r: { row_id: string; retired_at: string | null }, pendingItems: Set<string>, questions: { links: PLink[] }[]): PState {
+/** A content row (Q4, inferred; Sambit 25 Nov 2026): retired = rejected; a pending proposal ON THE ROW ITSELF (a needs-review
+ *  misconception item) = proposed; otherwise approved. Questions with a proposed main row on it do NOT make it amber
+ *  (the row shows a small "N questions: primary proposed · Confirm all" badge instead). */
+export function rowState(r: { row_id: string; retired_at: string | null }, pendingItems: Set<string>): PState {
   if (r.retired_at) return 'rejected';
-  if (pendingItems.has(r.row_id)) return 'proposed';
-  return questions.some((q) => q.links.some((l) => l.row_id === r.row_id && l.rank === 'primary' && l.rank_proposed)) ? 'proposed' : 'approved';
+  return pendingItems.has(r.row_id) ? 'proposed' : 'approved';
 }
+/** Open questions on this row whose main row (primary) here is still proposed (the row's "Confirm all"). */
+export const proposedPrimariesOn = <Q extends { question_id: string; status: string; retired_at?: string | null; links: PLink[] }>(rowId: string, qs: Q[]) =>
+  qs.filter((q) => !q.retired_at && (q.status === 'draft' || q.status === 'in_review') && q.links.some((l) => l.row_id === rowId && l.rank === 'primary' && l.rank_proposed));
+
+/** Sambit, 25 Nov 2026: the main row (primary) of a question needs a look (amber, Confirm / Change / Reject) ONLY for a
+ *  computed reason: it is in another topic, its class is above the question's Level, or a checker / import warning is
+ *  about the row choice. Otherwise the main row is plain text and Approve confirms it. Returns the reasons ([] = none). */
+export const ROW_CHOICE_WARNING = /primary|main row|row choice|linked row/i;
+export function mainRowLook(q: { topic_id: string; level?: number | null; effective_level: number; links: PLink[] },
+  rows: Map<string, { topic_id: string; row_class: number }>, warnings: string[] = []): string[] {
+  const p = q.links.find((l) => l.rank === 'primary');
+  const out: string[] = [];
+  const r = p ? rows.get(p.row_id) : undefined;
+  if (r && r.topic_id !== q.topic_id) out.push(`its main row is in another topic (${r.topic_id})`);
+  const level = q.level ?? q.effective_level;
+  if (r && r.row_class > level) out.push(`its main row is Class ${r.row_class}, above the question's Level ${level}`);
+  for (const w of warnings) if (ROW_CHOICE_WARNING.test(w)) out.push(`check: ${w}`);
+  return out;
+}
+/** Type 4–5 generated questions: the writer chose the main row (the blueprint slot had none). Shown as a neutral note. */
+export const writersPick = (q: { created_from?: string | null; science_question_type?: number | null }) =>
+  q.created_from === 'generation' && (q.science_question_type === 4 || q.science_question_type === 5);
 /** OL-044: approving a GENERATED question also confirms its single proposed primary (cms_approve_questions). */
 export const primaryConfirmedOnApproval = (createdFrom: string | null | undefined, links: { rank: string; rank_proposed: boolean }[]) =>
   createdFrom === 'generation' && !links.some((l) => l.rank === 'primary' && !l.rank_proposed) && links.filter((l) => l.rank === 'primary' && l.rank_proposed).length === 1;

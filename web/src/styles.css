@@ -980,3 +980,8 @@ input.time-box { font: inherit; font-weight: 600; }
 .tc-prop { display: inline-flex; align-items: center; gap: 6px; }
 .sci-bar select { width: auto; max-width: 230px; }
 .tc-prop .small-btn { padding: 3px 12px; font-size: 0.9em; line-height: 1.4; }
+
+/* ---------------------------------------------------------------- 25 Nov: main row (primary) as plain text; amber only for a reason */
+.main-row { color: var(--muted); }
+.main-row.look { color: var(--warn); }
+.row-primaries { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 2px 12px 8px 44px; }
