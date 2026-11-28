@@ -51,10 +51,10 @@ const pack = (questions: PackQuestion[], source_run = `ZZTEST-${Math.random().to
 const review = (d: Record<string, 'approve' | 'fix' | 'drop' | 'rescue'>): ReviewDecisions =>
   ({ sha256: 'f'.repeat(64), decisions: new Map(Object.entries(d).map(([k, v]) => [k, { decision: v, comment: null, sheet: 'Questions' }])) });
 class MemFigures implements FigureStore { keys = new Map<string, number>(); async ensure(key: string, b: Buffer) { const had = this.keys.has(key); this.keys.set(key, b.length); return had ? 'present' as const : 'uploaded' as const; } }
-const run = (tx: postgres.TransactionSql, p: Pack, mode: Mode, r: ReviewDecisions | null, figures: FigureStore = new MemFigures()) => {
+const run = (tx: postgres.TransactionSql, p: Pack, mode: Mode, r: ReviewDecisions | null, figures: FigureStore = new MemFigures(), approve = false) => {
   const path = join(dir, `${p.run.source_run}.json`);
   writeFileSync(path, JSON.stringify(p));
-  return runPackImport({ packPath: path, pack: p, mode, review: r, dryRun: false, batchSize: 2, figures, runUnit: async (_l, fn) => fn(tx as unknown as Sql) });
+  return runPackImport({ packPath: path, pack: p, mode, review: r, dryRun: false, batchSize: 2, figures, approve, runUnit: async (_l, fn) => fn(tx as unknown as Sql) });
 };
 
 describe('gen:import (local, rolled back)', () => {
@@ -138,6 +138,54 @@ describe('gen:import (local, rolled back)', () => {
       expect(c.changed).toEqual(['T-01']);
       const [v] = await tx`select v.text from cms.cms_question_versions v where v.question_id = ${a.items[0]!.question_id!}`;
       expect(v!.text).toBe('Test question T-01: which one is right?');
+    });
+  });
+
+  it('PR 1b --approve: pack-Approved questions are approved through cms_set_status (by_label pack-approved <run>); a pending flag blocks only that one; a re-run skips approved ones', async () => {
+    await inRollback(async (tx) => {
+      await fixtures(tx);
+      const p = pack([q('T-01'), q('T-02', { originality: 'not_checked' }), q('T-03'), q('T-04')]);
+      const r = await run(tx, p, 'pilot', review({ 'T-01': 'approve', 'T-02': 'approve', 'T-03': 'rescue', 'T-04': 'fix' }), new MemFigures(), true);
+      expect(r.items.map((i) => i.status)).toEqual(['imported', 'imported', 'imported', 'dropped_review']);
+      const qid = (l: string) => r.items.find((i) => i.local_id === l)!.question_id!;
+      expect(r.approve!.approved.map((x) => x.local_id)).toEqual(['T-01', 'T-03']);
+      expect(r.approve!.blocked).toEqual([{ local_id: 'T-02', question_id: qid('T-02'), reason: expect.stringMatching(/originality/i) }]);
+      expect(r.approve!.already).toEqual([]);
+      const st = await tx`select q.question_id, v.status, q.approved_version from cms.cms_questions q join cms.cms_question_versions v on v.question_id = q.question_id and v.version_no = q.current_version
+                           where q.question_id in ${tx([qid('T-01'), qid('T-02'), qid('T-03')])} order by q.question_id`;
+      expect(Object.fromEntries(st.map((x) => [x.question_id, [x.status, x.approved_version]]))).toEqual({ [qid('T-01')]: ['approved', 1], [qid('T-02')]: ['in_review', null], [qid('T-03')]: ['approved', 1] });
+      const audit = await tx`select target_id, by_label, reason from cms.cms_reviews where action = 'approve' and target_id in ${tx([qid('T-01'), qid('T-02'), qid('T-03')].map((x) => `${x} v1`))} order by target_id`;
+      expect(audit.map((a) => [a.target_id, a.by_label])).toEqual([[`${qid('T-01')} v1`, `pack-approved ${r.run_code}`], [`${qid('T-03')} v1`, `pack-approved ${r.run_code}`]]);
+      expect(audit[0]!.reason).toContain(r.run_code);
+      expect(r.closed!.status).toBe('imported');
+      const [run1] = await tx`select counts from cms.cms_generation_runs where run_code = ${r.run_code}`;
+      expect(JSON.stringify(run1!.counts)).toContain('"approve"');
+      // re-run: nothing new imported, approved ones skipped, the blocked one is still blocked (and still not approved)
+      const again = await run(tx, p, 'pilot', review({ 'T-01': 'approve', 'T-02': 'approve', 'T-03': 'rescue', 'T-04': 'fix' }), new MemFigures(), true);
+      expect(again.items.map((i) => i.status)).toEqual(['unchanged', 'unchanged', 'unchanged', 'dropped_review']);
+      expect(again.approve!.approved).toEqual([]);
+      expect(again.approve!.already.map((x) => x.local_id)).toEqual(['T-01', 'T-03']);
+      expect(again.approve!.blocked.map((x) => x.local_id)).toEqual(['T-02']);
+      expect((await tx`select count(*)::int as n from cms.cms_reviews where action = 'approve' and by_label = ${`pack-approved ${r.run_code}`}`)[0]!.n).toBe(2);
+    });
+  });
+
+  it('PR 1b: cms_set_status writes p_by_label on its audit row (null = Sambit, as the 5-argument form); over 80 characters is refused', async () => {
+    const [{ value: adminId }] = await sql`select value #>> '{}' as value from cms.cms_config where key = 'admin_user_id'` as unknown as [{ value: string }];
+    await inRollback(async (tx) => {
+      await fixtures(tx);
+      const r = await run(tx, pack([q('T-01'), q('T-02'), q('T-03')]), 'pilot', review({ 'T-01': 'approve', 'T-02': 'approve', 'T-03': 'approve' }));
+      const [a, b, c] = r.items.map((i) => i.question_id!);
+      await tx`select set_config('request.jwt.claims', ${JSON.stringify({ sub: adminId, role: 'authenticated' })}, true)`;
+      await tx`select cms.cms_set_status(${a!}, 1, 'approve', null, false, 'test label')`;
+      await tx`select cms.cms_set_status(${b!}, 1, 'approve', null)`;
+      await expect(tx.savepoint((sp) => sp`select cms.cms_set_status(${c!}, 1, 'approve', null, false, ${'x'.repeat(81)})`)).rejects.toThrow(/at most 80/);
+      await tx`select cms.cms_set_status(${c!}, 1, 'approve', null, false, '  ')`;
+      const audit = await tx`select target_id, by_label from cms.cms_reviews where action = 'approve' and target_id in ${tx([a!, b!, c!].map((x) => `${x} v1`))} order by target_id`;
+      expect(audit.map((x) => x.by_label)).toEqual(['test label', 'Sambit', 'Sambit']);
+      // a non-admin still can't, whatever the label
+      await tx`select set_config('request.jwt.claims', ${JSON.stringify({ sub: '00000000-0000-0000-0000-000000000001', role: 'authenticated' })}, true)`;
+      await expect(tx.savepoint((sp) => sp`select cms.cms_approve_questions(${[a!]}::text[], null, 'x')`)).rejects.toMatchObject({ code: '42501' });
     });
   });
 

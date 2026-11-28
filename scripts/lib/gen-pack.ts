@@ -199,12 +199,26 @@ export interface ImportOptions {
   log?: (s: string) => void;
   /** dry run: one transaction for everything, always rolled back */
   dryRunSql?: Sql;
+  /** PR 1b (plan §2.7): after the import, approve the questions Sambit marked Approve / Rescue in the Mac review pack,
+   *  through cms_approve_questions → cms_set_status (every approval rule applies), by_label "pack-approved <run>".
+   *  Pilot mode only (approvePlanProblem). */
+  approve?: boolean;
 }
+/** Why --approve can't be used with these options (null = it can). */
+export function approvePlanProblem(mode: Mode, pack: Pack, review: ReviewDecisions | null): string | null {
+  if (mode !== 'pilot') return '--approve is for pilot imports only: in steady state questions are reviewed and approved in the CMS';
+  if (pack.run.route !== 'B') return '--approve is for Route B packs only (Route A questions are always reviewed in the CMS)';
+  if (!review && !pack.questions.some((q) => q.review?.decision)) return '--approve needs the Mac review pack decisions (--review <xlsx>)';
+  return null;
+}
+export const approveLabel = (runCode: string) => `pack-approved ${runCode}`;
+export interface ApproveResult { approved: { local_id: string; question_id: string; version_no: number }[]; blocked: { local_id: string; question_id: string; reason: string }[];
+  already: { local_id: string; question_id: string; version_no: number }[]; not_imported: string[] }
 export interface ItemResult { local_id: string; status: string; question_id?: string; held_id?: string; file_key?: string; level?: number; link_proposed?: string | null; reason?: string; error?: string; was?: string }
 export interface ImportResult {
   run_code: string; run_id: number; import_id: number; created: boolean; mode: Mode; settings: Record<string, string>; shared: Record<string, string>;
   links_proposed: string[]; setting_use: { existing: number; new: number; bare: number; new_settings: number; existing_settings: number };
-  items: ItemResult[]; counts: Record<string, number>; figures: { uploaded: number; present: number }; /** Images PR */ briefs: { set: number; unchanged: number; skipped: number }; closed: { status: string; items: Record<string, number> } | null;
+  items: ItemResult[]; counts: Record<string, number>; /** PR 1b: --approve only */ approve: ApproveResult | null; figures: { uploaded: number; present: number }; /** Images PR */ briefs: { set: number; unchanged: number; skipped: number }; closed: { status: string; items: Record<string, number> } | null;
   changed: string[]; dry_run: boolean;
 }
 class DryRollback extends Error { constructor(public result: ImportResult) { super('dry run: rolled back'); } }
@@ -237,7 +251,7 @@ export async function runPackImport(o: ImportOptions): Promise<ImportResult> {
       existing_settings: new Set(imported.flatMap((q) => (q.setting && 'setting_id' in q.setting ? [q.setting.setting_id] : []))).size };
     const res: ImportResult = { run_code: run.run_code, run_id: Number(run.run_id), import_id: Number(run.import_id), created: run.created, mode: o.mode, settings: run.settings,
       shared: run.shared ?? {}, links_proposed: [], setting_use,
-      items: [], counts: {}, figures: { uploaded: 0, present: 0 }, briefs: { set: 0, unchanged: 0, skipped: 0 }, closed: null, changed: [], dry_run: o.dryRun };
+      items: [], counts: {}, figures: { uploaded: 0, present: 0 }, briefs: { set: 0, unchanged: 0, skipped: 0 }, closed: null, changed: [], dry_run: o.dryRun, approve: null };
     const dir = dirname(o.packPath);
     for (let i = 0; i < planned.length; i += o.batchSize) {
       const chunk = planned.slice(i, i + o.batchSize);
@@ -268,8 +282,9 @@ export async function runPackImport(o: ImportOptions): Promise<ImportResult> {
         res.briefs.set += s2!.r.set; res.briefs.unchanged += s2!.r.unchanged; res.briefs.skipped += s2!.r.skipped.length;
       }
     }
+    if (o.approve) res.approve = await approveImported(unit, res, planned, o.batchSize, log);
     const [c] = await unit('close run', (sql) => sql<{ r: { status: string; items: Record<string, number> } }[]>`
-      select cms.cms_gen_close_run(${sql.json({ run_code: run.run_code, import_id: run.import_id, counts: { this_pass: res.counts, figures: res.figures },
+      select cms.cms_gen_close_run(${sql.json({ run_code: run.run_code, import_id: run.import_id, counts: { this_pass: res.counts, figures: res.figures, ...(res.approve ? { approve: approveCounts(res.approve) } : {}) },
         error_report: res.items.filter((x) => ['failed', 'changed'].includes(x.status)).map((x) => ({ local_id: x.local_id, status: x.status, why: x.error ?? 'imported earlier with different content' })) } as never)}) as r`);
     res.closed = c!.r;
     return res;
@@ -280,5 +295,40 @@ export async function runPackImport(o: ImportOptions): Promise<ImportResult> {
     await o.dryRunSql.begin(async (tx) => { const r = await body(async (_l, fn) => fn(tx as unknown as Sql)); throw new DryRollback(r); });
   } catch (e) { if (e instanceof DryRollback) return e.result; throw e; }
   throw new Error('unreachable');
+}
+export const approveCounts = (a: ApproveResult) => ({ approved: a.approved.length, blocked: a.blocked.length, already: a.already.length, not_imported: a.not_imported.length });
+/** PR 1b: the run's imported questions (this pass or earlier) that the Mac review pack marks Approve / Rescue, approved in
+ *  batches. Each batch is one transaction (admin claims set in it, as PostgREST does) calling cms_approve_questions, which
+ *  approves question by question in its own sub-transaction: a blocked one is listed with its reason and the rest go on.
+ *  Already-approved questions are skipped, so a re-run is safe. The import itself is never undone by a blocked approval. */
+async function approveImported(unit: UnitRunner, res: ImportResult, planned: Planned[], batchSize: number, log: (s: string) => void): Promise<ApproveResult> {
+  const want = new Set(planned.filter((p) => !p.drop && ['approve', 'rescue'].includes(p.q.review?.decision ?? '')).map((p) => p.q.local_id));
+  const ledger = await unit('approve: list', (sql) => sql<{ local_id: string; question_id: string }[]>`
+    select local_id, question_id from cms.cms_generation_items where run_id = ${res.run_id} and status = 'imported' and question_id is not null order by local_id`);
+  const byQ = new Map(ledger.filter((r) => want.has(r.local_id)).map((r) => [r.question_id, r.local_id]));
+  const out: ApproveResult = { approved: [], blocked: [], already: [], not_imported: [...want].filter((l) => !ledger.some((r) => r.local_id === l)).sort() };
+  const ids = [...byQ.keys()];
+  const label = approveLabel(res.run_code), reason = `Approved by Sambit in the Mac review pack (run ${res.run_code})`;
+  for (let i = 0; i < ids.length; i += batchSize) {
+    const chunk = ids.slice(i, i + batchSize), n = i / batchSize + 1;
+    const r = await unit(`approve ${n}`, (sql) => inTransaction(sql, async (tx) => {
+      const [a] = await tx<{ admin: string | null }[]>`select value #>> '{}' as admin from cms.cms_config where key = 'admin_user_id'`;
+      if (!a?.admin) throw new Error('cms_config admin_user_id is not set');
+      await tx`select set_config('request.jwt.claims', ${JSON.stringify({ sub: a.admin, role: 'authenticated' })}, true)`;
+      const [x] = await tx<{ r: { approved: { question_id: string; version_no: number }[]; blocked: { question_id: string; reason: string }[]; already: { question_id: string; version_no: number }[] } }[]>`
+        select cms.cms_approve_questions(${chunk}::text[], ${reason}, ${label}) as r`;
+      return x!.r;
+    }));
+    for (const x of r.approved) out.approved.push({ local_id: byQ.get(x.question_id)!, question_id: x.question_id, version_no: x.version_no });
+    for (const x of r.blocked) out.blocked.push({ local_id: byQ.get(x.question_id)!, question_id: x.question_id, reason: x.reason });
+    for (const x of r.already) out.already.push({ local_id: byQ.get(x.question_id)!, question_id: x.question_id, version_no: x.version_no });
+    log(`  approve ${n}: ${r.approved.length} approved · ${r.blocked.length} blocked · ${r.already.length} already approved`);
+  }
+  return out;
+}
+/** A transaction on a plain connection; a savepoint inside one already open (the dry run, the tests). */
+async function inTransaction<T>(sql: Sql, fn: (tx: Sql) => Promise<T>): Promise<T> {
+  const s = sql as unknown as { begin?: (f: (t: unknown) => Promise<T>) => Promise<T>; savepoint: (f: (t: unknown) => Promise<T>) => Promise<T> };
+  return typeof s.begin === 'function' ? s.begin((t) => fn(t as Sql)) : s.savepoint((t) => fn(t as Sql));
 }
 const fmtCounts = (m: Record<string, number>) => Object.entries(m).map(([k, v]) => `${v} ${k}`).join(' · ');

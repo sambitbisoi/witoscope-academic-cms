@@ -115,6 +115,8 @@ describe('catalog: every table is locked the same way', () => {
       { proname: 'cms_apply_save', prosecdef: true, provolatile: 'v', proconfig: ['search_path=""'], auth_exec: true, anon_exec: false, public_exec: false },
       // 0048 (Q38 PR 4): bulk approve (OL-044) and a proposed primary decided in place
       { proname: 'cms_approve_questions', prosecdef: true, provolatile: 'v', proconfig: ['search_path=""'], auth_exec: true, anon_exec: false, public_exec: false },
+      // 0050 (Q38 PR 1b): the same with p_by_label (the 2-argument form now calls it)
+      { proname: 'cms_approve_questions', prosecdef: true, provolatile: 'v', proconfig: ['search_path=""'], auth_exec: true, anon_exec: false, public_exec: false },
       { proname: 'cms_check_image', prosecdef: true, provolatile: 'v', proconfig: ['search_path=""'], auth_exec: true, anon_exec: false, public_exec: false },
       // 0035: rank default for links written without one (trigger)
       { proname: 'cms_content_link_rank', prosecdef: false, provolatile: 'v', proconfig: ['search_path=""'], auth_exec: false, anon_exec: false, public_exec: false },
@@ -173,6 +175,8 @@ describe('catalog: every table is locked the same way', () => {
       { proname: 'cms_set_image', prosecdef: true, provolatile: 'v', proconfig: ['search_path=""'], auth_exec: true, anon_exec: false, public_exec: false },
       { proname: 'cms_set_image_brief', prosecdef: true, provolatile: 'v', proconfig: ['search_path=""'], auth_exec: true, anon_exec: false, public_exec: false },
       { proname: 'cms_set_row_misconception_status', prosecdef: true, provolatile: 'v', proconfig: ['search_path=""'], auth_exec: true, anon_exec: false, public_exec: false },
+      { proname: 'cms_set_status', prosecdef: true, provolatile: 'v', proconfig: ['search_path=""'], auth_exec: true, anon_exec: false, public_exec: false },
+      // 0050 (Q38 PR 1b): the same with p_by_label (the 5-argument form now calls it)
       { proname: 'cms_set_status', prosecdef: true, provolatile: 'v', proconfig: ['search_path=""'], auth_exec: true, anon_exec: false, public_exec: false },
       { proname: 'cms_set_topic_review', prosecdef: true, provolatile: 'v', proconfig: ['search_path=""'], auth_exec: true, anon_exec: false, public_exec: false },
       // trigger functions (not callable by anyone)

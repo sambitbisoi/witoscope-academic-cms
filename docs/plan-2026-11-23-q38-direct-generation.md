@@ -214,6 +214,7 @@ It reuses the Science validation and writer rules that already hold.
 - `cms_config.gen_steady_state[subject][class] = false` (default): import **refuses** unless `--approved-only` is given. Only rows Sambit marked Approve in the Mac pack are imported (pack sha recorded on the run). Fix and Drop are reported.
 - Sambit flips a subject+class to steady state in the CMS (Settings, "More"). From then on, everything that passed checks lands as Needs review, and review happens in the CMS (§7).
 - Route A always lands as Needs review. It is allowed only for subject+class pairs in steady state.
+- **`--approve` (pilot mode only; PR 1 follow-up, Sambit 23 Nov):** with `gen:import --review <xlsx> --approve`, rows marked Approve (or Rescue) in the Mac pack are imported **and then approved** through the normal approval path: `cms_set_status(…, 'approve', …)` as the admin, so every rule still applies (near-copy rule; the `cms_version_flags` checks: originality, picture, attributes, Science type, Solution 1, primary row, misconception items). One audit row per question, by_label `pack-approved <run>`. It runs after the import in batches of 10 (fresh connection each, a savepoint per question). A blocked question stays Needs review and is listed with its reason; the import itself still succeeds. Refused in steady mode and for Route A. Re-runs skip questions already approved. GR0002 was approved this way by a one-off script on 23 Nov (62/62).
 
 ## 3. Book rule
 - Book text, extracts, OCR and the originality checker stay on the Mac. Packs carry only our questions, citations and scores.
@@ -286,6 +287,8 @@ It reuses the Science validation and writer rules that already hold.
   - cost (per stage, per question), models, engine version, CMS commit, rule version
   - originality status, buttons (collect, cancel, roll back), and links to the filtered Review queue
   - Runs list on the Imports page.
+- **Bulk approve (Sambit 23 Nov):** tick boxes on the Review queue rows, plus **Approve selected** and, with a Run filter set, **Approve all in run**. Each question goes through `cms_set_status` (same rules and audit as one-by-one). There is an explicit confirm with the count, and the result lists approved and still-blocked questions with the reason for each. Blocked ones stay ticked.
+- **Search:** the Browse / Review search box also finds run codes (`GR####`) and filters to that run's questions.
 - **Question detail:** a "Generation" panel with run, local ID, warnings with "Warning reason" and check summary. It extends `PendingBanners`/`approvalBlockers` to `created_from='generation'`. Science review warnings stay "never block approval".
 - Screens: screenshots first (rule).
 
@@ -332,10 +335,11 @@ It reuses the Science validation and writer rules that already hold.
 ## 11. PR split (build order), effort
 | # | PR | Contents | Effort |
 |---|---|---|---|
-| 1 | **Science pack import** | 0047; pack schema (Science profile); `cms_gen_*` functions with the refactored internal writer; `gen:import` / `gen:rollback`; PILOT04 adapter + `--approved-only` xlsx reader; figure upload-first; held-out `pack_item` + Place; tests (local DB, re-run idempotency, pooler-drop simulation, rollback) | 3.5 d |
+| 1 | **Science pack import** | 0047; pack schema (Science profile); `cms_gen_*` functions with the refactored internal writer; `gen:import` / `gen:rollback`; PILOT04 adapter + `--approved-only` xlsx reader; figure upload-first; held-out `pack_item` + Place; tests (local DB, re-run idempotency, pooler-drop simulation, rollback) | 3.5 d (done, #54) |
+| 1b | PR 1 follow-up | `gen:import --approve` (pilot only; §2.7): pack-Approved rows → Approved through `cms_set_status`, rules apply, by_label `pack-approved <run>`, blocked list with reasons; db test (approved, blocked by a pending flag, re-run skips) | 0.5 d |
 | 2 | Roles + lease | `roles-setup.ts`, `cms_reader`/`cms_gen_writer`, `db.ts`, grants/db-verify, `cms_work_lease` (0048a) | 1 d |
 | 3 | Key registry | 0048 `cms_key_reservations`, `_next_no` everywhere, `keys:reserve`, `keys:mirror`, `keys:audit`, id_blocks import, `export:bank-sync` | 1.5 d |
-| 4 | Review in CMS | Run filter, Run page, Generation panel, warnings (screenshots first) | 2 d |
+| 4 | Review in CMS | Run filter, Run page, Generation panel, warnings; tick boxes + Approve selected / Approve all in run; search finds `GR####` (screenshots first) | 2.5 d |
 | 5 | Math pack import | Math profile (parts, options, hints, concepts, `new:` patterns/sets/concepts/misconceptions → Proposed), Math figure rule check | 2 d |
 | 6 | Originality sweep | `check:originality --generated` (Math + Science), `--figures` render/upload | 1 d |
 | 7 | Engine + Route B | `engine/` package, Science TS port + PILOT04 parity, mirrored-rules check, skill + CLI, review xlsx | 5 d |
@@ -380,6 +384,7 @@ Total ≈ 25 working days. PR 1 alone lets Science production import PILOT04-sty
 - **Primary row (23 Nov, later):** keep it as planned. Pilot runs (`--approved-only`) write a confirmed primary; steady state writes it as `rank_proposed`, confirmed in CMS review.
 - **Setting group definition (23 Nov, for PR 10):** a broad family of everyday settings, used to spread settings across a topic's questions. Each setting belongs to exactly one group. Start with about 10–15 groups, e.g. Food & cooking, Home & chores, Play & sport, Garden & plants, Travel & transport, Weather & seasons, Body & health habits, School & classroom, Nature walk & animals, Market & shopping, Festivals & gatherings, Science activity. Claude proposes a group for each existing setting; Sambit approves in the CMS (groups and assignments start Proposed).
 - **"go" for PR 1** given 23 Nov.
+- **Bulk approve (23 Nov):** GR0002 approved on real (62/62, by_label `pack-approved GR0002`). Add `gen:import --approve` (PR 1b) and the Review tick boxes, Approve selected / Approve all in run, and run-code search (PR 4). Approval rules always apply.
 - **PR 4 (Sambit, 24 Nov 2026):** scope adds OL-043 (a)–(e), OL-044 (approving a generated question confirms its proposed primary) and (g): until the Images PR, a generated Science question with a drawn figure can't be approved ("Image to redo (DL-040)", trigger `cms_version_image_redo` + blocker `image_to_redo`, migration 0048). Q1 link proposals: existing kinds only (later) · Q2 settings get Approve / Reject · Q3 a rejected primary stays as a secondary, marked rejected, undoable · Q4 row / question states as proposed · Q5 auto-confirm for generated questions only. Review groups by the question's Level. Previous / Next for Math comes later.
 - **Images PR (DL-040, queued after PR 4):** it must **replace** the `image_to_redo` trigger and blocker of 0048 with the image status Image needed → Image to check → OK (a picture question can't be approved until OK), and mark the 182 Class 3 drawn figures (GR0012–GR0019) Image needed.
 - Hand-off item 8 (QB/Science side): update the step3 bar to DL-028 (±1 ≥ 90% at n = 19).
