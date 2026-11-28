@@ -2,6 +2,19 @@
 
 Changes to real (non-test) data that Sambit approved, with what was done and where the audit trail is.
 
+## 28 Nov 2026: Q38 PR 3, key registry (migration 0052 + id_blocks load)
+
+**Request (Sambit, 28 Nov 2026):** "Go for 0052 on real" after #60 was merged; open questions 1–3 agreed (blocks loaded as used; export:bank-sync writes files only; typical sets out of the registry). PR #61.
+
+| Step | Result |
+|---|---|
+| Check | No other cms_owner sessions; no unfinished runs; last import #1295 (GR0139); work lease free. Main folder pulled to #60: db:verify ✓ |
+| Backup | `~/WitoScope/CMS-backups/real-cms-2026-11-28-pre-0052.dump` (schema `cms`, 66 table-data entries, read-only file) |
+| Rehearsal | Fresh restore (`real-cms-2026-11-28-pr3-rehearsal.dump`) · 0052 guarded: fingerprint **unchanged** · C5S regressions identical (cms_owner + cms_gen_writer) · dry runs took 0 numbers; committed import got the predicted GR0141 / SQ010161… |
+| Real | 0052 guarded: fingerprint **unchanged** (new empty `cms_key_reservations`; six minting functions re-created) · db:verify ✓ |
+| Blocks | `keys -- import-blocks`: dry run 125 added; `--confirm-real` 125 added (5 batches of 25, under the work lease); re-run 125 unchanged. 125 audit rows `keys_import` |
+| After | `keys:audit` (cms_reader) unchanged vs before · `keys -- mirror` → `~/WitoScope/CMS-updates/2026-11-28-key-registry/id_blocks.mirror.md` · reserve dry runs: next block 125 (MP6250–MP6299), MC58-0054… · `export:bank-sync` files in the same folder (QuestionBank untouched) · db:verify ✓ |
+
 ## 28 Nov 2026: Q38 PR 2, roles and work lease (bootstrap 02 + migration 0051)
 
 **Request (Sambit, 28 Nov 2026):** "Go" after the rehearsal checks (cms_reader / cms_gen_writer refused every write, EXECUTE lists, lease renewal). PR #59.

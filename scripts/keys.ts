@@ -64,8 +64,12 @@ try {
     console.log(`closed on ${target}: ${show(r)}`);
   }
   if (cmd === 'list' || cmd === 'mirror') {
-    const rows = await sql<R[]>`select cms.cms_key_reservation_json(r) as j from cms.cms_key_reservations r
-      where ${has('--all') || cmd === 'mirror'} or r.status = 'reserved' order by r.kind, r.block_no nulls last, r.prefix, r.first_no`.then((x) => x.map((y) => y.j as R));
+    // formatted here (as cms_key_reservation_json does), so cms_reader, which may run no function, can list and mirror
+    const pad = (n: unknown) => String(n).padStart(4, '0');
+    const rows = (await sql<R[]>`select r.* from cms.cms_key_reservations r
+      where ${has('--all') || cmd === 'mirror'} or r.status = 'reserved' order by r.kind, r.block_no nulls last, r.prefix, r.first_no`).map((r): R => r.kind === 'file_key'
+        ? { ...r, first: `${r.prefix}-${pad(r.first_no)}`, last: `${r.prefix}-${pad(r.last_no)}`, count: Number(r.last_no) - Number(r.first_no) + 1 }
+        : { ...r, block: r.block_no, patterns: `MP${pad(r.first_no)}–MP${pad(r.last_no)}`, concepts: `C${r.block_no}01–C${r.block_no}99`, misconceptions: `${r.block_no}01–${r.block_no}99` });
     if (cmd === 'list') { console.log(`${rows.length} ${has('--all') ? '' : 'open '}reservation(s) on ${target}`); for (const r of rows) console.log(`  ${show(r)}`); }
     else {
       const blocks = rows.filter((r) => r.kind === 'block'), keys = rows.filter((r) => r.kind === 'file_key');
