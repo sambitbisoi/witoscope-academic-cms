@@ -41,7 +41,6 @@ export interface ChapterReport {
 }
 
 const ID_PREFIX = { math: 'MQ', science: 'SQ', grammar: 'GQ' } as const;
-const SEQ = { math: 'cms_mq_seq', science: 'cms_sq_seq', grammar: 'cms_gq_seq' } as const;
 
 // ---------------------------------------------------------------- catalog
 export async function loadCatalog(tx: Tx, file: ChapterFile): Promise<Catalog> {
@@ -207,6 +206,7 @@ export async function runChapter(sql: Sql, filePath: string, mode: 'validate' | 
 
   try {
     await sql.begin(async (tx) => {
+      if (mode === 'validate') await tx`select set_config('cms.dry_run', 'on', true)`;   // Q38 PR 3: a dry run takes no MQ/SQ/GQ numbers
       const [imp] = await tx`
         insert into cms.cms_imports (kind, file_path, git_commit, file_hash, chapter_id, options)
         values ('chapter', ${shown}, ${gitCommit}, ${fileHash},
@@ -279,8 +279,8 @@ export async function runChapter(sql: Sql, filePath: string, mode: 'validate' | 
 
           const [existing] = await tx`select * from cms.cms_questions where file_key = ${q.key}`;
           if (!existing) {
-            const [{ n }] = await tx`select nextval(${`cms.${SEQ[file.subject]}`}) as n` as unknown as [{ n: string }];
-            const qid = `${ID_PREFIX[file.subject]}${String(n).padStart(6, '0')}`;
+            // Q38 PR 3 (0052): cms_mint takes no number in a dry run (validate); the ID it shows is the one import will get
+            const [{ qid }] = await tx`select cms.cms_mint(${ID_PREFIX[file.subject]}) as qid` as unknown as [{ qid: string }];
             await tx`insert into cms.cms_questions ${tx({ question_id: qid, bank: 'production', subject: file.subject, file_key: q.key, chapter_id: file.chapter_id, current_version: 1, ...qFields })}`;
             const [v] = await tx`insert into cms.cms_question_versions ${tx({ question_id: qid, version_no: 1, status: 'draft', ...enc(tx, cols) } as never)} returning version_id`;
             await writeChildren(tx, Number(v!.version_id), q);

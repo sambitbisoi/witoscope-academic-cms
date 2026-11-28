@@ -40,7 +40,10 @@
     "gen:rollback": "tsx scripts/gen-rollback.ts",
     "gen:pack-pilot": "tsx scripts/gen-pack-pilot.ts",
     "images:briefs": "tsx scripts/images-briefs.ts",
-    "lease": "tsx scripts/lease.ts"
+    "lease": "tsx scripts/lease.ts",
+    "keys:audit": "tsx scripts/keys-audit.ts",
+    "keys": "tsx scripts/keys.ts",
+    "export:bank-sync": "tsx scripts/export-bank-sync.ts"
   },
   "devDependencies": {
     "@types/node": "22.9.0",

@@ -189,6 +189,26 @@ describe('gen:import (local, rolled back)', () => {
     });
   });
 
+  it('PR 3 (0052): a dry run takes no GR code and no SQ number, and shows the ones the real run will get', async () => {
+    await inRollback(async (tx) => {
+      await fixtures(tx);
+      const seq = async () => (await tx`select (select last_value from cms.cms_sq_seq) sq, (select last_value from cms.cms_gr_seq) gr`)[0]!;
+      const before = await seq();
+      const p = pack([q('T-01'), q('T-02'), q('T-03')]);
+      const path = join(dir, `${p.run.source_run}.json`); writeFileSync(path, JSON.stringify(p));
+      const fakeSql = { begin: (fn: (t: unknown) => Promise<unknown>) => tx.savepoint(fn as never) } as unknown as Sql;   // the dry run's own transaction = a savepoint here
+      const r = await runPackImport({ packPath: path, pack: p, mode: 'pilot', review: review({ 'T-01': 'approve', 'T-02': 'approve', 'T-03': 'approve' }), dryRun: true, batchSize: 2,
+        figures: new MemFigures(), runUnit: async () => { throw new Error('not used in a dry run'); }, dryRunSql: fakeSql });
+      expect(r.dry_run).toBe(true);
+      expect(r.items.map((i) => i.status)).toEqual(['imported', 'imported', 'imported']);
+      expect(await seq()).toEqual(before);
+      expect(r.run_code).toBe(`GR${String(Math.max(Number(before.gr), Number((await tx`select coalesce(max(substring(run_code from '[0-9]+$')::int), 0) as n from cms.cms_generation_runs`)[0]!.n)) + 1).padStart(4, '0')}`);
+      const ids = r.items.map((i) => Number(i.question_id!.slice(2)));
+      expect(ids[1]).toBe(ids[0]! + 1);
+      expect((await tx`select count(*)::int as n from cms.cms_generation_runs where run_code = ${r.run_code}`)[0]!.n).toBe(0);   // rolled back
+    });
+  });
+
   it('a bad value fails only that item; the rest of the batch imports', async () => {
     await inRollback(async (tx) => {
       await fixtures(tx);

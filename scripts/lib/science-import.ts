@@ -117,6 +117,7 @@ export async function runScience(sql: Sql, master: Master, report: ScienceReport
       // Q21 (17 Nov 2026): a question whose topic is not in the CMS is held out (below), not a reason to stop the import
       if (bad.length) throw new Error(`${bad.length} problem(s) against the CMS, e.g. ${bad.slice(0, 5).join('; ')}`);
 
+      if (opts.dryRun) await tx`select set_config('cms.dry_run', 'on', true)`;   // Q38 PR 3: a dry run takes no SQ numbers (cms_mint)
       const [imp] = await tx`insert into cms.cms_imports (kind, file_path, file_hash, options, counts)
         values ('science', ${master.path.replace(process.env.HOME ?? '~', '~')}, ${master.sha256}, ${tx.json({ target: opts.target, dry_run: opts.dryRun, tool: report.tool } as never)}, '{}')
         returning import_id`;
@@ -404,7 +405,7 @@ export async function runScience(sql: Sql, master: Master, report: ScienceReport
           const gold = !!q.gold_use;
           const id = gold
             ? `GS${t.class}-${String(Number((await tx`select coalesce(max(substring(question_id from '-([0-9]{3})$')::int), 0) as n from cms.cms_questions where question_id like ${`GS${t.class}-%`}`)[0]!.n) + 1).padStart(3, '0')}`
-            : (await tx`select 'SQ' || lpad(nextval('cms.cms_sq_seq')::text, 6, '0') as id` as unknown as [{ id: string }])[0].id;
+            : (await tx`select cms.cms_mint('SQ') as id` as unknown as [{ id: string }])[0].id;   // Q38 PR 3: no number taken in a dry run
           await tx`insert into cms.cms_questions ${tx({ question_id: id, bank: gold ? 'gold' : 'production', subject: 'science', file_key: gold ? null : await nextKey(t.chapter_id), chapter_id: t.chapter_id, topic_id: t.topic_id,
             class: t.class, level: q.row_class, locale: 'IN', current_version: 1, source_qid: q.qid, setting_id: q.setting_id ?? null } as never)}`;
           if (gold) { await tx`insert into cms.cms_gold_meta (question_id, use) values (${id}, ${q.gold_use!})`; res.questions.gold.push(id); }
