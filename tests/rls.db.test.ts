@@ -68,7 +68,7 @@ afterAll(async () => {
 
 describe('catalog: every table is locked the same way', () => {
   it('has 44 tables, all with RLS enabled', async () => {
-    expect(tables).toHaveLength(65); // 0018 added cms_catalogue_proposals; 0032 the four Science tables; 0035 cms_row_misconceptions; 0038 cms_held_out; 0045 the 7 course tables; 0047 cms_generation_items; 0049 cms_version_images, cms_image_runs, cms_image_run_items
+    expect(tables).toHaveLength(66); // 0051 cms_work_lease; 0018 added cms_catalogue_proposals; 0032 the four Science tables; 0035 cms_row_misconceptions; 0038 cms_held_out; 0045 the 7 course tables; 0047 cms_generation_items; 0049 cms_version_images, cms_image_runs, cms_image_run_items
     const off = await su`select relname from pg_class c join pg_namespace n on n.oid = c.relnamespace
                          where n.nspname = 'cms' and c.relkind = 'r' and not c.relrowsecurity`;
     expect(off).toEqual([]);
@@ -90,13 +90,18 @@ describe('catalog: every table is locked the same way', () => {
     const grants = await su<{ grantee: string; privilege_type: string; table_name: string }[]>`
       select grantee, privilege_type, table_name from information_schema.role_table_grants
       where table_schema = 'cms' and grantee <> 'cms_owner' and grantee <> 'postgres'`;
-    expect(grants.filter((g) => g.grantee !== 'authenticated')).toEqual([]);
-    expect(unexpectedGrants(grants)).toEqual([]);
+    // 0051 (Q38 PR 2): cms_reader has SELECT on every cms table (migration history included) and nothing else;
+    // cms_gen_writer has no table rights at all
+    const reader = grants.filter((g) => g.grantee === 'cms_reader');
+    expect(reader.filter((g) => g.privilege_type !== 'SELECT')).toEqual([]);
+    expect(reader.map((g) => g.table_name).sort()).toEqual([...tables, ...(await su<{ v: string }[]>`select viewname as v from pg_views where schemaname = 'cms'`).map((r) => r.v)].sort());
+    expect(grants.filter((g) => g.grantee !== 'authenticated' && g.grantee !== 'cms_reader')).toEqual([]);
+    expect(unexpectedGrants(grants.filter((g) => g.grantee === 'authenticated'))).toEqual([]);
     expect(grants.some((g) => g.privilege_type === 'DELETE' || g.privilege_type === 'TRUNCATE')).toBe(false);
-    expect(grants.filter((g) => g.privilege_type !== 'SELECT').map((g) => `${g.privilege_type} ${g.table_name}`).sort()).toEqual(
+    expect(grants.filter((g) => g.grantee === 'authenticated' && g.privilege_type !== 'SELECT').map((g) => `${g.privilege_type} ${g.table_name}`).sort()).toEqual(
       Object.entries(WRITE_GRANTS).flatMap(([t, ps]) => ps.map((p) => `${p} ${t}`)).sort());
     const views = (await su<{ v: string }[]>`select viewname as v from pg_views where schemaname = 'cms'`).map((r) => r.v);
-    expect([...new Set(grants.map((g) => g.table_name))].sort()).toEqual([...tables.filter((t) => t !== 'cms_schema_migrations'), ...views].sort());
+    expect([...new Set(grants.filter((g) => g.grantee === 'authenticated').map((g) => g.table_name))].sort()).toEqual([...tables.filter((t) => t !== 'cms_schema_migrations'), ...views].sort());
     const [s] = await su`select has_schema_privilege('anon', 'cms', 'usage') as anon_usage,
                                 has_schema_privilege('authenticated', 'cms', 'usage') as auth_usage`;
     expect(s).toEqual({ anon_usage: false, auth_usage: true });
@@ -141,12 +146,15 @@ describe('catalog: every table is locked the same way', () => {
       // 0047 (Q38): generation pack import (admin, or a Mac import session: cms_owner / cms_gen_writer); caller + writer are helpers
       { proname: 'cms_gen_caller', prosecdef: false, provolatile: 's', proconfig: ['search_path=""'], auth_exec: false, anon_exec: false, public_exec: false },
       { proname: 'cms_gen_close_run', prosecdef: true, provolatile: 'v', proconfig: ['search_path=""'], auth_exec: true, anon_exec: false, public_exec: false },
+      // 0051 (Q38 PR 2): generation settings and the work lease
+      { proname: 'cms_gen_config', prosecdef: true, provolatile: 's', proconfig: ['search_path=""'], auth_exec: true, anon_exec: false, public_exec: false },
       { proname: 'cms_gen_import_batch', prosecdef: true, provolatile: 'v', proconfig: ['search_path=""'], auth_exec: true, anon_exec: false, public_exec: false },
       { proname: 'cms_gen_open_run', prosecdef: true, provolatile: 'v', proconfig: ['search_path=""'], auth_exec: true, anon_exec: false, public_exec: false },
       { proname: 'cms_gen_place_held', prosecdef: true, provolatile: 'v', proconfig: ['search_path=""'], auth_exec: true, anon_exec: false, public_exec: false },
       { proname: 'cms_gen_rollback', prosecdef: true, provolatile: 'v', proconfig: ['search_path=""'], auth_exec: true, anon_exec: false, public_exec: false },
       { proname: 'cms_gen_set_briefs', prosecdef: true, provolatile: 'v', proconfig: ['search_path=""'], auth_exec: true, anon_exec: false, public_exec: false },
       { proname: 'cms_gen_write_item', prosecdef: false, provolatile: 'v', proconfig: ['search_path=""'], auth_exec: false, anon_exec: false, public_exec: false },
+      { proname: 'cms_heartbeat_lease', prosecdef: true, provolatile: 'v', proconfig: ['search_path=""'], auth_exec: true, anon_exec: false, public_exec: false },
       { proname: 'cms_image_audit', prosecdef: false, provolatile: 'v', proconfig: ['search_path=""'], auth_exec: false, anon_exec: false, public_exec: false },
       { proname: 'cms_image_brief_problem', prosecdef: false, provolatile: 'i', proconfig: ['search_path=""'], auth_exec: false, anon_exec: false, public_exec: false },
       { proname: 'cms_image_brief_text', prosecdef: false, provolatile: 'i', proconfig: ['search_path=""'], auth_exec: false, anon_exec: false, public_exec: false },
@@ -156,9 +164,12 @@ describe('catalog: every table is locked the same way', () => {
       { proname: 'cms_image_run_item', prosecdef: true, provolatile: 'v', proconfig: ['search_path=""'], auth_exec: true, anon_exec: false, public_exec: false },
       { proname: 'cms_image_run_open', prosecdef: true, provolatile: 'v', proconfig: ['search_path=""'], auth_exec: true, anon_exec: false, public_exec: false },
       { proname: 'cms_is_admin', prosecdef: true, provolatile: 's', proconfig: ['search_path=""'], auth_exec: true, anon_exec: false, public_exec: false },
+      { proname: 'cms_lease_json', prosecdef: false, provolatile: 's', proconfig: ['search_path=""'], auth_exec: false, anon_exec: false, public_exec: false },
+      { proname: 'cms_lease_state', prosecdef: true, provolatile: 's', proconfig: ['search_path=""'], auth_exec: true, anon_exec: false, public_exec: false },
       { proname: 'cms_linked_item', prosecdef: false, provolatile: 's', proconfig: ['search_path=""'], auth_exec: false, anon_exec: false, public_exec: false },
       { proname: 'cms_place_held_out', prosecdef: true, provolatile: 'v', proconfig: ['search_path=""'], auth_exec: true, anon_exec: false, public_exec: false },
       { proname: 'cms_record_run', prosecdef: true, provolatile: 'v', proconfig: ['search_path=""'], auth_exec: true, anon_exec: false, public_exec: false },
+      { proname: 'cms_release_lease', prosecdef: true, provolatile: 'v', proconfig: ['search_path=""'], auth_exec: true, anon_exec: false, public_exec: false },
       { proname: 'cms_retire', prosecdef: true, provolatile: 'v', proconfig: ['search_path=""'], auth_exec: true, anon_exec: false, public_exec: false },
       // 0037 (Q14): content rows and their items edited in the CMS
       { proname: 'cms_save_content_links', prosecdef: true, provolatile: 'v', proconfig: ['search_path=""'], auth_exec: true, anon_exec: false, public_exec: false },
@@ -179,6 +190,7 @@ describe('catalog: every table is locked the same way', () => {
       // 0050 (Q38 PR 1b): the same with p_by_label (the 5-argument form now calls it)
       { proname: 'cms_set_status', prosecdef: true, provolatile: 'v', proconfig: ['search_path=""'], auth_exec: true, anon_exec: false, public_exec: false },
       { proname: 'cms_set_topic_review', prosecdef: true, provolatile: 'v', proconfig: ['search_path=""'], auth_exec: true, anon_exec: false, public_exec: false },
+      { proname: 'cms_take_lease', prosecdef: true, provolatile: 'v', proconfig: ['search_path=""'], auth_exec: true, anon_exec: false, public_exec: false },
       // trigger functions (not callable by anyone)
       { proname: 'cms_topic_achievers', prosecdef: false, provolatile: 'v', proconfig: ['search_path=""'], auth_exec: false, anon_exec: false, public_exec: false },
       { proname: 'cms_topic_class_achievers', prosecdef: false, provolatile: 'v', proconfig: ['search_path=""'], auth_exec: false, anon_exec: false, public_exec: false },
@@ -254,7 +266,7 @@ describe('an app user gets zero rows', () => {
       return out;
     });
     expect(Object.values(counts).every((n) => n === 0)).toBe(true);
-    expect(Object.keys(counts)).toHaveLength(64); // + the four Science tables (0032) + cms_row_misconceptions (0035) + cms_held_out (0038) + 7 course tables (0045) + cms_generation_items (0047) + 3 image tables (0049)
+    expect(Object.keys(counts)).toHaveLength(65); // + cms_work_lease (0051) + the four Science tables (0032) + cms_row_misconceptions (0035) + cms_held_out (0038) + 7 course tables (0045) + cms_generation_items (0047) + 3 image tables (0049)
   });
 
   it('SQL: zero rows from every cms view (views are security_invoker)', async () => {
