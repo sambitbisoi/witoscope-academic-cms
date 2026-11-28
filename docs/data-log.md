@@ -2,6 +2,18 @@
 
 Changes to real (non-test) data that Sambit approved, with what was done and where the audit trail is.
 
+## 28 Nov 2026: Q38 PR 2, roles and work lease (bootstrap 02 + migration 0051)
+
+**Request (Sambit, 28 Nov 2026):** "Go" after the rehearsal checks (cms_reader / cms_gen_writer refused every write, EXECUTE lists, lease renewal). PR #59.
+
+| Step | Result |
+|---|---|
+| Roles | `db/bootstrap/02-cms-roles.sql` run by Sambit in the SQL editor; verification row all true |
+| Check | No other cms_owner sessions; no unfinished generation runs; last import still #1295 (GR0139) |
+| Backup | `~/WitoScope/CMS-backups/real-cms-2026-11-28-pre-0051.dump` (schema `cms`, 65 table-data entries, read-only file) |
+| Rehearsal | Fresh restore into `cms_rehearsal` (11,412 questions) · 0051 guarded: fingerprint **unchanged** (`cms_work_lease` new, one empty row) · db:verify ✓ · `gen:import --dry-run` C5S + fresh copy: identical to main, as cms_owner and as cms_gen_writer |
+| Real | 0051 guarded: fingerprint **unchanged** · db:verify ✓ (45 checks) · connection as cms_gen_writer through the pooler: session_user cms_gen_writer, tables refused, cms_gen_config and lease state work · cms_reader: `.env.real.reader` did not parse as a URL (not read; Sambit to fix) |
+
 ## 28 Nov 2026: Q38 PR 1b, `by_label` on approvals (migration 0050)
 
 **Request (Sambit, 28 Nov 2026):** "Go for 0050 on real". PR #58.

@@ -39,7 +39,8 @@
     "gen:import": "tsx scripts/gen-import.ts",
     "gen:rollback": "tsx scripts/gen-rollback.ts",
     "gen:pack-pilot": "tsx scripts/gen-pack-pilot.ts",
-    "images:briefs": "tsx scripts/images-briefs.ts"
+    "images:briefs": "tsx scripts/images-briefs.ts",
+    "lease": "tsx scripts/lease.ts"
   },
   "devDependencies": {
     "@types/node": "22.9.0",

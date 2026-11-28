@@ -35,8 +35,16 @@ try {
 
   const grants = await sql`select grantee, privilege_type, table_name from information_schema.role_table_grants
                            where table_schema = 'cms' and grantee not in ('cms_owner', 'postgres')`;
-  const others = grants.filter((g) => g.grantee !== 'authenticated');
-  check('table grants: nobody but authenticated', others.length === 0, others.map((g) => `${g.grantee} ${g.privilege_type} ${g.table_name}`).join(', '));
+  // Q38 PR 2 (0051): cms_reader may hold SELECT (only); cms_gen_writer holds no table right at all
+  const others = grants.filter((g) => g.grantee !== 'authenticated' && !(g.grantee === 'cms_reader' && g.privilege_type === 'SELECT'));
+  check('table grants: nobody but authenticated (and SELECT for cms_reader)', others.length === 0, others.map((g) => `${g.grantee} ${g.privilege_type} ${g.table_name}`).join(', '));
+  const roles = await sql<{ rolname: string; rolbypassrls: boolean; rolsuper: boolean; rolcreaterole: boolean; rolcreatedb: boolean }[]>`
+    select rolname, rolbypassrls, rolsuper, rolcreaterole, rolcreatedb from pg_roles where rolname in ('cms_reader', 'cms_gen_writer') order by rolname`;
+  check('roles cms_reader (BYPASSRLS, read-only) and cms_gen_writer (no table rights) exist, with no special rights',
+    roles.length === 2 && roles.every((r) => !r.rolsuper && !r.rolcreaterole && !r.rolcreatedb && r.rolbypassrls === (r.rolname === 'cms_reader')),
+    roles.map((r) => r.rolname).join(', ') || 'missing: run db/bootstrap/02-cms-roles.sql');
+  const [lease] = await sql<{ n: number }[]>`select count(*)::int as n from cms.cms_work_lease`;
+  check('work lease: exactly one row', lease!.n === 1);
   const extra = unexpectedGrants(grants.filter((g) => g.grantee === 'authenticated') as never);
   check('authenticated: SELECT, plus only the listed writes (no DELETE anywhere)', extra.length === 0, extra.join(', '));
 
@@ -67,7 +75,8 @@ try {
     'cms_save_course_board', 'cms_save_course', 'cms_set_course_status', 'cms_copy_course',
     'cms_gen_open_run', 'cms_gen_import_batch', 'cms_gen_close_run', 'cms_gen_rollback', 'cms_gen_place_held',
     'cms_approve_questions', 'cms_decide_primary',
-    'cms_set_image_brief', 'cms_set_image', 'cms_check_image', 'cms_undo_image', 'cms_image_run_open', 'cms_image_run_claim', 'cms_image_run_item', 'cms_image_run_close', 'cms_gen_set_briefs'];
+    'cms_set_image_brief', 'cms_set_image', 'cms_check_image', 'cms_undo_image', 'cms_image_run_open', 'cms_image_run_claim', 'cms_image_run_item', 'cms_image_run_close', 'cms_gen_set_briefs',
+    'cms_gen_config', 'cms_take_lease', 'cms_heartbeat_lease', 'cms_release_lease', 'cms_lease_state'];
   const badFns = fns.filter((f) => f.proconfig?.[0] !== 'search_path=""' || f.anon_exec || (f.prosecdef && !DEFINER_ALLOWED.includes(f.proname)));
   check('every cms function: empty search_path, no anon access; only the listed functions run as owner', badFns.length === 0, badFns.map((f) => f.proname).join(', '));
 

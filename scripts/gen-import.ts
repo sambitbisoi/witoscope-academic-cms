@@ -15,7 +15,7 @@ import { execSync } from 'node:child_process';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
-import { assertCmsOwner, connect, freshConnections, targetUrl } from './lib/db.ts';
+import { assertRole, connect, freshConnections, takeLease, targetUrl, type Lease } from './lib/db.ts';
 import { LocalFigures, RealFigures } from './lib/gen-figures.ts';
 import { approvePlanProblem, packProblems, planItems, readReviewPack, runPackImport, type Mode, type Pack } from './lib/gen-pack.ts';
 
@@ -54,10 +54,15 @@ if (target === 'real' && !dryRun && !args.includes('--confirm-real')) { console.
 let gitCommit: string | null = null;
 try { gitCommit = execSync('git rev-parse HEAD', { cwd: import.meta.dirname, encoding: 'utf8' }).trim(); } catch { /* not a git checkout */ }
 const sql = connect();
+let lease: Lease | null = null;
 try {
-  await assertCmsOwner(sql);
-  const [cfg] = await sql<{ n: number }[]>`select coalesce((select value::text::int from cms.cms_config where key = 'gen_batch_size'), 10) as n`;
-  const batchSize = Number(opt('--batch') ?? cfg!.n);
+  // Q38 PR 2: cms_owner (as before) or cms_gen_writer (Route B: the generation functions only). --approve needs the admin path.
+  const role = await assertRole(sql, ['cms_owner', 'cms_gen_writer']);
+  if (approve && role !== 'cms_owner') throw new Error('--approve runs as cms_owner (approval is an admin action); cms_gen_writer can only import');
+  const [cfg] = await sql<{ c: { batch_size: number } }[]>`select cms.cms_gen_config() as c`;
+  const batchSize = Number(opt('--batch') ?? cfg!.c.batch_size);
+  // one CMS writer at a time (plan §10): refused while someone else holds the work lease
+  lease = await takeLease({ kind: 'gen_import', holder: `gen:import ${pack.run.source_run} (pid ${process.pid})`, note: `${mode}${dryRun ? ' dry run' : ''}` });
   const r = await runPackImport({ packPath, pack, mode, review, dryRun, batchSize, gitCommit, log: (s) => console.log(s),
     runUnit: freshConnections({ log: (s) => console.log(s) }), figures: target === 'local' ? new LocalFigures() : new RealFigures(), dryRunSql: sql, approve });
   console.log(`\n${r.run_code}${dryRun ? ' (dry run, rolled back)' : ''}: ${Object.entries(r.counts).map(([k, v]) => `${v} ${k}`).join(' · ')} · figures ${r.figures.uploaded} uploaded, ${r.figures.present} already there`);
@@ -82,8 +87,12 @@ try {
   console.log(`\nReport (IDs and counts only): ${out}`);
   if (r.changed.length || r.items.some((i) => i.status === 'failed')) process.exitCode = 1;
 } catch (e) {
-  console.error(`gen:import failed: ${(e as Error).message}\nRe-run the same command to continue: imported questions are kept and skipped.`);
+  const busy = (e as { code?: string }).code === '55P03' && !lease;
+  console.error(busy ? `gen:import refused: ${(e as Error).message}\nNothing was written. Run it again once the other writer is done (npm run lease -- status).`
+    : `gen:import failed: ${(e as Error).message}\nRe-run the same command to continue: imported questions are kept and skipped.`);
   process.exitCode = 1;
 } finally {
+  if (lease?.lost) { console.error('Warning: the work lease was lost during the import (heartbeat). Check the run with a re-run.'); process.exitCode = 1; }
+  await lease?.release().catch((e: Error) => console.error(`Could not release the work lease: ${e.message}`));
   await sql.end();
 }

@@ -10,6 +10,9 @@ export const LOCAL_SUPERUSER_URL = process.env.LOCAL_SUPERUSER_URL ?? 'postgres:
 export const LOCAL_CMS_OWNER_PASSWORD = process.env.LOCAL_CMS_OWNER_PASSWORD ?? 'cms_owner_local';
 /** cms_owner on THIS repo's local container. Tests use this, never CMS_DATABASE_URL. */
 export const LOCAL_CMS_OWNER_URL = `postgres://cms_owner:${LOCAL_CMS_OWNER_PASSWORD}@127.0.0.1:55422/postgres`;
+// Q38 PR 2 (db/bootstrap/02-cms-roles.sql): the read-only role and the Route B write role, local passwords.
+export const LOCAL_CMS_READER_URL = 'postgres://cms_reader:cms_reader_local@127.0.0.1:55422/postgres';
+export const LOCAL_CMS_GEN_WRITER_URL = 'postgres://cms_gen_writer:cms_gen_writer_local@127.0.0.1:55422/postgres';
 
 // The witoscope-app project runs its own local Supabase on the default ports
 // (5432x). This project uses 5542x. Refuse any URL that is not served by THIS
@@ -38,6 +41,14 @@ if (import.meta.filename === process.argv[1]) {
         .replace("password 'CHANGE_ME'", `password '${LOCAL_CMS_OWNER_PASSWORD}'`);
       await sql.unsafe(body);
       console.log('local bootstrap: done.');
+    }
+    const [roles] = await sql`select count(*)::int as n from pg_roles where rolname in ('cms_reader', 'cms_gen_writer')`;
+    if (roles!.n === 2) console.log('local bootstrap: cms_reader and cms_gen_writer already exist, skipped.');
+    else {
+      const body2 = readFileSync(join(import.meta.dirname, '..', 'db', 'bootstrap', '02-cms-roles.sql'), 'utf8')
+        .replace("password 'CHANGE_ME'", "password 'cms_reader_local'").replace("password 'CHANGE_ME'", "password 'cms_gen_writer_local'");
+      await sql.unsafe(body2);
+      console.log('local bootstrap: cms_reader and cms_gen_writer created (02-cms-roles.sql). Run `npm run db:migrate` for their grants (0051).');
     }
     const [check] = await sql`
       select not has_schema_privilege('cms_owner', 'auth', 'usage')         as owner_no_auth_usage,
