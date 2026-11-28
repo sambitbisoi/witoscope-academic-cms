@@ -76,7 +76,8 @@ try {
     'cms_gen_open_run', 'cms_gen_import_batch', 'cms_gen_close_run', 'cms_gen_rollback', 'cms_gen_place_held',
     'cms_approve_questions', 'cms_decide_primary',
     'cms_set_image_brief', 'cms_set_image', 'cms_check_image', 'cms_undo_image', 'cms_image_run_open', 'cms_image_run_claim', 'cms_image_run_item', 'cms_image_run_close', 'cms_gen_set_briefs',
-    'cms_gen_config', 'cms_take_lease', 'cms_heartbeat_lease', 'cms_release_lease', 'cms_lease_state'];
+    'cms_gen_config', 'cms_take_lease', 'cms_heartbeat_lease', 'cms_release_lease', 'cms_lease_state',
+    'cms_reserve_keys', 'cms_close_keys', 'cms_import_key_blocks'];
   const badFns = fns.filter((f) => f.proconfig?.[0] !== 'search_path=""' || f.anon_exec || (f.prosecdef && !DEFINER_ALLOWED.includes(f.proname)));
   check('every cms function: empty search_path, no anon access; only the listed functions run as owner', badFns.length === 0, badFns.map((f) => f.proname).join(', '));
 

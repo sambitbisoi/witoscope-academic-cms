@@ -18,6 +18,7 @@ This is for whoever builds generation runs (the Science and Math engines, Route 
    npm run gen:import -- --pack <run>/generation-pack.json --review <review pack.xlsx> [--dry-run]
    ```
    For the real project, use `npx tsx --env-file=.env.real scripts/gen-import.ts …`. Run it with `--dry-run` first, then again with `--confirm-real`.
+   A dry run takes no GR code and no SQ/MQ number (Q38 PR 3, migration 0052): the codes it prints are the ones the real run will get, unless someone else imports in between.
    Pilot only: add `--approve` to also approve what Sambit marked Approve / Rescue, through the normal approval path (`cms_set_status`, every rule applies). A blocked question stays Needs review and is listed with its reason. Audit label `pack-approved <run>`. Re-runs skip approved questions. Refused in steady mode and for Route A.
 5. Steady state: once Sambit switches `gen_steady_state` on for the subject and class, run with `--mode steady`. Everything that passed the checks lands as Needs review.
 6. To undo a run: `npm run gen:rollback -- --run GR0001 --reason "…"`. It retires questions; it never deletes them.

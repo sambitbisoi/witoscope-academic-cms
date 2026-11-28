@@ -292,7 +292,10 @@ export async function runPackImport(o: ImportOptions): Promise<ImportResult> {
   if (!o.dryRun) return body(o.runUnit);
   if (!o.dryRunSql) throw new Error('dry run needs dryRunSql');
   try {
-    await o.dryRunSql.begin(async (tx) => { const r = await body(async (_l, fn) => fn(tx as unknown as Sql)); throw new DryRollback(r); });
+    await o.dryRunSql.begin(async (tx) => {
+      await tx`select set_config('cms.dry_run', 'on', true)`;   // Q38 PR 3 (0052): the dry run takes no GR code and no SQ/MQ number
+      const r = await body(async (_l, fn) => fn(tx as unknown as Sql)); throw new DryRollback(r);
+    });
   } catch (e) { if (e instanceof DryRollback) return e.result; throw e; }
   throw new Error('unreachable');
 }

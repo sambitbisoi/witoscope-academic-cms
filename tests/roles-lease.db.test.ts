@@ -53,8 +53,8 @@ describe('roles', () => {
     expect(await execBy('cms_reader')).toEqual([]);
     expect((await owner`select count(*)::int as n from pg_proc p join pg_namespace n on n.oid = p.pronamespace
       where n.nspname = 'cms' and (p.proacl is null or p.proacl::text ~ '(^|,|\\{)=X')`)[0]!.n).toBe(0);
-    expect(await execBy('cms_gen_writer')).toEqual(['cms.cms_gen_close_run(jsonb)', 'cms.cms_gen_config()', 'cms.cms_gen_import_batch(jsonb)', 'cms.cms_gen_open_run(jsonb)',
-      'cms.cms_gen_set_briefs(jsonb)', 'cms.cms_heartbeat_lease(text,integer)', 'cms.cms_lease_state()', 'cms.cms_release_lease(text,boolean)', 'cms.cms_take_lease(jsonb)']);
+    expect(await execBy('cms_gen_writer')).toEqual(['cms.cms_close_keys(jsonb)', 'cms.cms_gen_close_run(jsonb)', 'cms.cms_gen_config()', 'cms.cms_gen_import_batch(jsonb)', 'cms.cms_gen_open_run(jsonb)',
+      'cms.cms_gen_set_briefs(jsonb)', 'cms.cms_heartbeat_lease(text,integer)', 'cms.cms_lease_state()', 'cms.cms_release_lease(text,boolean)', 'cms.cms_reserve_keys(jsonb)', 'cms.cms_take_lease(jsonb)']);   // + 0052 reserve / close
     await inRollback(owner, async (tx) => {   // a function a future migration forgets to revoke stays closed
       await tx`create function cms.cms_zz_probe() returns int language sql set search_path = '' as $$ select 1 $$`;
       const [r] = await tx`select has_function_privilege('cms_reader', 'cms.cms_zz_probe()', 'execute') as reader, has_function_privilege('cms_gen_writer', 'cms.cms_zz_probe()', 'execute') as writer,
