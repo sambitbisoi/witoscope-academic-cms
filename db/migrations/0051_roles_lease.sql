@@ -8,8 +8,9 @@
 --          Route A collection). Taken with cms_take_lease (renewed by the same holder, refused while another holder's
 --          lease is live, taken over once it has expired), kept alive with cms_heartbeat_lease, given back with
 --          cms_release_lease. Take, take-over and release are audited (target 'lease'); heartbeats are not.
---          Callers: the CMS admin (JWT) or a Mac script logged in as cms_owner / cms_gen_writer (cms_gen_caller, 0047);
---          only the admin or cms_owner may force a release.
+--          Callers: the CMS admin (JWT) or a Mac script logged in as cms_owner / cms_gen_writer (cms_gen_caller, 0047,
+--          now never 'admin' for a cms_gen_writer login); only the admin or cms_owner may force a release.
+--  Default New cms functions get no PUBLIC EXECUTE (alter default privileges), so the login roles reach only what is granted.
 
 -- ---------------------------------------------------------------- roles
 grant usage on schema cms to cms_reader, cms_gen_writer;
@@ -17,6 +18,25 @@ grant select on all tables in schema cms to cms_reader;
 grant select on all sequences in schema cms to cms_reader;
 alter default privileges in schema cms grant select on tables to cms_reader;
 alter default privileges in schema cms grant select on sequences to cms_reader;
+-- Postgres gives PUBLIC EXECUTE on every new function by default. Every migration so far revoked it by hand; from now
+-- on cms_owner's new functions start with no EXECUTE for anyone, so a forgotten revoke can never open one to the
+-- new login roles (or anyone else). Existing functions: none is executable by PUBLIC (checked 28 Nov; rls test).
+-- (A schema-level default can only add to the built-in one, so this is cms_owner's own default; cms_owner creates
+-- objects in schema cms only.)
+alter default privileges for role cms_owner revoke execute on functions from public;
+
+-- cms_gen_caller (0047): a cms_gen_writer login is always 'cms_gen_writer', even if the session sets admin JWT claims
+-- (any login role can set request.jwt.claims). Unchanged for the browser (admin) and cms_owner scripts.
+create or replace function cms.cms_gen_caller()
+  returns text
+  language sql
+  stable
+  set search_path = ''
+as $$
+  select case when session_user::text = 'cms_gen_writer' then 'cms_gen_writer'
+              when cms.cms_is_admin(cms.cms_current_uid()) then 'admin'
+              when session_user::text = 'cms_owner' then 'cms_owner' end;
+$$;
 
 grant execute on function cms.cms_gen_open_run(jsonb) to cms_gen_writer;
 grant execute on function cms.cms_gen_import_batch(jsonb) to cms_gen_writer;

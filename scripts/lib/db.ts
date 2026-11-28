@@ -90,9 +90,10 @@ export async function assertCmsOwner(sql: ReturnType<typeof connect>) {
 export interface LeaseState { holder: string | null; kind: string | null; note: string | null; taken_by: string | null; taken_at: string | null; heartbeat_at: string | null; expires_at: string | null; live: boolean }
 export interface Lease { holder: string; taken: 'new' | 'renewed' | 'takeover'; /** true when the heartbeat found the lease gone */ lost: boolean; release(): Promise<void> }
 /** Take the work lease for the length of a script, on a connection of its own, kept alive by a heartbeat
- *  (every minutes/3). Refuses (throws) while another holder's lease is live. With CMS_LEASE_HOLDER set
+ *  (default: lasts 15 min, renewed every 5 min on that connection, so a long batch on another connection never lets it lapse;
+ *  a script that dies without releasing it blocks other writers for at most 15 min). Refuses (throws) while another holder's lease is live. With CMS_LEASE_HOLDER set
  *  (a CMS session that took the lease with `npm run lease -- take`), the script runs under that lease and leaves it held. */
-export async function takeLease(o: { kind: 'gen_import' | 'cms_session' | 'route_a_collect' | 'script'; holder: string; note?: string | null; minutes?: number; url?: string; log?: (s: string) => void }): Promise<Lease> {
+export async function takeLease(o: { kind: 'gen_import' | 'cms_session' | 'route_a_collect' | 'script'; holder: string; note?: string | null; minutes?: number; url?: string; log?: (s: string) => void; /** tests: heartbeat interval */ beatMs?: number }): Promise<Lease> {
   const log = o.log ?? ((s: string) => console.log(s));
   const outer = process.env.CMS_LEASE_HOLDER?.trim() || null;
   const holder = outer ?? o.holder, minutes = o.minutes ?? 15;
@@ -108,7 +109,7 @@ export async function takeLease(o: { kind: 'gen_import' | 'cms_session' | 'route
       if (/Lost the work lease/.test(e.message)) { lease.lost = true; log(`  ! ${e.message}`); }
       else log(`  ! lease heartbeat failed (${e.message}); retrying at the next beat`);
     });
-  }, Math.max(20_000, (minutes * 60_000) / 3));
+  }, o.beatMs ?? Math.max(20_000, (minutes * 60_000) / 3));
   timer.unref();
   lease.release = async () => {
     clearInterval(timer);
