@@ -2,6 +2,17 @@
 
 Changes to real (non-test) data that Sambit approved, with what was done and where the audit trail is.
 
+## 28 Nov 2026: Q38 PR 1b, `by_label` on approvals (migration 0050)
+
+**Request (Sambit, 28 Nov 2026):** "Go for 0050 on real". PR #58.
+
+| Step | Result |
+|---|---|
+| Check | No other cms_owner sessions on real; no unfinished generation runs; the last import (#1295, GR0139) finished at 12:15 IST |
+| Backup | `~/WitoScope/CMS-backups/real-cms-2026-11-28-pre-0050.dump` (schema `cms`, 65 table-data entries, read-only file) |
+| Rehearsal | Fresh restore into `cms_rehearsal` (11,412 questions · 11,424 versions · 3,505 content rows) · 0050 guarded: fingerprint of every cms table **unchanged** · db:verify ✓ · `gen:import --dry-run` on C5S (GR0133) and on a fresh copy of it: identical before and after |
+| Real | The same: 0050 guarded, fingerprint **unchanged** (two functions added: `cms_set_status(…, p_by_label)`, `cms_approve_questions(…, p_by_label)`; no table or data change) · db:verify ✓ |
+
 ## 18 Nov 2026: Q13 Course builder, Iteration 2 ("go 2", same plan)
 
 No migration and **no real data changed**: screens 5–7 and "Start from" use the 0045 functions. The DRAFT pilot file `ContentResearch/CMS-updates/2026-11-18-course-pilot/CBSE-NCERT-C5-Math.xlsx` was built from read-only queries on real and was **not loaded**; Sambit uploads it himself (Upload from Excel → Replace a draft). `cms_rehearsal` dropped at the end of the round.
