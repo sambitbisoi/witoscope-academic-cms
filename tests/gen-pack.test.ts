@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { linkedRows, parseItemRef, parseWrongTags, pilotToPack, settingSlug } from '../scripts/lib/gen-adapters/science-pilot04.ts';
 import { applySettingsMap, draftMap, similarity, words } from '../scripts/lib/gen-settings.ts';
-import { contentHash, dbItem, figureKey, packProblems, planItems, pngSize, sha256, type Pack, type PackQuestion, type ReviewDecisions } from '../scripts/lib/gen-pack.ts';
+import { approveLabel, approvePlanProblem, contentHash, dbItem, figureKey, packProblems, planItems, pngSize, sha256, type Pack, type PackQuestion, type ReviewDecisions } from '../scripts/lib/gen-pack.ts';
 
 const q = (lid: string, extra: Partial<PackQuestion> = {}): PackQuestion => ({
   local_id: lid, subject: 'science', topic_id: 'ST0003', class: 2, level: 2, format: 'MCQ-4', text: `Q ${lid}?`, options: ['a', 'b', 'c', 'd'], answer: 'C',
@@ -156,4 +156,16 @@ describe('settings map (closest existing SET first; scenes kept as setting notes
     expect(applySettingsMap(pack([q('M-9', { setting: { new: 'x' }, setting_note: 'Unmapped scene' })]), { file_schema: 'settings-map/1', subject: 'science', entries: [] }))
       .toEqual(['M-9: scene "Unmapped scene" is not in the settings map']);
   });
+});
+
+describe('PR 1b: gen:import --approve', () => {
+  const rv: ReviewDecisions = { sha256: 'f'.repeat(64), decisions: new Map([['A-1', { decision: 'approve', comment: null, sheet: 'Questions' }]]) };
+  it('is allowed only for pilot Route B imports with the Mac review decisions', () => {
+    expect(approvePlanProblem('pilot', pack([q('A-1')]), rv)).toBeNull();
+    expect(approvePlanProblem('pilot', pack([q('A-1', { review: { decision: 'approve' } })]), null)).toBeNull();
+    expect(approvePlanProblem('steady', pack([q('A-1')]), rv)).toMatch(/pilot imports only/);
+    expect(approvePlanProblem('pilot', pack([q('A-1')], 'A'), rv)).toMatch(/Route B/);
+    expect(approvePlanProblem('pilot', pack([q('A-1')]), null)).toMatch(/review pack/);
+  });
+  it('labels the audit rows by run', () => { expect(approveLabel('GR0140')).toBe('pack-approved GR0140'); });
 });

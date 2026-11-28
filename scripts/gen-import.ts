@@ -4,6 +4,9 @@
 //   npm run gen:import -- --pack … --mode steady                                                 steady state (needs gen_steady_state on in the CMS)
 //   … --dry-run            everything in one transaction, rolled back (no figures uploaded)
 //   … --batch 10           questions per batch (default: cms_config gen_batch_size)
+//   … --approve            pilot only (PR 1b, plan §2.7): then approve the imported questions marked Approve / Rescue in the
+//                          review pack, through cms_set_status (every approval rule applies); blocked ones stay Needs review
+//                          and are listed with the reason. Audit by_label "pack-approved <run>". Re-runs skip approved ones.
 //   Real project: npx tsx --env-file=.env.real scripts/gen-import.ts … --dry-run, then the same with --confirm-real.
 //
 // Safe to re-run: imported items with the same content are "unchanged"; an item imported earlier with different content
@@ -14,13 +17,13 @@ import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { assertCmsOwner, connect, freshConnections, targetUrl } from './lib/db.ts';
 import { LocalFigures, RealFigures } from './lib/gen-figures.ts';
-import { packProblems, planItems, readReviewPack, runPackImport, type Mode, type Pack } from './lib/gen-pack.ts';
+import { approvePlanProblem, packProblems, planItems, readReviewPack, runPackImport, type Mode, type Pack } from './lib/gen-pack.ts';
 
 const args = process.argv.slice(2);
 const opt = (name: string) => { const i = args.indexOf(name); return i >= 0 && args[i + 1] && !args[i + 1]!.startsWith('--') ? args[i + 1]! : null; };
 const home = (p: string) => resolve(p.replace(/^~/, homedir()));
 const packArg = opt('--pack');
-if (!packArg) { console.error('usage: npm run gen:import -- --pack <generation-pack.json> [--review <xlsx>] [--mode pilot|steady] [--dry-run] [--confirm-real] [--batch N]'); process.exit(1); }
+if (!packArg) { console.error('usage: npm run gen:import -- --pack <generation-pack.json> [--review <xlsx>] [--mode pilot|steady] [--dry-run] [--confirm-real] [--batch N] [--approve]'); process.exit(1); }
 const packPath = home(packArg);
 const mode = (opt('--mode') ?? 'pilot') as Mode;
 if (!['pilot', 'steady'].includes(mode)) { console.error('--mode is pilot or steady'); process.exit(1); }
@@ -37,6 +40,8 @@ if (mode === 'pilot' && !reviewPath && !pack.questions.some((q) => q.review?.dec
   console.error('Refused: a pilot import takes only questions Sambit approved in the Mac review pack. Pass --review <review pack.xlsx>.'); process.exit(1);
 }
 const review = reviewPath ? await readReviewPack(home(reviewPath)) : null;
+const approve = args.includes('--approve');
+if (approve) { const why = approvePlanProblem(mode, pack, review); if (why) { console.error(`Refused: ${why}.`); process.exit(1); } }
 if (review) {
   const unknown = [...review.decisions.keys()].filter((k) => !pack.questions.some((q) => q.local_id === k));
   if (unknown.length) { console.error(`Refused: the review pack names ${unknown.length} slot(s) that are not in this pack (${unknown.slice(0, 5).join(', ')}). Wrong file?`); process.exit(1); }
@@ -54,7 +59,7 @@ try {
   const [cfg] = await sql<{ n: number }[]>`select coalesce((select value::text::int from cms.cms_config where key = 'gen_batch_size'), 10) as n`;
   const batchSize = Number(opt('--batch') ?? cfg!.n);
   const r = await runPackImport({ packPath, pack, mode, review, dryRun, batchSize, gitCommit, log: (s) => console.log(s),
-    runUnit: freshConnections({ log: (s) => console.log(s) }), figures: target === 'local' ? new LocalFigures() : new RealFigures(), dryRunSql: sql });
+    runUnit: freshConnections({ log: (s) => console.log(s) }), figures: target === 'local' ? new LocalFigures() : new RealFigures(), dryRunSql: sql, approve });
   console.log(`\n${r.run_code}${dryRun ? ' (dry run, rolled back)' : ''}: ${Object.entries(r.counts).map(([k, v]) => `${v} ${k}`).join(' · ')} · figures ${r.figures.uploaded} uploaded, ${r.figures.present} already there`);
   if (r.briefs.set + r.briefs.unchanged + r.briefs.skipped) console.log(`image briefs: ${r.briefs.set} set · ${r.briefs.unchanged} unchanged · ${r.briefs.skipped} skipped`);
   const u = r.setting_use;
@@ -62,6 +67,12 @@ try {
     + `${Object.keys(r.shared).length ? ` · shared with ${pack.run.subject}: ${Object.entries(r.shared).map(([k, v]) => `${k} (was ${v})`).join(', ')}` : ''}`);
   console.log(`topic–class links proposed: ${r.links_proposed.length ? r.links_proposed.join(', ') : 'none'}`);
   if (r.closed) console.log(`run status ${r.closed.status} · all passes: ${Object.entries(r.closed.items).map(([k, v]) => `${v} ${k}`).join(' · ')}`);
+  if (r.approve) {
+    const a = r.approve;
+    console.log(`approve (by_label "pack-approved ${r.run_code}"): ${a.approved.length} approved · ${a.blocked.length} blocked (stay Needs review) · ${a.already.length} already approved`
+      + `${a.not_imported.length ? ` · ${a.not_imported.length} marked Approve but not imported (see above)` : ''}`);
+    for (const x of a.blocked) console.log(`  blocked ${x.question_id} (${x.local_id}): ${x.reason}`);
+  }
   for (const x of r.items.filter((i) => i.status === 'failed')) console.log(`  ✗ ${x.local_id}: ${x.error}`);
   for (const x of r.items.filter((i) => i.status === 'held')) console.log(`  held ${x.local_id}: ${x.reason}`);
   for (const id of r.changed) console.log(`  ! ${id}: imported earlier with different content; not touched (make a new run, or roll this one back)`);
