@@ -2,6 +2,22 @@
 
 Changes to real (non-test) data that Sambit approved, with what was done and where the audit trail is.
 
+## 28 Nov 2026: English E1, Q41 curriculum sync (migration 0053 + grammar:sync)
+
+**Request (Sambit, 28 Nov 2026):** "E1 reviewed — go for real, steps 1–6". PR #63. Plan `docs/plan-2026-11-28-english-grammar.md` §2.
+
+| Step | Result |
+|---|---|
+| Check | No other cms_owner sessions; no unfinished runs; last import #1295 (GR0139); work lease free |
+| Backup | `~/WitoScope/CMS-backups/real-cms-2026-11-28-pre-0053.dump` (schema `cms`, 67 table-data entries, read-only file) |
+| Rehearsal | `real-cms-2026-11-28-e1-rehearsal.dump`: same plan and results; Science regressions identical |
+| 0053 | guarded: fingerprint **unchanged** · db:verify ✓ |
+| Reserve | `keys -- reserve --kind topic --prefix GT --count 9`: dry run = the mapping file, then #254 GT0186–GT0194 (now **used**, closed by the CMS once all 9 existed) |
+| Sync | dry run, then `--confirm-real`: 9 created · 3 renamed (GT0062, GT0111, GT0143) · 6 home class (GT0026/0069/0078/0132 → 3; GT0092/0096 → 1) · 9 class-link changes · 172 unchanged · 15 chapter order lists; Achievers rows 0 → 0. Re-run: 193 unchanged |
+| Tables | `cms_topics` 1,318 → 1,327 · `cms_topic_classes` 2,705 → 2,736 (+21 new topics' links, +11 added, −1 GT0032 Class 1) · `cms_topic_order` 1,053 → 1,068 · `cms_key_reservations` (#254 used) · `cms_reviews` +41 (9 create + 12 edit, by_label `grammar:sync r30`; 15 reorder, `Sambit`; 1 reservation close; 4 lease). Nothing else changed |
+| GT0032 Class 1 | The link row (1, source "NCERT", evidence "Classes – NCERT: 1") was **deleted** by the topic save, which replaces the class list. Its before → after is in the audit (review 68041, `edit_catalogue`, `field_diff.classes`). GT0032's home class is 3, so it never had a Class 1 order row; GC09's Class 1 order is still 1 GT0030 · 2 GT0031 · 3 GT0033 |
+| After | db:verify ✓ · keys:audit unchanged · mirror refreshed (`~/WitoScope/CMS-updates/2026-11-28-key-registry/id_blocks.mirror.md`) |
+
 ## 28 Nov 2026: Q38 PR 3, key registry (migration 0052 + id_blocks load)
 
 **Request (Sambit, 28 Nov 2026):** "Go for 0052 on real" after #60 was merged; open questions 1–3 agreed (blocks loaded as used; export:bank-sync writes files only; typical sets out of the registry). PR #61.
