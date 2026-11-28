@@ -59,7 +59,7 @@ describe('dry runs take no numbers (cms_mint)', () => {
 
   it('0052 re-created each minting function with only the planned substitutions (bodies re-derived from their previous migrations)', async () => {
     const dir = join(import.meta.dirname, '..', 'db', 'migrations');
-    const files = readdirSync(dir).filter((f) => f.endsWith('.sql') && f < '0052').sort();
+    const files = readdirSync(dir).filter((f) => f.endsWith('.sql') && f < '0052').sort();   // bodies before 0052
     const lastBody = (name: string) => {
       let body: string | null = null;
       for (const f of files) {
@@ -75,7 +75,9 @@ describe('dry runs take no numbers (cms_mint)', () => {
       .replace(/ {6}n := cms\.cms_next_free\('concept', n\);[^\n]*\n/, '')
       .replace(/ {6}if pre = 'MP' then n := cms\.cms_next_free\('pattern', n\); end if;[^\n]*\n/, '');
     for (const f of ['cms_apply_save', 'cms_add_questions', 'cms_place_held_out', 'cms_gen_write_item', 'cms_gen_open_run', 'cms_save_curriculum']) {
-      const { src } = (await sql`select prosrc as src from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'cms' and p.proname = ${f}`)[0]!;
+      // the 0052 file's body (later migrations, e.g. 0053, may re-create a function again; they carry their own test)
+      const m52 = new RegExp(`create (?:or replace )?function cms\\.${f}\\([^]*?\\bas \\$function\\$([^]*?)\\$function\\$;`, 'i').exec(readFileSync(join(dir, '0052_key_registry.sql'), 'utf8'));
+      const src = m52![1]!;
       expect(src as string, f).toMatch(/cms_mint|cms_next_free/);
       expect(back(src as string), f).toBe(lastBody(f));
     }

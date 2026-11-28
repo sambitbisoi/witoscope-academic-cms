@@ -20,7 +20,7 @@ const opt = (n: string) => { const i = rest.indexOf(n); return i >= 0 ? rest[i +
 const has = (n: string) => rest.includes(n);
 const host = new URL(targetUrl()).hostname;
 const target = host === '127.0.0.1' || host === 'localhost' ? (new URL(targetUrl()).pathname === '/cms_rehearsal' ? 'rehearsal' : 'local') : 'real';
-const usage = 'usage: npm run keys -- reserve --kind file_key|block [--prefix MC19 --count N] --purpose "…" [--by "…"] [--dry-run] | close --id N --status used|released [--note "…"] | list [--all] | import-blocks [--file …] [--dry-run] | mirror [--out …]';
+const usage = 'usage: npm run keys -- reserve --kind file_key|block|topic|grammar_concept [--prefix MC19|GT|GT0049 --count N] --purpose "…" [--by "…"] [--dry-run] | close --id N --status used|released [--note "…"] | list [--all] | import-blocks [--file …] [--dry-run] | mirror [--out …]';
 if (!cmd || !['reserve', 'close', 'list', 'import-blocks', 'mirror'].includes(cmd)) { console.error(usage); process.exit(1); }
 
 type R = Record<string, unknown>;
@@ -38,8 +38,8 @@ function bankMax(prefix: string): { max: number; files: number } {
   }
   return { max, files };
 }
-const show = (r: R) => r.kind === 'file_key'
-  ? `#${r.reservation_id} file keys ${r.first} … ${r.last} (${r.count}) · ${r.status} · ${r.purpose} · by ${r.reserved_by}`
+const show = (r: R) => r.kind === 'file_key' || r.kind === 'topic' || r.kind === 'grammar_concept'
+  ? `#${r.reservation_id} ${r.kind === 'file_key' ? 'file keys' : r.kind === 'topic' ? 'topic IDs' : 'concept IDs'} ${r.first} … ${r.last} (${r.count}) · ${r.status} · ${r.purpose} · by ${r.reserved_by}`
   : `#${r.reservation_id} block ${r.block}: patterns ${r.patterns} · concepts ${r.concepts} · misconceptions ${r.misconceptions} · ${r.status} · ${r.purpose} · by ${r.reserved_by}`;
 class DryRollback extends Error { constructor(public r: unknown) { super('dry run'); } }
 
@@ -69,10 +69,12 @@ try {
     const rows = (await sql<R[]>`select r.* from cms.cms_key_reservations r
       where ${has('--all') || cmd === 'mirror'} or r.status = 'reserved' order by r.kind, r.block_no nulls last, r.prefix, r.first_no`).map((r): R => r.kind === 'file_key'
         ? { ...r, first: `${r.prefix}-${pad(r.first_no)}`, last: `${r.prefix}-${pad(r.last_no)}`, count: Number(r.last_no) - Number(r.first_no) + 1 }
+        : r.kind === 'topic' ? { ...r, first: `${r.prefix}${pad(r.first_no)}`, last: `${r.prefix}${pad(r.last_no)}`, count: Number(r.last_no) - Number(r.first_no) + 1 }
+        : r.kind === 'grammar_concept' ? { ...r, first: `${r.prefix}-C${String(r.first_no).padStart(2, '0')}`, last: `${r.prefix}-C${String(r.last_no).padStart(2, '0')}`, count: Number(r.last_no) - Number(r.first_no) + 1 }
         : { ...r, block: r.block_no, patterns: `MP${pad(r.first_no)}–MP${pad(r.last_no)}`, concepts: `C${r.block_no}01–C${r.block_no}99`, misconceptions: `${r.block_no}01–${r.block_no}99` });
     if (cmd === 'list') { console.log(`${rows.length} ${has('--all') ? '' : 'open '}reservation(s) on ${target}`); for (const r of rows) console.log(`  ${show(r)}`); }
     else {
-      const blocks = rows.filter((r) => r.kind === 'block'), keys = rows.filter((r) => r.kind === 'file_key');
+      const blocks = rows.filter((r) => r.kind === 'block'), keys = rows.filter((r) => r.kind === 'file_key'), ids = rows.filter((r) => r.kind === 'topic' || r.kind === 'grammar_concept');
       const next = Math.max(-1, ...blocks.map((r) => Number(r.block))) + 1;
       const md = [
         '# ID blocks per chapter — READ-ONLY MIRROR',
@@ -94,10 +96,16 @@ try {
         '|---|---|---|---|---|',
         ...(keys.length ? keys.map((r) => `| ${r.reservation_id} | ${r.first} … ${r.last} (${r.count}) | ${r.status} | ${String(r.purpose).replace(/\|/g, '/')} | ${r.reserved_by} |`) : ['| | none yet | | | |']),
         '',
+        '## Topic and Grammar concept ID reservations',
+        '',
+        '| # | IDs | Status | Purpose | By |',
+        '|---|---|---|---|---|',
+        ...(ids.length ? ids.map((r) => `| ${r.reservation_id} | ${r.first} … ${r.last} (${r.count}) | ${r.status} | ${String(r.purpose).replace(/\|/g, '/')} | ${r.reserved_by} |`) : ['| | none yet | | | |']),
+        '',
       ].join('\n');
       const out = resolve((opt('--out') ?? join(import.meta.dirname, '..', '.local-import', 'id_blocks.mirror.md')).replace(/^~/, homedir()));
       mkdirSync(dirname(out), { recursive: true }); writeFileSync(out, md);
-      console.log(`mirror of ${blocks.length} blocks + ${keys.length} file-key reservations → ${out.replace(homedir(), '~')}`);
+      console.log(`mirror of ${blocks.length} blocks + ${keys.length} file-key + ${ids.length} topic/concept reservations → ${out.replace(homedir(), '~')}`);
     }
   }
   if (cmd === 'import-blocks') {

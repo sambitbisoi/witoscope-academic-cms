@@ -117,7 +117,7 @@ Real today: 185 GT topics (184 active + GT0011 retired; max GT0185) in 41 chapte
 - Function `cms_import_grammar_concepts(p jsonb)` (admin or cms_owner; security definer):
   - takes up to 25 concepts with their misconception items;
   - per concept: insert (status **active** = Approved) / unchanged (same `content_hash`) / changed (update, audited before → after);
-  - items are inserted, or updated in place by `(concept_id, item_no)`; an item that disappears is **retired**, never deleted;
+  - misconception items are imported **Approved (active)**, like the concepts, so questions that use them are never blocked (Sambit, 28 Nov); they are inserted, or updated in place by `(concept_id, item_no)`; an item that disappears is **retired**, never deleted;
   - every insert / update is audited (`grammar_concept`, by_label `grammar:concepts r30`);
   - validates: topic exists and is Grammar; first-taught class is in `classes`; secondary topics exist; rule non-empty.
 
@@ -126,7 +126,7 @@ Real today: 185 GT topics (184 active + GT0011 retired; max GT0185) in 41 chapte
 - Maps the 23 `NEW-xx-Cnn` → `GTnnnn-Cnn` and keeps `NEW-xx-Cnn` in `aliases`. Secondary topics `NEW-xx` are mapped too.
 - Splits column L on ";" into items 1…n (34 concepts with 2; listed in the dry run for a check).
 - Q39 per concept:
-  - `regional_flag` = column K filled (**88**); `regional_note` = K.
+  - `regional_flag` = column K filled (**88**) **plus 3 decided by Sambit (28 Nov)**: GT0131-C02 and GT0153-C01 (teach_uk_never_us_wrong), GT0018-C02 (accept_both). **91 flagged in all.** `regional_note` = K; for the 3, the Q-note text.
   - `regional_item_rule` = the rule the Q/P notes state (Never test 9, Accept both 3, Teach UK/India 11). The other 65 flagged concepts take the default **Teach UK/India, never make the US form wrong** (Q4).
   - Concepts with K empty: flag N, no rule.
 - Column Q regional mentions are **not** auto-flagged: they are listed for Sambit (§3.1).
@@ -149,12 +149,13 @@ Real today: 185 GT topics (184 active + GT0011 retired; max GT0185) in 41 chapte
 
 ### 3.1 Regional review list (Sambit decides; nothing is auto-flagged)
 `docs/grammar/regional-review-2026-11-28.csv` lists, per concept, the proposed flag and item rule.
+- **Total flagged: 91** (88 with K + the 3 decided above).
 - **88 concepts with column K filled:** flag Y, with the item rule as above (76 Teach UK/India, of which 65 are by default; 3 Accept both; 9 Never test).
 - **52 concepts with K empty whose Q/P notes mention US / UK / Indian / spelling / "never test"**, grouped:
 
 | Group | n | Proposal |
 |---|---|---|
-| Possibly regional | 5 | **Decide**: GT0025-C03 (British/Indian convention: seasons lower case) · GT0131-C02 (subway: UK/India underpass vs US railway) · GT0153-C01 (UK/India past of *fit*) · GT0018-C02 (terminology: subordinate vs dependent clause) · NEW-06-C02 (says "never test", but for a non-regional reason) |
+| Possibly regional | 5 | **Decided (Sambit, 28 Nov):** GT0025-C03 **N** · GT0131-C02 **Y**, teach_uk_never_us_wrong · GT0153-C01 **Y**, teach_uk_never_us_wrong · GT0018-C02 **Y**, accept_both · NEW-06-C02 **N** (its never-test note stays in the concept notes; concept notes reach the writer and checker in E3/E6) |
 | Notes say "not a UK/US difference" | 3 | N (GT0006-C03, GT0042-C01, GT0177-C03) |
 | "Common Indian-learner error" | 15 | N for regional. These are **L1-interference** candidates: suggest the `l1_interference` wrong-answer tag in E3 (list in the CSV) |
 | "US check suggests Class X" | 18 | N (class information only, as decided 28 Nov) |
@@ -184,6 +185,7 @@ Migration 0055 (with E4/E5), shape only:
   - (b) level 1–2 with Hidden idea = Y;
   - (c) level 5 with no Hidden idea and Inhibition < 2;
   - also: a "Never test" concept used as the central concept.
+- **Concept notes reach the writer and the checker** (E3 form, E6 prompts and checks): rule, examples, exception, regional rule and note, and the concept's Notes (column Q), e.g. NEW-06-C02's "never test with a single right answer".
 
 ## 5. E4 · Screens (DESIGN; screenshots before committing)
 - **Browse / filter English:** strand → topic (core / from a lower / higher class as today), filters by item type, level, concept, regional flag, Needs review.
@@ -221,9 +223,13 @@ Migration 0055 (with E4/E5), shape only:
 | 0055 | E3 + E4 + E5 | `question_level` + view; `cms_item_types`; formats; `l1_interference`; `word_set_id`, `regional_item_rule` on versions; Solution 1 blocker; `cms_english_derived`; warnings; English branch of the pack writer |
 | (none) | E6 | with Q38 PR 9, behind a flag |
 
-**Order:** E1 → E2 right after this round; E3 + E4 + E5 after the Q38 checkpoint; E6 with PR 9. Each PR is its own branch, built in a separate worktree (the Science session runs from the main folder). Each goes: rehearsal → report → "OK to write to real?" → backup → small batches → `db:verify`.
+**Order:** E1 → E2 right after this round (E1 in progress 28 Nov: migration file `0053_registry_topics.sql`, `npm run grammar:sync`); E3 + E4 + E5 after the Q38 checkpoint; E6 with PR 9. Each PR is its own branch, built in a separate worktree (the Science session runs from the main folder). Each goes: rehearsal → report → "OK to write to real?" → backup → small batches → `db:verify`.
 
-## 9. Open questions (my proposal in bold)
+## 9. Open questions: decided (Sambit, 28 Nov 2026): all as proposed
+Q1 adds: Reading (F2) and vocabulary also live under subject `grammar`, shown as English. Q8: the CMS owns Grammar after E1/E2; sheet changes come in only through the reviewed sync.
+Changes to the plan (28 Nov): misconception items import as Approved (active), like the concepts (§3); the 5 possibly-regional concepts decided (§3.1), 91 flagged in all.
+
+The questions as asked (proposal in bold = the decision):
 - **Q1** Stored subject value: **keep `grammar` (topics, concepts, questions, GQ/GC/GP); show "English" in the CMS.**
 - **Q2** Name of the shared 1–5 field: **`question_level`, a new column, with `science_question_type` untouched and a view that reads either.**
 - **Q3** GT0032 loses Class 1: **through the existing topic save (link rows replaced, before → after audited); the topic is never deleted.**
