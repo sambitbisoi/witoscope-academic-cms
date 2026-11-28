@@ -1,4 +1,6 @@
-// The one way scripts connect to the database: as cms_owner, never service_role.
+// The one way scripts connect to the database: as cms_owner (migrations, admin scripts), cms_reader (read-only reports,
+// keys:audit, the engine snapshot) or cms_gen_writer (Route B imports; EXECUTE on the generation functions only).
+// Never service_role or any other role (Q38 PR 2, plan §8).
 import postgres from 'postgres';
 import { assertLocal, LOCAL_CMS_OWNER_URL } from '../local-bootstrap.ts';
 
@@ -7,10 +9,15 @@ import { assertLocal, LOCAL_CMS_OWNER_URL } from '../local-bootstrap.ts';
 // npm scripts never read .env, so a .env pointing at the real project is harmless.
 export const targetUrl = () => process.env.CMS_DATABASE_URL ?? LOCAL_CMS_OWNER_URL;
 
+export const CMS_ROLES = ['cms_owner', 'cms_reader', 'cms_gen_writer'] as const;
+export type CmsRole = (typeof CMS_ROLES)[number];
+/** The login role a URL names (the pooler adds ".<project ref>"). */
+export const urlRole = (url = targetUrl()) => decodeURIComponent(new URL(url).username).split('.')[0] ?? '';
+
 export function connect(url = targetUrl(), opts: { keepAliveSeconds?: number } = {}) {
   const user = decodeURIComponent(new URL(url).username).split('.')[0];
-  if (user !== 'cms_owner') {
-    throw new Error(`Refusing to connect as "${user}". Scripts must connect as cms_owner.`);
+  if (!(CMS_ROLES as readonly string[]).includes(user ?? '')) {
+    throw new Error(`Refusing to connect as "${user}". Scripts connect as ${CMS_ROLES.join(', ')} only.`);
   }
   const host = new URL(url).hostname;
   if (host === '127.0.0.1' || host === 'localhost') assertLocal(url);
@@ -66,8 +73,48 @@ async function endSession(pid: number | null, url: string | undefined, log: (s: 
   } finally { await sql.end({ timeout: 2 }).catch(() => {}); }
 }
 
+/** Belt and braces: confirm the server agrees we are one of these roles; returns it. */
+export async function assertRole(sql: ReturnType<typeof connect>, roles: readonly CmsRole[]): Promise<CmsRole> {
+  const [row] = await sql<{ session_user: string }[]>`select session_user`;
+  if (!roles.includes(row?.session_user as CmsRole)) throw new Error(`Connected as ${row?.session_user}, expected ${roles.join(' or ')}.`);
+  return row!.session_user as CmsRole;
+}
+
 /** Belt and braces: confirm the server agrees we are cms_owner. */
 export async function assertCmsOwner(sql: ReturnType<typeof connect>) {
   const [row] = await sql<{ current_user: string }[]>`select current_user`;
   if (row?.current_user !== 'cms_owner') throw new Error(`Connected as ${row?.current_user}, expected cms_owner.`);
+}
+
+// ---------------------------------------------------------------- the work lease (Q38 PR 2, plan §10: one CMS writer at a time)
+export interface LeaseState { holder: string | null; kind: string | null; note: string | null; taken_by: string | null; taken_at: string | null; heartbeat_at: string | null; expires_at: string | null; live: boolean }
+export interface Lease { holder: string; taken: 'new' | 'renewed' | 'takeover'; /** true when the heartbeat found the lease gone */ lost: boolean; release(): Promise<void> }
+/** Take the work lease for the length of a script, on a connection of its own, kept alive by a heartbeat
+ *  (every minutes/3). Refuses (throws) while another holder's lease is live. With CMS_LEASE_HOLDER set
+ *  (a CMS session that took the lease with `npm run lease -- take`), the script runs under that lease and leaves it held. */
+export async function takeLease(o: { kind: 'gen_import' | 'cms_session' | 'route_a_collect' | 'script'; holder: string; note?: string | null; minutes?: number; url?: string; log?: (s: string) => void }): Promise<Lease> {
+  const log = o.log ?? ((s: string) => console.log(s));
+  const outer = process.env.CMS_LEASE_HOLDER?.trim() || null;
+  const holder = outer ?? o.holder, minutes = o.minutes ?? 15;
+  const sql = connect(o.url, { keepAliveSeconds: 10 });
+  let r: { taken: Lease['taken']; lease: LeaseState };
+  try {
+    const rows = await sql<{ r: typeof r }[]>`select cms.cms_take_lease(${sql.json({ holder, kind: outer ? 'cms_session' : o.kind, note: o.note ?? null, minutes } as never)}) as r`;
+    r = rows[0]!.r;
+  } catch (e) { await sql.end({ timeout: 2 }).catch(() => {}); throw e; }
+  const lease: Lease = { holder, taken: r.taken, lost: false, release: async () => {} };
+  const timer = setInterval(() => {
+    sql`select cms.cms_heartbeat_lease(${holder}, ${minutes})`.catch((e: Error) => {
+      if (/Lost the work lease/.test(e.message)) { lease.lost = true; log(`  ! ${e.message}`); }
+      else log(`  ! lease heartbeat failed (${e.message}); retrying at the next beat`);
+    });
+  }, Math.max(20_000, (minutes * 60_000) / 3));
+  timer.unref();
+  lease.release = async () => {
+    clearInterval(timer);
+    try { if (!outer) await sql`select cms.cms_release_lease(${holder}, false)`; }
+    finally { await sql.end({ timeout: 2 }).catch(() => {}); }
+  };
+  if (r.taken === 'takeover') log(`  (took over an expired work lease)`);
+  return lease;
 }
