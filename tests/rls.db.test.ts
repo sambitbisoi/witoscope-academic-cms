@@ -125,6 +125,8 @@ describe('catalog: every table is locked the same way', () => {
       { proname: 'cms_check_image', prosecdef: true, provolatile: 'v', proconfig: ['search_path=""'], auth_exec: true, anon_exec: false, public_exec: false },
       // 0052 (Q38 PR 3): key registry, cms_mint (dry runs take no numbers)
       { proname: 'cms_close_keys', prosecdef: true, provolatile: 'v', proconfig: ['search_path=""'], auth_exec: true, anon_exec: false, public_exec: false },
+      // 0053 (English E1): topic reservations
+      { proname: 'cms_close_used_topic_reservations', prosecdef: false, provolatile: 'v', proconfig: ['search_path=""'], auth_exec: false, anon_exec: false, public_exec: false },
       // 0035: rank default for links written without one (trigger)
       { proname: 'cms_content_link_rank', prosecdef: false, provolatile: 'v', proconfig: ['search_path=""'], auth_exec: false, anon_exec: false, public_exec: false },
       // 0044 (Q23): linked content rows edited on a Science draft
@@ -174,6 +176,7 @@ describe('catalog: every table is locked the same way', () => {
       { proname: 'cms_linked_item', prosecdef: false, provolatile: 's', proconfig: ['search_path=""'], auth_exec: false, anon_exec: false, public_exec: false },
       { proname: 'cms_mint', prosecdef: false, provolatile: 'v', proconfig: ['search_path=""'], auth_exec: false, anon_exec: false, public_exec: false },
       { proname: 'cms_next_free', prosecdef: false, provolatile: 's', proconfig: ['search_path=""'], auth_exec: false, anon_exec: false, public_exec: false },
+      { proname: 'cms_next_free_in', prosecdef: false, provolatile: 's', proconfig: ['search_path=""'], auth_exec: false, anon_exec: false, public_exec: false },
       { proname: 'cms_place_held_out', prosecdef: true, provolatile: 'v', proconfig: ['search_path=""'], auth_exec: true, anon_exec: false, public_exec: false },
       { proname: 'cms_record_run', prosecdef: true, provolatile: 'v', proconfig: ['search_path=""'], auth_exec: true, anon_exec: false, public_exec: false },
       { proname: 'cms_refuse_dry_commit', prosecdef: false, provolatile: 'v', proconfig: ['search_path=""'], auth_exec: false, anon_exec: false, public_exec: false },
